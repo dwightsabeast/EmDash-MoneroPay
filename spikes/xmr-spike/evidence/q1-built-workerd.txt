@@ -1,0 +1,19 @@
+# Q1 on the built dev site (node ./dist/server/entry.mjs, workerd runner), 2026-10-03T18:13:16Z
+# node scripts/send-vectors.mjs http://127.0.0.1:4322  (EmDash 1.1.0, workerd 2026-10-02)
+sig-bytes valid                              200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig-bytes one-byte-changed                   200  expect ok=false, same bytes       got ok=false alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig-bytes non-ascii-trailing-newline         200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=40 headers=x-xmr-sig,x-xmr-ts
+sig-bytes crlf-and-tab                       200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=18 headers=x-xmr-sig,x-xmr-ts
+sig-bytes leading-bom                        200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=77 headers=x-xmr-sig,x-xmr-ts
+sig-bytes invalid-utf8                       200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=9 headers=x-xmr-sig,x-xmr-ts
+sig valid                                    200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig one-byte-changed                         200  expect ok=false, same bytes       got ok=false alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig non-ascii-trailing-newline               200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=40 headers=x-xmr-sig,x-xmr-ts
+sig crlf-and-tab                             200  expect ok=true, same bytes        got ok=true alg=Ed25519 attempts=0 bytes=18 headers=x-xmr-sig,x-xmr-ts
+sig leading-bom                              200  expect ok=false (BOM stripped)    got ok=false alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig invalid-utf8                             400  expect 400 INVALID_PLUGIN_REQUEST got {"code":"INVALID_PLUGIN_REQUEST","message":"Plugin route request body is not valid UTF-8"}
+sig mixed-case headers                       200  expect ok=true, lowercased        got ok=true alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig undeclared headers                       200  expect only x-xmr-sig,x-xmr-ts    got ok=true alg=Ed25519 attempts=0 bytes=74 headers=x-xmr-sig,x-xmr-ts
+sig invalid bearer token                     401  expect 401 INVALID_TOKEN          got {"code":"INVALID_TOKEN","message":"Invalid or expired token"}
+sig cross-origin Origin header               403  expect 403 CSRF_REJECTED          got {"code":"CSRF_REJECTED","message":"Cross-origin request blocked"}
+ALL AS EXPECTED
