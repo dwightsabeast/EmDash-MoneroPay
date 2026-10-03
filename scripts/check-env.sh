@@ -47,7 +47,35 @@ site="$HOME/sites/xmr-dev-site"
 if [ -d "$site" ]; then
   ok "$site exists"
   [ -x "$site/node_modules/.bin/workerd" ] && ok "workerd $("$site/node_modules/.bin/workerd" --version 2>/dev/null)" || fail "workerd not installed in the dev site"
-  grep -q 'sandbox-workerd/sandbox' "$site"/astro.config.* 2>/dev/null && ok "sandboxRunner configured" || warn "sandboxRunner not found in astro.config"
+  # sandboxRunner must sit directly inside emdash({...}). A grep or an indentation check is fooled
+  # when it is nested in another call (it once sat inside local({...})), so count bracket depth from
+  # just after "emdash({" (depth 1), ignoring quoted strings and // comments.
+  # ASTRO_CONFIG overrides the file, for testing this check.
+  cfg="${ASTRO_CONFIG:-$site/astro.config.mjs}"
+  depth=$(awk '
+    BEGIN { started = 0; depth = 0; q = ""; found = "none" }
+    {
+      line = $0; i = 1
+      if (!started) {
+        p = index(line, "emdash({"); if (p == 0) next
+        started = 1; depth = 1; i = p + length("emdash({")
+      }
+      if (q == "" && found == "none" && substr(line, i) ~ /^[ \t]*sandboxRunner[ \t]*:/) found = depth
+      for (n = length(line); i <= n; i++) {
+        c = substr(line, i, 1)
+        if (q != "") { if (c == "\\") i++; else if (c == q) q = ""; continue }
+        if (c == "/" && substr(line, i + 1, 1) == "/") break
+        if (c == "\"" || c == "'\''" || c == "`") q = c
+        else if (c == "(" || c == "{" || c == "[") depth++
+        else if (c == ")" || c == "}" || c == "]") depth--
+      }
+    }
+    END { print found }' "$cfg" 2>/dev/null)
+  case "$depth" in
+    1)        ok "sandboxRunner configured directly inside emdash({...}) in $cfg" ;;
+    none|"")  warn "sandboxRunner not found inside emdash({...}) in $cfg" ;;
+    *)        warn "sandboxRunner found at depth $depth, not directly inside emdash({...}) in $cfg (nested in another call?)" ;;
+  esac
   # "localhost", not 127.0.0.1: astro dev may listen on the IPv6 loopback (::1) only.
   curl -s -o /dev/null --max-time 5 -w '%{http_code}' http://localhost:4321/ | grep -qE '^(200|30[0-9])$' \
     && ok "dev site answering on localhost:4321" || warn "dev site not answering on localhost:4321 (is it running? tmux ls)"
