@@ -120,6 +120,21 @@ const plugin: SandboxedPlugin = {
 	routes: {
 		// Config-managed plugins get neither plugin:install nor plugin:activate at startup (EmDash 1.1.0),
 		// so the spike can also schedule on request. Idempotent: schedule() upserts by name.
+		// Q2 and Q5: what reaches a public route through each path, and what the plugin learns about the client.
+		echo: pluginRoute({
+			public: true,
+			methods: ["GET", "POST"],
+			request: {
+				body: "none",
+				headers: ["x-forwarded-for", "x-real-ip", "cf-connecting-ip", "cf-ipcountry", "cf-ray", "user-agent", "origin", "x-forwarded-proto"],
+			},
+			handler: async (routeCtx) => ({
+				method: routeCtx.request.method,
+				url: routeCtx.request.url,
+				requestMeta: routeCtx.requestMeta ?? null,
+				headers: routeCtx.request.headers,
+			}),
+		}),
 		"cron-schedule": pluginRoute({
 			public: true,
 			methods: ["POST"],
