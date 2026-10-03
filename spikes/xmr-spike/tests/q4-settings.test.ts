@@ -30,6 +30,20 @@ it("without EMDASH_ENCRYPTION_KEY, an update with a secret field is rejected who
 
 const DUMMY = "spike-dummy-secret-not-real";
 
+it("without EMDASH_ENCRYPTION_KEY, an update with only a plain field succeeds", async ({ task }) => {
+	delete process.env.EMDASH_ENCRYPTION_KEY;
+	host = await createPluginRuntimeTestHost();
+	const update = await host.actions.plugin.updateSettings({ spikeNote: "plain note" });
+	const rawNote = await host.inspect.settings.raw("spikeNote");
+	const res = await host.actions.routes.request("settings-probe", { method: "GET" });
+	const probe = ((await res.json()) as { data: Record<string, unknown> }).data;
+	Object.assign(task.meta, { update: JSON.parse(JSON.stringify(update ?? null)), rawNote, probe });
+	// Only secret fields need the key: a plain-only update succeeds and is stored as plain text.
+	expect(update).toMatchObject({ success: true, data: { values: { spikeNote: "plain note" } } });
+	expect(rawNote).toBe("plain note");
+	expect(probe).toMatchObject({ noteViaSettings: { type: "string", length: 10 }, noteViaKv: { type: "string", length: 10 } });
+});
+
 it("with EMDASH_ENCRYPTION_KEY, secret settings are stored encrypted and read back as plaintext through ctx.settings", async ({ task }) => {
 	process.env.EMDASH_ENCRYPTION_KEY = throwawayEncryptionKey();
 	host = await createPluginRuntimeTestHost();
