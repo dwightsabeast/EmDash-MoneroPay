@@ -1,0 +1,54 @@
+{
+	"source": "RFC 8032 section 7.1 TEST 1",
+	"publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+	"cases": [
+		{
+			"name": "valid",
+			"note": "plain ASCII JSON",
+			"ts": "1790000000",
+			"sig": "9uyVKnZS87hHGQXT9LTxbE+IdyLnqeqshXJHSuQJLaKKc/LYoAcnvXc2G/v+IuGGTah6uZ7rtoC5n8mnNW2EDA==",
+			"bodyHex": "7b2276223a312c22736571223a313739303030303030303030302c22686569676874223a333031323334352c22616464726573736573223a5b5d2c22736e617073686f7473223a5b5d7d",
+			"expectOk": true
+		},
+		{
+			"name": "one-byte-changed",
+			"note": "signed the valid body, then changed one digit of height",
+			"ts": "1790000000",
+			"sig": "9uyVKnZS87hHGQXT9LTxbE+IdyLnqeqshXJHSuQJLaKKc/LYoAcnvXc2G/v+IuGGTah6uZ7rtoC5n8mnNW2EDA==",
+			"bodyHex": "7b2276223a312c22736571223a313739303030303030303030302c22686569676874223a343031323334352c22616464726573736573223a5b5d2c22736e617073686f7473223a5b5d7d",
+			"expectOk": false
+		},
+		{
+			"name": "non-ascii-trailing-newline",
+			"note": "multi-byte UTF-8 and a trailing newline must survive byte for byte",
+			"ts": "1790000000",
+			"sig": "80JuFwFV791E3K2Zm0IsqVIDMiya4GHBt76wLxCq1OG48uc9bt41sFj7ajLn93yrvEq2yt/yFAEpdkhrqMPcBA==",
+			"bodyHex": "7b226e6f7465223a22636166c3a920f09f8db020c39c6ec3af63c3b664c3a9222c2276223a317d0a",
+			"expectOk": true
+		},
+		{
+			"name": "crlf-and-tab",
+			"note": "CRLF and tab must not be normalized",
+			"ts": "1790000000",
+			"sig": "26egYNJ9THNFxvq8O+ecFMxMBAGu242AwNhLYl3/m1lgFlBMK0jIWKi4xvBhZu8qR88dZJcSE9GLo1XBcYNdBw==",
+			"bodyHex": "7b2261223a312c0d0a092262223a327d0d0a",
+			"expectOk": true
+		},
+		{
+			"name": "leading-bom",
+			"note": "UTF-8 BOM first: a text decoder may strip it, changing the bytes",
+			"ts": "1790000000",
+			"sig": "bBVxvRR3WzikkWIv1aGrOqfaAxhMYd0zh0ZAKXzpf1jDu0t+M+Oqik8mxCvRcR3yEKrz1C8mxT1uP0sfZxcRCA==",
+			"bodyHex": "efbbbf7b2276223a312c22736571223a313739303030303030303030302c22686569676874223a333031323334352c22616464726573736573223a5b5d2c22736e617073686f7473223a5b5d7d",
+			"expectOk": true
+		},
+		{
+			"name": "invalid-utf8",
+			"note": "invalid UTF-8 byte: a text decoder replaces it with U+FFFD, changing the bytes",
+			"ts": "1790000000",
+			"sig": "MK4ObPpgeS4qjIx0O76kE8NIdre9H5DQmW5Vlujs2fuT5JVJ9mF4LZ2Jaog1f7nZ+lxvOh07fYklQKhnmLfiDg==",
+			"bodyHex": "7b2278223a22ff227d",
+			"expectOk": true
+		}
+	]
+}
