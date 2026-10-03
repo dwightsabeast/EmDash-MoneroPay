@@ -1,7 +1,9 @@
 import { type PluginContext, type SandboxedPlugin, pluginRoute } from "emdash/plugin";
 
 import type { InvoiceEvent } from "./core/invoice";
+import { handleCheckout } from "./checkout";
 import { ensureCron, purgeBatch } from "./housekeeping";
+import { handleStatus } from "./status";
 import { CtxSyncStore, KV, deletePluginData } from "./store";
 import { handleSync } from "./sync/handle";
 import { MAX_BODY_BYTES } from "./sync/protocol";
@@ -56,6 +58,22 @@ const plugin: SandboxedPlugin = {
 				}
 				return out.response;
 			},
+		}),
+		checkout: pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: { body: "json", maxBytes: 4096 },
+			handler: async (routeCtx, ctx) => {
+				const meta = routeCtx.requestMeta as { ip?: string | null } | undefined;
+				return handleCheckout(ctx, routeCtx.input, typeof meta?.ip === "string" ? meta.ip : null, Date.now());
+			},
+		}),
+		status: pluginRoute({
+			public: true,
+			methods: ["GET"],
+			cacheControl: "private, no-store",
+			request: { body: "none" },
+			handler: async (routeCtx, ctx) => handleStatus(ctx, routeCtx.input, Date.now()),
 		}),
 		// The private admin route serves the admin page (/payments) and the xmr-status widget.
 		// Session 2e adds settings and Connect wallet host; phase 04 builds the full page.

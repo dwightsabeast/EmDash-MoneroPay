@@ -24,9 +24,14 @@ it("the built manifest matches the spec's trust contract exactly", async () => {
 		pages: [{ path: "/payments", label: "Monero payments" }],
 		widgets: [{ id: "xmr-status", title: "Monero payments", size: "half" }],
 	});
-	// Only routes from the frozen list (CLAUDE.md): checkout and status come in session 2d-2.
-	const routes = (m.routes ?? []).map((r: any) => ({ name: r.name ?? r, public: r.public ?? false })).sort((a: any, b: any) => a.name.localeCompare(b.name));
-	expect(routes).toEqual([{ name: "admin", public: false }, { name: "bridge/sync", public: true }]);
+	// Exactly the frozen route list (CLAUDE.md, "Plugin trust contract").
+	const routes = (m.routes ?? []).map((r: any) => ({ name: r.name ?? r, public: r.public ?? false, methods: r.methods })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+	expect(routes).toEqual([
+		{ name: "admin", public: false, methods: ["POST"] },
+		{ name: "bridge/sync", public: true, methods: ["POST"] },
+		{ name: "checkout", public: true, methods: ["POST"] },
+		{ name: "status", public: true, methods: ["GET"] },
+	]);
 	const sync = (m.routes ?? []).find((r: any) => r.name === "bridge/sync");
 	expect(sync).toMatchObject({ methods: ["POST"], request: { body: "bytes", headers: ["x-xmr-ts", "x-xmr-sig"], maxBytes: 262144 } });
 });
