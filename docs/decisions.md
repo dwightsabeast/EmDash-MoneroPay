@@ -54,3 +54,4 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | Release signature scheme, and how the bridge checks Monero's GPG signature (library or system tool) | Phase 03 plan |
 | npm package name for the theme components (needs an npm account to publish) | Phase 06 |
 | Price API pair after checking terms and rate limits | Phase 02 or 09 |
+| Hosted bridge service: optional, paid, run by Wyatt, never the default; no keys in plaintext; one bridge per shop or a shared one | After phase 05 (current phases unchanged) |
