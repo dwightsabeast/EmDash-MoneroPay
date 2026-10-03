@@ -83,5 +83,11 @@ else
   fail "$site missing"
 fi
 
+echo "Memory"
+# The box has 8 GB of RAM at most and once ran out (see CLAUDE.md, "Memory"). "available" is what a new process can get.
+read -r total avail swap_free <<<"$(free -m | awk '/^Mem:/ {t=$2; a=$7} /^Swap:/ {s=$4} END {print t, a, s}')"
+if [ "${avail:-0}" -ge 1024 ]; then ok "${avail} MB of ${total} MB RAM available (swap free: ${swap_free} MB)"
+else warn "only ${avail} MB of ${total} MB RAM available (swap free: ${swap_free} MB): stop the dev site or another heavy process first"; fi
+
 echo "Disk"
 df -h "$HOME" | awk 'NR==2 {print "  " $4 " free of " $2 " on " $6}'

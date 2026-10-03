@@ -127,6 +127,19 @@ scripts/                dev helpers (no secrets)
 
 Each JavaScript package (`plugin/`, `theme/`, `contract/`) is a standalone pnpm project; there is no root workspace.
 
+## Memory: this box has limited RAM
+
+The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, and **8 GB is the maximum: it cannot be raised again.** It ran out of memory during phase 01 and had to be recovered by hand. `monerod` (about 1.4 GB) and `astro dev` (about 1.4 GB) alone take a third of it.
+
+- **One heavy process at a time:** installs, test suites, builds, dev servers, `monero-wallet-rpc`, regtest `monerod`. Never chain several in one command; run one, check the result, then the next.
+- **Check `free -m` before starting one.** If the `available` column is under 1.5 GB, stop something first. `scripts/check-env.sh` warns under 1 GB.
+- **Stop the dev site and the built copy when a step doesn't need them.**
+  - Dev site started by Claude: astro detects an AI agent and runs `astro dev` in the background, outside tmux, so `tmux kill-session -t site` does **not** stop it. Use `cd ~/sites/xmr-dev-site && npx astro dev stop` (also `npx astro dev status` and `npx astro dev logs`).
+  - Dev site started by Wyatt from his terminal (foreground in tmux): `tmux kill-session -t site`.
+  - Built copy: `tmux kill-session -t built`.
+  - Either way, confirm with `ss -ltn | grep -E ':432[12]'` that the port is free.
+- **Run vitest with a single worker:** `maxWorkers: 1` in each package's `vitest.config.ts` (or `--maxWorkers=1` on the command line).
+
 ## Commands
 
 | Task | Command |
@@ -135,7 +148,7 @@ Each JavaScript package (`plugin/`, `theme/`, `contract/`) is a standalone pnpm 
 | Plugin tests | `cd plugin && pnpm test` |
 | Plugin checks | `cd plugin && pnpm run typecheck && pnpm exec emdash-plugin validate && pnpm exec emdash-plugin bundle --validate-only` |
 | Bridge tests | `cd bridge && go vet ./... && go test ./...` |
-| Dev site | `~/sites/xmr-dev-site`, running in tmux session `site` on port 4321, answering on `localhost` (IPv6 `::1`), not `127.0.0.1`. Start: `tmux new -d -s site -c ~/sites/xmr-dev-site 'npm run dev; exec bash'`. Restart: `tmux kill-session -t site`, then start. Wyatt views it through an SSH tunnel. |
+| Dev site | `~/sites/xmr-dev-site` on port 4321, answering on `localhost` (IPv6 `::1`), not `127.0.0.1`. Start: `tmux new -d -s site -c ~/sites/xmr-dev-site 'npm run dev; exec bash'`. When Claude starts it, astro moves itself to the background (outside tmux): stop it with `npx astro dev stop` in the site folder, check it with `npx astro dev status`, read its log with `npx astro dev logs`. When Wyatt starts it, it stays in tmux: stop it with `tmux kill-session -t site`. Wyatt views it through an SSH tunnel. Stop it when a step doesn't need it (see "Memory"). |
 | Built copy of the dev site | `npm run build` in the dev site, then tmux session `built` on port 4322 (workerd runner; the only thing the public test hostname may point at) |
 | Stagenet node | `systemctl is-active monerod-stagenet`; JSON-RPC at `http://127.0.0.1:38081/json_rpc` |
 | Shop wallet details for a program | `scripts/with-shop-env.sh <command>` |
