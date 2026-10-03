@@ -1,0 +1,80 @@
+// Writes sync-signature.json: the shared test vectors for bridge/sync signatures (plugin tests now, Go bridge in phase 03).
+// Keys: the published RFC 8032 section 7.1 test keys (TEST 1 is "the bridge", TEST 2 is "a wrong key"). Never a key of our own.
+// Message: x-xmr-ts + "\n" + the exact body bytes. Signature: base64 (standard, padded) Ed25519.
+// Usage: node contract/test-vectors/make-sync-signature.mjs   (Node 22+, no dependencies)
+import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import { writeFileSync } from "node:fs";
+
+const KEYS = {
+	test1: {
+		secret: "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+		public: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+		rfcMessage: "",
+		rfcSignature: "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+	},
+	test2: {
+		secret: "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+		public: "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+		rfcMessage: "72",
+		rfcSignature: "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+	},
+};
+
+const keys = {};
+for (const [name, k] of Object.entries(KEYS)) {
+	const priv = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(k.secret, "hex")]), format: "der", type: "pkcs8" });
+	const pub = createPublicKey(priv);
+	if (pub.export({ format: "der", type: "spki" }).subarray(-32).toString("hex") !== k.public) throw new Error(`${name}: public key mismatch`);
+	if (sign(null, Buffer.from(k.rfcMessage, "hex"), priv).toString("hex") !== k.rfcSignature) throw new Error(`${name}: RFC signature mismatch`);
+	keys[name] = { priv, pub, publicKeyBase64: Buffer.from(k.public, "hex").toString("base64") };
+}
+
+const message = (ts, body) => Buffer.concat([Buffer.from(`${ts}\n`, "utf8"), body]);
+const b64 = (buf) => Buffer.from(buf).toString("base64");
+
+const TS = "1790000000";
+const json = (o) => Buffer.from(JSON.stringify(o), "utf8");
+const base = { v: 1, seq: 1790000000000, height: 3012345, addresses: [], snapshots: [] };
+const withTransfer = {
+	...base,
+	addresses: [{ index: 17, address: "7".repeat(95) }],
+	snapshots: [{ index: 12, transfers: [{ txid: "ab".repeat(32), amount: "123456789012", confirmations: 3, height: 3012343, timestamp: 1790000000, doubleSpendSeen: false, unlockTime: "0" }] }],
+};
+
+const cases = [];
+function add(name, note, body, { signer = "test1", signedTs = TS, sentBody = body, expected }) {
+	const signature = sign(null, message(signedTs, body), keys[signer].priv);
+	const verifies = verify(null, message(TS, sentBody), keys.test1.pub, signature);
+	const sigOk = expected !== "BAD_SIGNATURE";
+	if (verifies !== sigOk) throw new Error(`${name}: Node's verify disagrees with the expected outcome`);
+	cases.push({
+		name, note, ts: TS, publicKey: keys.test1.publicKeyBase64, signedWith: signer,
+		body: b64(sentBody), message: b64(message(TS, sentBody)), signature: b64(signature), expected,
+	});
+}
+
+add("ascii-empty-sync", "a heartbeat with no addresses or snapshots", json(base), { expected: "ok" });
+add("ascii-with-transfer", "pool top-up and one snapshot", json(withTransfer), { expected: "ok" });
+{
+	const body = json(withTransfer);
+	const tampered = Buffer.from(body);
+	tampered[tampered.indexOf("123456789012")] = "9".charCodeAt(0); // amount 123456789012 -> 923456789012
+	add("one-byte-changed", "signed the body above, then one digit of the amount was changed in transit", body, { sentBody: tampered, expected: "BAD_SIGNATURE" });
+}
+add("non-ascii-trailing-newline", "multi-byte UTF-8 and a trailing newline are signed byte for byte", Buffer.from(`${JSON.stringify({ ...base, note: "café 🍰 Ünïcödé" })}\n`, "utf8"), { expected: "ok" });
+add("crlf-and-tab", "CRLF and tab are not normalized", Buffer.from(`{"v":1,\r\n\t"seq":1790000000000,"height":3012345,"addresses":[],"snapshots":[]}\r\n`, "utf8"), { expected: "ok" });
+add("leading-bom", "valid signature, but the plugin rejects a leading byte-order mark when decoding (the bridge never sends one)", Buffer.concat([Buffer.from("efbbbf", "hex"), json(base)]), { expected: "INVALID_ENCODING" });
+add("invalid-utf8", "valid signature, but the bytes are not valid UTF-8", Buffer.concat([Buffer.from('{"v":1,"x":"', "utf8"), Buffer.from("ff", "hex"), Buffer.from('","seq":1790000000000,"height":3012345,"addresses":[],"snapshots":[]}', "utf8")]), { expected: "INVALID_ENCODING" });
+add("wrong-key", "signed with RFC 8032 TEST 2, verified against TEST 1", json(base), { signer: "test2", expected: "BAD_SIGNATURE" });
+add("other-timestamp", "signed over a different x-xmr-ts than the one sent", json(base), { signedTs: "1790000001", expected: "BAD_SIGNATURE" });
+
+const out = {
+	description: "bridge/sync signature test vectors (docs/spec.md, API contracts). Generated by make-sync-signature.mjs; do not edit by hand.",
+	messageFormat: "UTF-8 bytes of x-xmr-ts, then 0x0a, then the exact body bytes",
+	encoding: "body, message, signature and publicKey are standard base64 with padding",
+	expectedValues: { ok: "verifies and decodes", BAD_SIGNATURE: "signature does not verify", INVALID_ENCODING: "verifies, then fails strict UTF-8 decoding (invalid UTF-8 or a leading BOM)" },
+	keys: { test1: { publicKey: keys.test1.publicKeyBase64, source: "RFC 8032 section 7.1 TEST 1" }, test2: { publicKey: keys.test2.publicKeyBase64, source: "RFC 8032 section 7.1 TEST 2" } },
+	cases,
+};
+writeFileSync(new URL("./sync-signature.json", import.meta.url), `${JSON.stringify(out, null, "\t")}\n`);
+console.log(`wrote ${cases.length} cases; both RFC 8032 keys and their published signatures checked`);
