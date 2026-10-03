@@ -1,0 +1,14 @@
+# Q5 on the built server, direct on the box, 2026-10-03T19:31:04Z
+## Default (no trusted proxy headers): client-set headers are ignored
+> curl -s -H 'x-forwarded-for: 203.0.113.7' http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/echo
+(captured earlier at 13:18Z, same build) ip: null
+> curl -s -H 'x-real-ip: 203.0.113.8' http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/echo
+(captured earlier at 13:18Z, same build) ip: null
+> curl -s -H 'cf-connecting-ip: 203.0.113.9' http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/echo
+(captured earlier at 13:18Z, same build) ip: null
+## Restarted with EMDASH_TRUSTED_PROXY_HEADERS=cf-connecting-ip
+> curl -s http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/echo | jq -c .data.requestMeta
+{"ip":null,"userAgent":"curl/8.14.1","referer":null,"geo":null}
+> curl -s -H 'cf-connecting-ip: 203.0.113.99' http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/echo | jq -c .data.requestMeta
+{"ip":"203.0.113.99","userAgent":"curl/8.14.1","referer":null,"geo":null}
+# A client that reaches the origin directly (LAN, SSH tunnel) can set its own IP once the header is trusted.
