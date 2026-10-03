@@ -1,0 +1,35 @@
+packages:
+  - "."
+
+# Dependency guardrails (CLAUDE.md, "Dependency tiers").
+# Install scripts are blocked except for this allowlist; an unapproved build fails the install.
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+# Only install versions published at least 7 days ago (pnpm counts minutes: 7 × 24 × 60).
+# Setting it explicitly makes minimumReleaseAgeStrict true, so a too-new version fails the install.
+minimumReleaseAge: 10080
+
+# Exceptions (approved by Wyatt for plugin/ on 2026-10-03, same set as spikes/xmr-spike/): exact versions only, first-party EmDash, all built by github.com/emdash-cms/emdash
+# .github/workflows/release.yml with SLSA v1 provenance and verified registry signatures (checked 2026-10-03).
+# emdash, blocks and plugin-types match ~/sites/xmr-dev-site/package-lock.json; plugin-test, plugin-cli and
+# cloudflare are not in the site and were accepted because they come from the same release commit (913cb1bb9b7f)
+# as the site's emdash@1.1.0. admin, auth, gutenberg-to-portable-text and the three registry-* packages are
+# transitive and match the site's lockfile exactly.
+# REMOVE ALL OF THESE ON 2026-10-08, when every one passes the 7-day rule by itself.
+minimumReleaseAgeExclude:
+  - "emdash@1.1.0"                                  # remove 2026-10-08
+  - "@emdash-cms/blocks@1.1.0"                      # remove 2026-10-08
+  - "@emdash-cms/plugin-types@0.5.0"                # remove 2026-10-08
+  - "@emdash-cms/plugin-test@0.2.7"                 # remove 2026-10-08
+  - "@emdash-cms/plugin-cli@0.13.2"                 # remove 2026-10-08
+  - "@emdash-cms/cloudflare@1.1.0"                  # remove 2026-10-08
+  - "@emdash-cms/admin@1.1.0"                       # remove 2026-10-08
+  - "@emdash-cms/auth@1.1.0"                        # remove 2026-10-08
+  - "@emdash-cms/gutenberg-to-portable-text@1.1.0"  # remove 2026-10-08
+  - "@emdash-cms/registry-client@0.7.0"             # remove 2026-10-08
+  - "@emdash-cms/registry-lexicons@0.7.0"           # remove 2026-10-08
+  - "@emdash-cms/registry-verification@0.3.3"       # remove 2026-10-08

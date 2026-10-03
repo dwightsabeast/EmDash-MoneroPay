@@ -74,3 +74,12 @@ Proposal: any one of the three pieces of evidence is enough, and the height test
 Effect on the admin budget: none (fewer false review items).
 Effect on the trust contract: none.
 Wyatt's decision (2026-10-03): accepted. Live spec revision 69 and `docs/spec.md` updated.
+
+## 6. The admin page path can't be `"/"`  (status: accepted, 2026-10-03)
+Found in: phase 02, session 2a (`pnpm test` in `plugin/`, which runs `emdash-plugin validate` first)
+Spec says: Plugin manifest: `"admin": { "pages": [{ "path": "/", "label": "Monero payments" }], ... }`.
+Evidence: `@emdash-cms/plugin-cli` 0.13.2 (manifest schema from `@emdash-cms/plugin-types` 0.5.0) rejects it: `admin.pages[0].path: admin page path must be at least 2 characters (leading slash + name)` and `admin page path must start with "/" and contain only letters, digits, "-", "_", "/"`.
+Proposal: `"path": "/payments"` (label unchanged, "Monero payments"). It is the plugin's only admin page, so the path shows only in the admin URL, where `/payments` reads naturally.
+Effect on the admin budget: none.
+Effect on the trust contract: the admin page declaration changes before the first release, so no installed user has consented to the old one.
+Wyatt's decision (2026-10-03): accepted, `"/payments"`. Wyatt updates the live spec and `docs/spec.md`; `plugin/emdash-plugin.jsonc` already uses it.

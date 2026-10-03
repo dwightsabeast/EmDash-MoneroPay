@@ -1,0 +1,30 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "xmr-pay",
+	"publisher": "did:plc:cmbxrwdt4hdl43g67bd6xegk",
+
+	"license": "MIT",
+	"author": { "name": "Wyatt Dilley" },
+	"security": { "url": "https://github.com/dwightsabeast/EmDash-MoneroPay/security/advisories/new" },
+	"description": "Accept Monero for products or tips. No keys in the plugin.",
+	"repo": "https://github.com/dwightsabeast/EmDash-MoneroPay",
+
+	"name": "Monero Payments",
+
+	// Trust contract (spec, "Plugin manifest", revision 69; CLAUDE.md, "Plugin trust contract (frozen)").
+	// Changing any of it needs a new version and Wyatt's approval; broadening it is a major version.
+	"capabilities": ["content:read", "network:request"],
+	"allowedHosts": ["api.coingecko.com", "api.kraken.com"],
+	"storage": {
+		"pool": { "indexes": ["status"], "uniqueIndexes": ["addrIndex"] },
+		"invoices": {
+			"indexes": ["status", "expiresAt", ["kind", "createdAt"]],
+			"uniqueIndexes": ["token", "subaddress"]
+		}
+	},
+	"admin": {
+		"pages": [{ "path": "/payments", "label": "Monero payments" }],
+		"widgets": [{ "id": "xmr-status", "title": "Monero payments", "size": "half" }]
+	}
+}
