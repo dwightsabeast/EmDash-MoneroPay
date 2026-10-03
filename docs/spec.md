@@ -148,7 +148,7 @@ The manifest declares two capabilities, two fixed hosts and two storage collecti
   "$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
   "slug": "xmr-pay",
   "publisher": "did:plc:<your-atmosphere-did>",
-  "license": "<SPDX id>",
+  "license": "MIT",
   "author": { "name": "<you>" },
   "security": { "email": "<security contact>" },
   "name": "Monero Payments",
