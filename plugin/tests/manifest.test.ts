@@ -24,9 +24,11 @@ it("the built manifest matches the spec's trust contract exactly", async () => {
 		pages: [{ path: "/payments", label: "Monero payments" }],
 		widgets: [{ id: "xmr-status", title: "Monero payments", size: "half" }],
 	});
-	// Session 2a has only the private admin route; 2c-2d add checkout, status and bridge/sync, nothing else.
-	const routes = (m.routes ?? []).map((r: any) => ({ name: r.name ?? r, public: r.public ?? false }));
-	expect(routes).toEqual([{ name: "admin", public: false }]);
+	// Only routes from the frozen list (CLAUDE.md): checkout and status come in session 2d-2.
+	const routes = (m.routes ?? []).map((r: any) => ({ name: r.name ?? r, public: r.public ?? false })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+	expect(routes).toEqual([{ name: "admin", public: false }, { name: "bridge/sync", public: true }]);
+	const sync = (m.routes ?? []).find((r: any) => r.name === "bridge/sync");
+	expect(sync).toMatchObject({ methods: ["POST"], request: { body: "bytes", headers: ["x-xmr-ts", "x-xmr-sig"], maxBytes: 262144 } });
 });
 
 it("the admin page and the xmr-status widget load through the host's admin path", async () => {
