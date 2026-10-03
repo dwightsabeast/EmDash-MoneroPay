@@ -1,0 +1,55 @@
+# Decisions
+
+Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The reasoning for each is in `docs/spec.md`. Don't reopen these unless Wyatt asks; if one turns out to be impossible, write it up in `docs/spec-changes.md`.
+
+## Design
+
+| Decision | Short reason |
+| --- | --- |
+| The bridge pushes in; the plugin never calls the wallet | Keeps the plugin's network grant to two fixed price hosts instead of unrestricted access |
+| No keys in the plugin; a view-only wallet sits on the bridge side | Plugin KV is not encrypted; a database leak must expose no wallet material |
+| Ed25519 public key in the plugin, not a shared secret | Nothing sensitive at rest. HMAC is a fallback only if the spike proves Ed25519 unavailable, and only with Wyatt's approval |
+| Pre-created address pool, one subaddress per invoice, never reused | Invoice creation needs no wallet call; each payment maps to one invoice |
+| Snapshots, not deltas | Retries, replays, reorgs and dropped transactions all resolve by overwriting |
+| The theme owns the public UI | Sandboxed plugins can't inject scripts or serve HTML |
+| Expire on evidence; judge lateness from wallet and chain data | A bridge outage must not turn on-time payments into late ones |
+| Confirmations locked at checkout; admins can raise, never lower | Settings changes must not move the target on open invoices |
+| Settled invoices stay watched until 10 confirmations deep | A reorg after settling must be seen; re-mined payments re-confirm quietly, vanished ones go to review |
+| Time-locked and double-spend-flagged transfers never count | Coins the shop can't spend are not payment |
+| Pairing with a one-time code | No required settings; rebuilding the wallet host is one button and one command |
+| A generic payment contract (create, get, five statuses, no webhooks, no shared secret) | xmr-pay should work with any EmDash store and be the pattern other payment methods copy |
+
+## Admin experience
+
+| Decision | Short reason |
+| --- | --- |
+| Admin simplicity is a requirement with a hard budget (under 15 minutes, no required settings, one command, no upkeep) | Wyatt: "If this is overly cumbersome to set up and maintain, nobody will want to continue using it." |
+| No Docker requirement | Most EmDash admins don't run Docker |
+| No monero-ts or other single-maintainer wallet library | Supply-chain and maintenance risk for money-handling code |
+| A small Go bridge that downloads, verifies and supervises Monero's official `monero-wallet-rpc` | The only code this project maintains is the bridge; the wallet work is Monero's own |
+| One pasted install command that sets up a systemd service | The Cloudflare Tunnel connector pattern: copy, paste, done |
+| A dedicated shop wallet | A view key can't be changed; a shop-only wallet limits any leak to shop income |
+| The wallet host must be a separate machine from the site; no in-plugin "quick setup" mode | Keeps the shop's payment history off the site's server. The installer refuses to run beside a site, except with a stagenet-only dev flag |
+| Own `monerod` recommended; a remote node allowed | Own node is the most private and secure; remote nodes get a block-hash cross-check |
+| Linux only at launch | One platform to test and support; macOS and Windows later |
+
+## Project and process
+
+| Decision | Short reason |
+| --- | --- |
+| Build and test fully before publishing; the Atmosphere account comes at release | Config-managed installs (`sandboxed: [...]`) work without the registry |
+| Develop on a separate Debian 12 container | Wyatt's live EmDash site at wyattdilley.com must stay untouched |
+| Host the install script on a subdomain of wyattdilley.com (for example `get.wyattdilley.com`) | Without touching the live site |
+| The release signing key is generated offline by Wyatt and never handled by Claude | Whoever holds it can push code to every wallet host |
+| Build with Claude Code, one phase per session, plan first, tests first | Small reviewable steps |
+| License: MIT, copyright Wyatt Dilley (phase 00) | Matches EmDash and DashCommerce; easiest for others to adopt |
+| Repository public from phase 00 | Automated EmDash releases need a public repo; nothing private is committed |
+
+## Still to decide (Wyatt)
+
+| Question | When |
+| --- | --- |
+| Whether to use regtest for fast local chain tests | After the spike (phase 01) |
+| Release signature scheme, and how the bridge checks Monero's GPG signature (library or system tool) | Phase 03 plan |
+| npm package name for the theme components (needs an npm account to publish) | Phase 06 |
+| Price API pair after checking terms and rate limits | Phase 02 or 09 |
