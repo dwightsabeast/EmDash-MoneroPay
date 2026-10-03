@@ -1,0 +1,16 @@
+# Q5 from Wyatt's PC (round 2), built copy restarted with EMDASH_TRUSTED_PROXY_HEADERS=cf-connecting-ip. REDACTED copy: client IP and country replaced.
+# q2.ps1 round2, 2026-10-03T13:44:07.5771749-06:00, curl 8.13.0 (Windows) libcurl/8.13.0 Schannel zlib/1.3.1 WinIDN
+
+### B3 hostname, echo
+> curl.exe -sS https://dev.wyattdilley.com/_emdash/api/plugins/xmr-spike/echo -w \nHTTP %{http_code}\n
+{"success":true,"data":{"method":"GET","url":"http://dev.wyattdilley.com/_emdash/api/plugins/xmr-spike/echo","requestMeta":{"ip":"<client-ip>","userAgent":"curl/8.13.0","referer":null,"geo":null},"headers":{"cf-connecting-ip":"<client-ip>","cf-ipcountry":"<country>","cf-ray":"a44e7096dff469b9-DFW","user-agent":"curl/8.13.0","x-forwarded-for":"<client-ip>","x-forwarded-proto":"https"}}}
+HTTP 200
+
+
+### B4 hostname, echo with a client-set cf-connecting-ip (does Cloudflare overwrite it?)
+> curl.exe -sS -H cf-connecting-ip: 203.0.113.99 -H x-forwarded-for: 203.0.113.98 https://dev.wyattdilley.com/_emdash/api/plugins/xmr-spike/echo -w \nHTTP %{http_code}\n
+error code: 1000
+
+HTTP 403
+
+
