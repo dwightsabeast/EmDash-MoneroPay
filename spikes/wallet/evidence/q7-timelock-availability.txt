@@ -1,0 +1,11 @@
+# Q7: can a buyer still send a time-locked payment? Checked 2026-10-03T19:50:27Z, Monero v0.18.5.1-release
+# Strings in the official binaries (python3 regex over /opt/monero/*):
+monero-wallet-cli: 'locked_transfer' occurrences: 0; contains 'transaction cannot have non-zero unlock time' (error::nonzero_unlock_time)
+monero-wallet-rpc: contains 'Transaction cannot have non-zero unlock time' (error::nonzero_unlock_time)
+monerod: contains 'tx unlock time is not zero', 'transaction unlock time is not zero: ', 'non-zero unlock time'
+# Source: monero-project/monero PR #9151 'Enforce Tx unlock_time is Zero by Relay Rule' (merged 2024-05-21, release PR #9311):
+#   relay rule, not consensus ('nodes ... will quietly not accept those transactions'); removes locked_transfer and locked_sweep_all
+#   from the CLI, unlock_time from wallet2 transfer methods; wallet-rpc transfer returns an error for nonzero unlock_time.
+#   A block containing such a transaction is still valid (a miner can include one).
+# View-only wallet: created through scripts/with-shop-env.sh; address matches SHOP_ADDRESS: true;
+#   view key present in wallet-rpc.log: false; in the walletrpc tmux pane: false; spend key: none (view-only).
