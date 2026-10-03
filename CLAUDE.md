@@ -27,7 +27,7 @@ The owner is Wyatt. He makes every design decision and handles every account, ke
 5. Stay inside the phase. If you find work for a later phase, note it in `docs/progress.md` instead of doing it.
 6. End every session by appending to `docs/progress.md`: date, phase, what was done, test results, open issues, the exact next step.
 7. Wyatt is a test engineer. Show test plans and results plainly: what was run, what passed, what was not covered.
-8. Some steps happen where you can't go: anything needing `sudo` (you have no terminal for its password), the wallet-host test container, Wyatt's PC (his SSH tunnel), and the public test hostname. For those, write the exact commands (PowerShell `curl.exe` lines for his PC), and Wyatt runs them in another tmux window or on his machine and pastes back the output.
+8. Some steps happen where you can't go: anything needing `sudo` (you have no terminal for its password), the wallet-host test container, Wyatt's PC (his SSH tunnel), and the public test hostname. Wyatt can't paste output back into Claude Code, so hand him a file and get a file back, as described in "Working with Wyatt's PC" below. Never a list of blocks to copy.
 9. Folders scaffolded by EmDash tools (for example `plugin/AGENTS.md` and its `.claude/` links) carry EmDash's own agent guidance. Use it for EmDash API details; where it conflicts with this file, this file wins.
 
 ## Stop and ask Wyatt before you
@@ -126,6 +126,44 @@ scripts/                dev helpers (no secrets)
 ```
 
 Each JavaScript package (`plugin/`, `theme/`, `contract/`) is a standalone pnpm project; there is no root workspace.
+
+## Working with Wyatt's PC
+
+Wyatt works from Windows over SSH and can't paste into Claude Code, in either direction. Files go back and forth with `scp` through `~/xmr-pay-dev-data/` (outside the repo, because outputs can hold IP addresses and other personal details).
+
+**One-time setup on the PC** (any machine, any address). Add an SSH alias so every command below is the same everywhere. In PowerShell, open the SSH config:
+
+```powershell
+notepad "$env:USERPROFILE\.ssh\config"
+```
+
+Add these three lines, put the dev box's address in place of `REPLACE_WITH_DEV_BOX_ADDRESS` (Wyatt's is in `docs/dev-environment.md`), and save:
+
+```text
+Host xmr-dev
+    HostName REPLACE_WITH_DEV_BOX_ADDRESS
+    User dev
+```
+
+Check it with `ssh xmr-dev whoami`, which should print `dev`. Until the alias is set up, every command below fails with "Could not resolve hostname xmr-dev", so a missing step can't send anything to the wrong machine.
+
+**For a step on Wyatt's PC**, Claude writes one PowerShell script to `~/xmr-pay-dev-data/<name>.ps1` that writes its results to `<name>-output.txt` next to itself (see `q2.ps1` from phase 01), and gives Wyatt exactly these three commands:
+
+```powershell
+scp xmr-dev:xmr-pay-dev-data/<name>.ps1 .
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File .\<name>.ps1
+```
+```powershell
+scp .\<name>-output.txt xmr-dev:xmr-pay-dev-data/
+```
+
+Fill in `<name>` before handing the commands over. `-ExecutionPolicy Bypass` applies to that one run only (Windows blocks unsigned scripts by default). Claude then reads `~/xmr-pay-dev-data/<name>-output.txt`, and redacts IP addresses, locations, user names and tokens before any of it goes into the repo.
+
+**For a step on the dev box that needs Wyatt** (`sudo`, or anything in his own tmux window), give one command that saves its own output, for example `sudo systemctl status monerod-stagenet 2>&1 | tee ~/xmr-pay-dev-data/<name>-output.txt`, then read that file.
+
+**SSH tunnels** use the same alias: `ssh -N -L 4321:localhost:4321 xmr-dev` for the dev site (then http://localhost:4321 on the PC), and `ssh -N -L 4322:127.0.0.1:4322 xmr-dev` for the built copy. Leave the window open while it's needed.
 
 ## Memory: this box has limited RAM
 
