@@ -190,5 +190,7 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Built copy of the dev site | `npm run build` in the dev site, then tmux session `built` on port 4322 (workerd runner; the only thing the public test hostname may point at) |
 | Stagenet node | `systemctl is-active monerod-stagenet`; JSON-RPC at `http://127.0.0.1:38081/json_rpc` |
 | Shop wallet details for a program | `scripts/with-shop-env.sh <command>` |
+| Dev-site products (collection and three test products) | With the site stopped, in `~/sites/xmr-dev-site`: `npx emdash seed ../../xmr-pay/scripts/dev-products.seed.json --on-conflict skip` (`--validate` for a dry run). No login needed; safe to re-run |
+| Plugin build for the dev site | `cd plugin && pnpm run build` (the site imports `plugin/` through `npm install file:../../xmr-pay/plugin` and `sandboxed: [xmrPay]`) |
 
 Fill in or correct this table as phases add commands.

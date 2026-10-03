@@ -1,0 +1,28 @@
+{
+	"$schema": "https://emdashcms.com/seed.schema.json",
+	"version": "1",
+	"meta": {
+		"name": "xmr-pay dev products",
+		"description": "The products collection xmr-pay reads (a numeric price in the site currency) and three test products. Apply with: npx emdash seed <path to this file> --on-conflict skip, in the site folder, with the site stopped."
+	},
+	"collections": [
+		{
+			"slug": "products",
+			"label": "Products",
+			"labelSingular": "Product",
+			"urlPattern": "/products/{slug}",
+			"supports": ["drafts", "revisions"],
+			"fields": [
+				{ "slug": "title", "label": "Title", "type": "string", "required": true, "searchable": true },
+				{ "slug": "price", "label": "Price", "type": "number", "required": true }
+			]
+		}
+	],
+	"content": {
+		"products": [
+			{ "id": "test-sticker", "slug": "test-sticker", "status": "published", "data": { "title": "Test sticker", "price": 1 } },
+			{ "id": "test-ebook", "slug": "test-ebook", "status": "published", "data": { "title": "Test e-book", "price": 19.99 } },
+			{ "id": "test-course", "slug": "test-course", "status": "published", "data": { "title": "Test course", "price": 250 } }
+		]
+	}
+}
