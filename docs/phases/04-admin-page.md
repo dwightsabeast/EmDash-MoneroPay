@@ -30,7 +30,8 @@ Phase 04, admin page. Read docs/phases/04-admin-page.md and docs/progress.md, th
 **Rules**
 
 - No new settings beyond the spec's three. If a design need seems to call for one, stop and ask.
-- Every admin action is validated with a schema and re-checked against the invoice's current state (an invoice may have changed since the page loaded).
+- Every admin action is validated with hand-written checks (no schema library; `CLAUDE.md`, "Dependency tiers") and re-checked against the invoice's current state (an invoice may have changed since the page loaded).
+- Write blocks as plain JSON objects, with small local helper functions if they help readability; don't use `@emdash-cms/blocks`. The Block Kit playground is fine for checking layout, since nothing from it ships.
 - Stay inside Block Kit's limits (256 KiB, 2,000 nodes, 1,000 items per array): page the invoice table.
 - Buyer-supplied text (email, note, refund address) appears only as plain text.
 - The install URL is a constant in the plugin, still a placeholder until phase 09. Under the one command, show the spec's cautious path (`xmr-bridge install --site <url> --pair <code>`) with the same code; that's also what Wyatt uses with a locally built bridge during development. A sandboxed plugin can't read environment variables, so don't plan a separate "dev build" of the plugin.

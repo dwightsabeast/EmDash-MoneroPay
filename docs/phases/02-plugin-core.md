@@ -9,7 +9,7 @@
 
 - [ ] Phase 01 is done and you've accepted its findings.
 - [ ] Publisher: either keep a placeholder until release, or create your Atmosphere (Bluesky) account now and give Claude its DID. A DID is public; nothing secret is shared.
-- [ ] Expect questions on dependencies (for example `zod` or `zod/mini`, `@emdash-cms/blocks`).
+- [ ] No dependency questions about the plugin's code: under the dependency tiers (`CLAUDE.md`), the bundle carries no third-party runtime code, so validation is hand-written and Block Kit is plain JSON (no `zod`, no `@emdash-cms/blocks`). Dev tooling is limited to EmDash's own toolchain.
 
 **Start the session:**
 
@@ -23,7 +23,7 @@ Phase 02, plugin core. Read docs/phases/02-plugin-core.md, docs/progress.md and 
 
 | Session | Scope |
 | --- | --- |
-| 2a | Scaffold `plugin/` non-interactively with `@emdash-cms/plugin-cli` `init` (see "Scaffolding" below); pin `@emdash-cms/plugin-cli`, `@emdash-cms/plugin-test` and `vitest` exactly; write the manifest from the spec; scaffold tests pass; create the dev site's `products` collection; link the plugin into the dev site |
+| 2a | Scaffold `plugin/` non-interactively with `@emdash-cms/plugin-cli` `init` (see "Scaffolding" below); pin `@emdash-cms/plugin-cli`, `@emdash-cms/plugin-test` and `vitest` exactly, with the dev-tooling guardrails in `plugin/pnpm-workspace.yaml` (install-script allowlist, 7-day minimum release age; copy them from `spikes/xmr-spike/`, without its temporary excludes once they're gone); write the manifest from the spec; scaffold tests pass; create the dev site's `products` collection; link the plugin into the dev site |
 | 2b | Pure core with no `ctx`: money math, presets, counted / on-time / classify / evaluate, watch-list rules. Unit tests ported from the POC |
 | 2c | Sync protocol: header and signature checks, freshness, protocol version, `seq`, pairing, pool top-up, watch list response. Shared test vectors |
 | 2d | Routes and storage: `checkout` (product), `status`, `bridge/sync`, `plugin:install`, `plugin:uninstall`, cron sweep, rate fetch, pool claims, per-IP limits |
@@ -39,6 +39,7 @@ Phase 02, plugin core. Read docs/phases/02-plugin-core.md, docs/progress.md and 
 
 **Design rules for the code**
 
+- No third-party runtime code in the bundle (`CLAUDE.md`, "Dependency tiers"). Validate every route body and admin action with small hand-written checks (type, length, format, allowed values) that return a domain error code; no schema library. Ed25519 through WebCrypto, money through BigInt, Block Kit responses as plain JSON objects.
 - Keep the engine pure. `src/core/` holds functions that take state and return new state and events, with no `ctx`, no clock reads and no I/O. Routes and hooks in `src/plugin.ts` (and small modules beside it) load records, call the core, and save. This is what makes the scenarios testable and the bundle small.
 - `kind: "product"` only in this phase, but keep the invoice model ready for `tip` (`minAtomic`) and `order` (`orderRef`, `amountMinor`, `currency`, `returnUrl`) as the spec's storage record lists.
 - Products: the `products` collection with a numeric `price` in the site currency, read server-side through `ctx.content`. The client sends only the entry id or slug.

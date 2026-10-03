@@ -85,8 +85,28 @@ Fixed platform decisions: wallet host on Linux only (systemd) at launch; it must
 
 - Ask first, every time. Give the package, its maintainers, size, license and why the standard library or EmDash's own packages won't do.
 - No single-maintainer libraries for crypto, wallet or money logic (monero-ts was rejected for this reason).
-- Go: standard library first. JavaScript: EmDash's packages first. Pin exact versions and commit lockfiles.
+- Go: standard library only, JavaScript: see the tiers below. Pin exact versions and commit lockfiles.
 - The plugin bundle has hard caps: `backend.js` at most 128 KB and the whole tarball at most 256 KB decompressed. Check with `pnpm exec emdash-plugin bundle --validate-only` before every commit that touches `plugin/`.
+
+## Dependency tiers
+
+Decided by Wyatt on 2026-10-03 (`docs/decisions.md`). Asking first still applies within each tier; a tier says what may be asked for at all.
+
+**1. Shipped code has no third-party runtime code.** This covers the plugin bundle, the bridge, the installer and the theme components.
+
+- Plugin: our code plus, at most, EmDash's own plugin helpers. Signatures use WebCrypto, money uses BigInt, input validation is hand-written (no `zod` or other schema library), and Block Kit is written as plain JSON (no `@emdash-cms/blocks`).
+- Bridge: the Go standard library. Any exception (the OpenPGP check of Monero's `hashes.txt`) is decided in phase 03.
+- Installer: POSIX `sh`.
+- Theme: no runtime npm packages. A QR encoder, if one is needed, is vendored as reviewed source with its license.
+
+**2. Dev tooling (never shipped)** is limited to EmDash's own toolchain and what it requires (for example `@emdash-cms/plugin-cli`, `@emdash-cms/plugin-test`, `emdash`, `vitest`, `typescript`).
+
+- Exact pins and committed lockfiles.
+- Install scripts blocked except an allowlist. In pnpm: `strictDepBuilds: true` and `allowBuilds` in the package's `pnpm-workspace.yaml`; the allowlist is `esbuild` and `workerd`.
+- A 7-day minimum release age. In pnpm 12: `minimumReleaseAge: 10080` (minutes), which also makes the check strict. Exceptions only with Wyatt's approval, as exact versions in `minimumReleaseAgeExclude`, each with a removal date (the day it would pass on its own) and a matching reminder in `docs/progress.md`. Delete them on that date; the list never grows.
+- Every commit that touches a lockfile summarizes the lockfile changes in its message: direct dependencies added, removed or changed, and notable transitive changes.
+
+**3. Release integrity.** Release builds run in CI from a clean checkout with provenance, and Wyatt reviews the `backend.js` diff before each release.
 
 ## Repo layout
 
