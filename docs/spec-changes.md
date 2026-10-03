@@ -84,7 +84,7 @@ Effect on the admin budget: none.
 Effect on the trust contract: the admin page declaration changes before the first release, so no installed user has consented to the old one.
 Wyatt's decision (2026-10-03): accepted, `"/payments"`. Wyatt updates the live spec and `docs/spec.md`; `plugin/emdash-plugin.jsonc` already uses it.
 
-## 7. Lifecycle clarifications from phase 02 session 2b  (status: items 1-5 accepted by Wyatt, 2026-10-03; item 6 proposed by Claude)
+## 7. Lifecycle clarifications from phase 02 session 2b  (status: accepted, 2026-10-03)
 Found in: phase 02 session 2b, porting the proof of concept's rules into `plugin/src/core/` (`invoice.ts`, `presets.ts`, `watch.ts`; tests in `plugin/tests/core/`)
 Spec says: Invoice lifecycle, Rules and Confirmation presets; `bridge/sync`, Watch list. The spec is silent or the proof of concept differs on the points below.
 Evidence: `plugin/tests/core/scenarios.test.ts` (each point has a test); a mutation check removing item 6 fails both of its tests.
@@ -97,4 +97,4 @@ Proposal (the spec should state these):
 6. An unmined transfer that isn't proven on time is undecided while the chain is below `expiresHeight`, because it can still be mined in time. While any transfer is undecided, the invoice waits with `pendingExpiry` instead of expiring or going to review as late; once the chain reaches `expiresHeight` with the transfer still unmined, it is late. Without this, spec change 5 fails in the case it was written for: the wallet host comes back after the deadline and first reports the payment unmined, the plugin calls it late and sends the invoice to review (admin-only), and the later on-time mining can no longer settle it. The extra wait is at most 3 blocks (the grace) past the window.
 Effect on the admin budget: none (fewer false review items).
 Effect on the trust contract: none.
-
+Wyatt's decision (2026-10-03): items 1-5 accepted as answered in session 2b; item 6 accepted. Wyatt folds the entry into the live spec and `docs/spec.md`.
