@@ -1,6 +1,7 @@
 import { type PluginContext, type SandboxedPlugin, pluginRoute } from "emdash/plugin";
 
 import type { InvoiceEvent } from "./core/invoice";
+import { handleAdmin } from "./admin";
 import { handleCheckout } from "./checkout";
 import { ensureCron, purgeBatch } from "./housekeeping";
 import { handleStatus } from "./status";
@@ -11,12 +12,6 @@ import { MAX_BODY_BYTES } from "./sync/protocol";
 /**
  * xmr-pay: Monero payments for EmDash (docs/spec.md). The trust contract is pinned by tests/manifest.test.ts.
  */
-
-// Block Kit as plain JSON (CLAUDE.md, "Dependency tiers": no @emdash-cms/blocks at runtime).
-const PLACEHOLDER_BLOCKS = [
-	{ type: "header", text: "Monero payments" },
-	{ type: "context", text: "Setup isn't available yet: this plugin is in development (phase 02)." },
-];
 
 const MAX_ALERTS = 100;
 
@@ -75,17 +70,11 @@ const plugin: SandboxedPlugin = {
 			request: { body: "none" },
 			handler: async (routeCtx, ctx) => handleStatus(ctx, routeCtx.input, Date.now()),
 		}),
-		// The private admin route serves the admin page (/payments) and the xmr-status widget.
-		// Session 2e adds settings and Connect wallet host; phase 04 builds the full page.
+		// The private admin route serves the admin page (/payments) and the xmr-status widget (src/admin.ts).
 		admin: {
 			methods: ["POST"],
 			permission: "plugins:manage",
-			handler: async (_routeCtx, ctx) => {
-				// Config-managed installs get neither plugin:install nor plugin:activate, so the first admin page load
-				// schedules the backup cron (spec change 2).
-				if (!(await ctx.kv.get<boolean>(KV.cronScheduled))) await ensureCron(ctx);
-				return { blocks: PLACEHOLDER_BLOCKS };
-			},
+			handler: async (routeCtx, ctx) => handleAdmin(ctx, routeCtx.input, Date.now()),
 		},
 	},
 };
