@@ -45,12 +45,12 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | License: MIT, copyright Wyatt Dilley (phase 00) | Matches EmDash and DashCommerce; easiest for others to adopt |
 | Repository public from phase 00 | Automated EmDash releases need a public repo; nothing private is committed |
 | Dependency tiers (2026-10-03): shipped code (plugin bundle, bridge, installer, theme components) has no third-party runtime code (plugin: our code plus at most EmDash's own plugin helpers, hand-written validation, Block Kit as plain JSON; bridge: Go standard library, any exception decided in phase 03; installer: POSIX sh; theme: no runtime npm packages, a QR encoder vendored as reviewed source). Dev tooling is limited to EmDash's own toolchain, with exact pins, committed lockfiles, an install-script allowlist, a 7-day minimum release age and a lockfile summary in every commit that touches one. Release builds run in CI from a clean checkout with provenance; Wyatt reviews the `backend.js` diff before each release. Details in `CLAUDE.md`, "Dependency tiers" | Every line of shipped code is code we vouch for to every shop that installs it, in software that handles money. Fewer suppliers means fewer ways in, and what remains is pinned, aged, reviewable and built reproducibly |
+| Regtest for fast local chain tests: No, for now (2026-10-03, phase 01) | The dev box can't run a second `monerod` (8 GB RAM at most). Chain scenarios (reorg, double-spend) stay covered by the plugin-side scenario tests and the stagenet end-to-end run, as phase 03 allows |
 
 ## Still to decide (Wyatt)
 
 | Question | When |
 | --- | --- |
-| Whether to use regtest for fast local chain tests | After the spike (phase 01) |
 | Release signature scheme, and how the bridge checks Monero's GPG signature (library or system tool) | Phase 03 plan |
 | npm package name for the theme components (needs an npm account to publish) | Phase 06 |
 | Price API pair after checking terms and rate limits | Phase 02 or 09 |

@@ -54,7 +54,7 @@ The owner is Wyatt. He makes every design decision and handles every account, ke
 
 - `capabilities`: exactly `["content:read", "network:request"]`.
 - `allowedHosts`: exactly `["api.coingecko.com", "api.kraken.com"]`.
-- Routes: `checkout` (POST, public), `status` (GET, public), `bridge/sync` (POST, public, signed, raw text body), `admin` (POST, private).
+- Routes: `checkout` (POST, public), `status` (GET, public), `bridge/sync` (POST, public, signed, raw bytes body), `admin` (POST, private).
 - Storage: `pool` and `invoices`, with the indexes in the spec's manifest.
 - The plugin never calls the wallet, a node, the bridge, or any host but the two price APIs. It stores no wallet material and no credentials: only the bridge's public key, a hash of the pairing code, and a salt for short-lived rate-limit hashes.
 
