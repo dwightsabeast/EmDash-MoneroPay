@@ -16,5 +16,16 @@
 	// users have consented to the old contract.
 	"capabilities": [],
 	"allowedHosts": [],
-	"storage": {}
+	// Spike Q6 only: an address pool like the spec's, to test atomic claims.
+	"storage": {
+		"pool": { "indexes": ["status"], "uniqueIndexes": ["addrIndex"] }
+	},
+
+	// Spike Q4 only: one secret and one plain setting, to see how each is stored.
+	"admin": {
+		"settingsSchema": {
+			"spikeSecret": { "type": "secret", "label": "Spike secret (dummy)" },
+			"spikeNote": { "type": "string", "label": "Spike note" }
+		}
+	}
 }

@@ -74,8 +74,161 @@ function report(headers: Record<string, string>, body: Uint8Array, result: Await
 	return { ...result, bodyHex: bytesToHex(body), bodyLength: body.length, headerKeys: Object.keys(headers).sort() };
 }
 
+// Q4: what ctx.settings gives a sandboxed plugin. Reports types and lengths only, never values.
+function describe(value: unknown) {
+	if (value === null || value === undefined) return { type: String(value) };
+	if (typeof value === "string") return { type: "string", length: value.length };
+	if (typeof value === "object") return { type: "object", keys: Object.keys(value as object).sort() };
+	return { type: typeof value };
+}
+
+// Q6: atomic pool claims with updateIf. Public only because this is a throwaway spike on a dev box.
+type PoolRow = { addrIndex: number; address: string; status: "free" | "claimed"; invoiceId?: string };
+
+function errorName(err: unknown) {
+	return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
+// Q3: cron scheduled from plugin:install, logging each run's timestamps to KV (capped).
+const CRON_LOG_KEY = "state:cron-log";
+type CronLogEntry = { name: string; scheduledAt: string; ranAt: string };
+
 const plugin: SandboxedPlugin = {
+	hooks: {
+		"plugin:install": async (_event, ctx) => {
+			const at = new Date().toISOString();
+			if (!ctx.cron) {
+				await ctx.kv.set("state:install", { at, cron: "ctx.cron is undefined" });
+				return;
+			}
+			await ctx.cron.schedule("minute", { schedule: "* * * * *" });
+			await ctx.kv.set("state:install", { at, cron: "scheduled", tasks: await ctx.cron.list() });
+		},
+		"plugin:activate": async (_event, ctx) => {
+			const at = new Date().toISOString();
+			const seen = (await ctx.kv.get<string[]>("state:activate")) ?? [];
+			seen.push(at);
+			await ctx.kv.set("state:activate", seen.slice(-50));
+			if (ctx.cron) await ctx.cron.schedule("minute", { schedule: "* * * * *" });
+		},
+		cron: async (event, ctx) => {
+			const log = (await ctx.kv.get<CronLogEntry[]>(CRON_LOG_KEY)) ?? [];
+			log.push({ name: event.name, scheduledAt: event.scheduledAt, ranAt: new Date().toISOString() });
+			await ctx.kv.set(CRON_LOG_KEY, log.slice(-500));
+		},
+	},
 	routes: {
+		// Config-managed plugins get neither plugin:install nor plugin:activate at startup (EmDash 1.1.0),
+		// so the spike can also schedule on request. Idempotent: schedule() upserts by name.
+		"cron-schedule": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: { body: "none" },
+			handler: async (_routeCtx, ctx) => {
+				if (!ctx.cron) return { scheduled: false, reason: "ctx.cron is undefined" };
+				await ctx.cron.schedule("minute", { schedule: "* * * * *" });
+				await ctx.kv.set("state:route-scheduled", new Date().toISOString());
+				return { scheduled: true, tasks: await ctx.cron.list() };
+			},
+		}),
+		"cron-log": pluginRoute({
+			public: true,
+			methods: ["GET"],
+			request: { body: "none" },
+			handler: async (_routeCtx, ctx) => ({
+				install: await ctx.kv.get("state:install"),
+				activate: await ctx.kv.get("state:activate"),
+				routeScheduled: await ctx.kv.get("state:route-scheduled"),
+				tasks: ctx.cron ? await ctx.cron.list() : "ctx.cron is undefined",
+				log: (await ctx.kv.get<CronLogEntry[]>(CRON_LOG_KEY)) ?? [],
+			}),
+		}),
+		"pool-seed": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: { body: "json" },
+			handler: async (routeCtx, ctx) => {
+				const { count } = (routeCtx.input ?? {}) as { count?: number };
+				const n = Number.isSafeInteger(count) && (count as number) > 0 && (count as number) <= 100 ? (count as number) : 1;
+				const pool = ctx.storage.pool;
+				const old = await pool.query({ limit: 100 });
+				await pool.deleteMany(old.items.map((i) => i.id));
+				await pool.putMany(
+					Array.from({ length: n }, (_, i) => ({
+						id: `row-${i + 1}`,
+						data: { addrIndex: i + 1, address: `spike-address-${i + 1}`, status: "free" } satisfies PoolRow,
+					})),
+				);
+				return { seeded: n, free: await pool.count({ status: "free" }) };
+			},
+		}),
+		"pool-claim-row": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: { body: "json" },
+			handler: async (routeCtx, ctx) => {
+				const { id, claimer } = (routeCtx.input ?? {}) as { id?: string; claimer?: string };
+				try {
+					const r = await ctx.storage.pool.updateIf(String(id), {
+						where: { status: "free" },
+						set: { status: "claimed", invoiceId: String(claimer) },
+					});
+					return { applied: r.applied, row: r.applied ? r.data : null };
+				} catch (err) {
+					return { applied: false, error: errorName(err) };
+				}
+			},
+		}),
+		"pool-claim-any": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: { body: "json" },
+			handler: async (routeCtx, ctx) => {
+				const { claimer } = (routeCtx.input ?? {}) as { claimer?: string };
+				const pool = ctx.storage.pool;
+				const errors: string[] = [];
+				// Bounded claim loop: find a free row, try to claim it; on a lost race or a serialization error, try again.
+				for (let attempt = 1; attempt <= 25; attempt++) {
+					const free = await pool.query({ where: { status: "free" }, orderBy: { addrIndex: "asc" }, limit: 5 });
+					if (free.items.length === 0) return { claimed: null, attempts: attempt, errors, code: "NO_ADDRESS_AVAILABLE" };
+					// Spread claimers over the first few free rows to reduce collisions.
+					const pick = free.items[attempt % free.items.length];
+					try {
+						const r = await pool.updateIf(pick.id, { where: { status: "free" }, set: { status: "claimed", invoiceId: String(claimer) } });
+						if (r.applied) return { claimed: pick.id, attempts: attempt, errors };
+					} catch (err) {
+						errors.push(errorName(err));
+					}
+				}
+				return { claimed: null, attempts: 25, errors, code: "GAVE_UP" };
+			},
+		}),
+		"pool-list": pluginRoute({
+			public: true,
+			methods: ["GET"],
+			request: { body: "none" },
+			handler: async (_routeCtx, ctx) => {
+				const rows = await ctx.storage.pool.query({ orderBy: { addrIndex: "asc" }, limit: 100 });
+				return rows.items.map((i) => ({ id: i.id, ...(i.data as PoolRow) }));
+			},
+		}),
+		"settings-probe": pluginRoute({
+			public: true,
+			methods: ["GET"],
+			request: { body: "none" },
+			handler: async (_routeCtx, ctx) => {
+				const settings = ctx.settings as unknown as Record<string, unknown> | undefined;
+				return {
+					hasSettings: settings !== undefined,
+					methods: settings ? Object.keys(Object.getPrototypeOf(settings) ?? {}).concat(Object.keys(settings)).sort() : [],
+					secretViaSettings: describe(await ctx.settings.get("spikeSecret")),
+					noteViaSettings: describe(await ctx.settings.get("spikeNote")),
+					secretViaKv: describe(await ctx.kv.get("settings:spikeSecret")),
+					noteViaKv: describe(await ctx.kv.get("settings:spikeNote")),
+					listedKeys: (await ctx.settings.list()).map((e) => e.key).sort(),
+				};
+			},
+		}),
 		sig: pluginRoute({
 			public: true,
 			methods: ["POST"],

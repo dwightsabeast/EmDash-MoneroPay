@@ -1,0 +1,13 @@
+# Q6 on the built dev site (node ./dist/server/entry.mjs, workerd runner, SQLite data.db), 2026-10-03T18:22:45Z
+# node scripts/claim-race.mjs http://127.0.0.1:4322 10
+round  1: one-row winners=1 winner=r1c0 errors=0 119ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 117ms OK
+round  2: one-row winners=1 winner=r2c0 errors=0 56ms | any: claimed=5 distinct=5 maxAttempts=4 errors=0 130ms OK
+round  3: one-row winners=1 winner=r3c0 errors=0 57ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 112ms OK
+round  4: one-row winners=1 winner=r4c0 errors=0 47ms | any: claimed=5 distinct=5 maxAttempts=4 errors=0 99ms OK
+round  5: one-row winners=1 winner=r5c0 errors=0 49ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 98ms OK
+round  6: one-row winners=1 winner=r6c0 errors=0 64ms | any: claimed=5 distinct=5 maxAttempts=4 errors=0 93ms OK
+round  7: one-row winners=1 winner=r7c0 errors=0 41ms | any: claimed=5 distinct=5 maxAttempts=4 errors=0 84ms OK
+round  8: one-row winners=1 winner=r8c0 errors=0 41ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 83ms OK
+round  9: one-row winners=1 winner=r9c0 errors=0 46ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 88ms OK
+round 10: one-row winners=1 winner=r10c0 errors=0 42ms | any: claimed=5 distinct=5 maxAttempts=3 errors=0 81ms OK
+ALL 10 ROUNDS OK

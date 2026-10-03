@@ -1,0 +1,3 @@
+# Q4 settings probe on the built dev site, 2026-10-03T18:22:46Z
+# curl -s http://127.0.0.1:4322/_emdash/api/plugins/xmr-spike/settings-probe
+{"success":true,"data":{"hasSettings":true,"methods":["compareAndDelete","compareAndSet","delete","get","getVersioned","list","set"],"secretViaSettings":{"type":"null"},"noteViaSettings":{"type":"null"},"secretViaKv":{"type":"null"},"noteViaKv":{"type":"null"},"listedKeys":[]}}

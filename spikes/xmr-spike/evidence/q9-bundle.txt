@@ -1,0 +1,8 @@
+# Q9 bundle budget, 2026-10-03T18:23:13Z
+# pnpm exec emdash-plugin bundle -o <scratch dir>; tar -tvzf xmr-spike-0.1.0.tar.gz
+# Spike with 7 routes (Ed25519 verify in text and bytes modes, settings probe, pool seed/claim/claim-any/list)
+-rw-rw-r-- 1000/1000      1381 2026-10-03 12:23 README.md
+-rw-rw-r-- 1000/1000      4098 2026-10-03 12:23 backend.js
+-rw-rw-r-- 1000/1000      1851 2026-10-03 12:23 manifest.json
+# backend.js 4098 bytes of the 131072-byte cap (3.1%); tarball 7330 bytes decompressed of 262144 (2.8%)
+# zod / zod/mini not measured: no third-party runtime code in the plugin (CLAUDE.md, Dependency tiers, 2026-10-03)
