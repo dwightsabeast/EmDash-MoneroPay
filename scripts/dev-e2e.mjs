@@ -50,9 +50,32 @@ if (handCode !== null && !/^[A-Za-z0-9_-]{22}$/.test(handCode)) throw new Error(
 // ---- database (the dev site's SQLite file; the site keeps running) ----
 const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA busy_timeout = 5000");
-const runRows = () =>
-	db.prepare(`SELECT collection, count(*) AS n FROM _plugin_storage WHERE plugin_id = ? AND (collection IN ('pool', 'invoices') OR (collection = '__kv' AND id IN (${RUN_KV.map(() => "?").join(",")}))) GROUP BY collection`).all(PLUGIN, ...RUN_KV);
 const hasKey = () => db.prepare("SELECT 1 FROM options WHERE name = ?").get(KEY_OPTION) !== undefined;
+/** What an earlier run (or a real pairing) left: one plain description per kind of row. */
+function leftovers() {
+	const found = [];
+	for (const { collection, n } of db.prepare("SELECT collection, count(*) AS n FROM _plugin_storage WHERE plugin_id = ? AND collection IN ('pool', 'invoices') GROUP BY collection").all(PLUGIN)) {
+		found.push(`${n} ${collection} row(s)`);
+	}
+	const kv = db.prepare(`SELECT id, data FROM _plugin_storage WHERE plugin_id = ? AND collection = '__kv' AND id IN (${RUN_KV.map(() => "?").join(",")})`).all(PLUGIN, ...RUN_KV);
+	for (const { id, data } of kv) {
+		if (id !== "state:pairing") {
+			found.push(`KV ${id}`);
+			continue;
+		}
+		// --pair needs the code the admin page just stored: allowed while it's unused and unexpired, nothing else.
+		let state = null;
+		try {
+			state = JSON.parse(data);
+		} catch {}
+		const active = state !== null && state.used === false && Number(state.expiresAt) > Date.now();
+		if (handCode !== null && active) continue;
+		if (active) found.push("an active pairing code from the admin page (pass it with --pair <code> instead)");
+		else found.push(`${state?.used ? "an already used" : "an expired"} pairing code (KV state:pairing)`);
+	}
+	if (hasKey()) found.push("a paired bridge key (setting bridgePublicKey)");
+	return found;
+}
 function cleanup() {
 	const a = db.prepare("DELETE FROM _plugin_storage WHERE plugin_id = ? AND collection IN ('pool', 'invoices')").run(PLUGIN).changes;
 	const b = db.prepare(`DELETE FROM _plugin_storage WHERE plugin_id = ? AND collection = '__kv' AND id IN (${RUN_KV.map(() => "?").join(",")})`).run(PLUGIN, ...RUN_KV).changes;
@@ -63,8 +86,9 @@ if (flag("--cleanup-only")) {
 	cleanup();
 	process.exit(0);
 }
-if (runRows().length > 0 || hasKey()) {
-	throw new Error("the plugin already has a pool, invoices, pairing state or a bridge key; run with --cleanup-only first (it removes them)");
+const found = leftovers();
+if (found.length > 0) {
+	throw new Error(`the dev site's plugin data isn't clean: found ${found.join("; ")}. Run with --cleanup-only to remove it${handCode !== null ? ", then press Connect wallet host again" : ""}`);
 }
 
 // ---- helpers ----
@@ -161,7 +185,7 @@ try {
 	check(`pair ${handCode ? "(admin page code)" : "(KV shortcut)"}, 10 addresses: ok, 10 free`, r.data?.ok === true && r.data.poolFree === 10, show(r));
 	r = await sync(syncBody({ pair: { code, publicKey: newKey().publicB64 } }), newKey());
 	check("the same code again, another key: refused", r.code !== null && r.data?.ok !== true, show(r));
-	if (handCode === null) check("pairing code burned in KV", JSON.parse(db.prepare("SELECT data FROM _plugin_storage WHERE plugin_id = ? AND collection = '__kv' AND id = 'state:pairing'").get(PLUGIN).data).used === true, "used: true");
+	check("pairing code burned in KV", JSON.parse(db.prepare("SELECT data FROM _plugin_storage WHERE plugin_id = ? AND collection = '__kv' AND id = 'state:pairing'").get(PLUGIN).data).used === true, "used: true");
 
 	// 5. Signed syncs: top-up, then forged, tampered and stale requests changing nothing.
 	const topUp = Array.from({ length: POOL_TARGET - 10 }, (_, i) => ({ index: i + 11, address: fakeAddress(i + 11) }));
