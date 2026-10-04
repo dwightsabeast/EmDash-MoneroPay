@@ -150,3 +150,13 @@ Open issues:
 - Commits `a882711`, `3d9b3c0`, `6b5bba4` and this entry are local, not pushed.
 
 Next step: with Wyatt's approval, push (CI should pass: same checks run locally). Then phase 03, session 3a, from `docs/phases/03-bridge-and-installer.md`. If Wyatt has decided spec change 9 by then, fold it into the 3a plan.
+
+## 2026-10-04 · Phase 02 · After the close
+
+Done:
+- Pushed `5e9fe26..0cf425c` to `origin/main` with Wyatt's approval; `git ls-remote` matches.
+- Spec change 9 accepted. Wyatt's open question (how an admin raises the wallet app's lookahead, and whether that manual step fits the admin budget) is recorded in the entry and as a "Still to decide" row in `docs/decisions.md`: settle it after phase 03's stagenet test, before phase 04.
+- Dropped the phase 01 spike's two leftover SQL indexes from the dev DB, with Wyatt's approval. Backup first: `~/xmr-pay-dev-data/baseline/data.db.before-spike-index-drop`. Afterwards: no `xmr-spike` indexes or `_plugin_indexes` rows, xmr-pay's 7 indexes intact, `PRAGMA integrity_check` ok (`~/xmr-pay-dev-data/spike-index-drop-output.txt`).
+Tests: no code changes.
+Open issues: Wyatt folds spec changes 6, 7 and 9 into the live spec. Delete the excludes on or after 2026-10-08. This entry and the spec change 9 acceptance are local, not pushed.
+Next step: phase 03, session 3a (`docs/phases/03-bridge-and-installer.md`).

@@ -109,7 +109,7 @@ Effect on the trust contract: none (the same two hosts; only the order changes).
 Wyatt's decision (2026-10-03): accepted: Kraken first; GBP left out for now. Wyatt updates the live spec and `docs/spec.md`.
 
 
-## 9. The shop's wallet app may miss payments after a long run of unpaid addresses (subaddress lookahead)  (status: proposed)
+## 9. The shop's wallet app may miss payments after a long run of unpaid addresses (subaddress lookahead)  (status: accepted, 2026-10-04)
 Found in: Wyatt, 2026-10-04, reviewing phase 02 before phase 03
 Spec says: Key design decisions: "Pre-created address pool, one subaddress per invoice, never reused". Bridge service, Pool top-up: "create the missing subaddresses (`create_address`, account 0 …)". The spec says nothing about how other wallets holding the same keys find those addresses.
 Evidence (not yet tested; phase 03 tests it):
@@ -129,3 +129,4 @@ Proposal:
 4. Address reuse is not proposed (`docs/decisions.md`: never reused).
 Effect on the admin budget: no new setting or install step. The fix for the warning (raising the app's lookahead, once, when it shows) is an occasional manual task and touches "no routine upkeep"; Wyatt decides whether that is acceptable or the feature must change.
 Effect on the trust contract: none (no capability, host, route, storage or admin declaration changes).
+Wyatt's decision (2026-10-04): accepted (phase 03's stagenet test, the phase 04 warning from a constant threshold, phase 05's wallet-app check). Still open: how an admin raises the wallet app's lookahead, and whether that manual step is acceptable at all. This doesn't block phase 03. Its stagenet test supplies the evidence (what works, in which wallet apps), and Wyatt decides before the phase 04 warning text is written. Tracked under "Still to decide" in `docs/decisions.md`. Wyatt updates the live spec and `docs/spec.md`.
