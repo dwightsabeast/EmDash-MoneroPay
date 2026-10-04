@@ -1,0 +1,7 @@
+# xmr-pay hash-list verifier test file. Not a real Monero release.
+#
+## CLI
+1111111111111111111111111111111111111111111111111111111111111111  monero-linux-x64-v0.18.5.1.tar.bz2
+2222222222222222222222222222222222222222222222222222222222222222  monero-linux-armv8-v0.18.5.1.tar.bz2   
+-- a line starting with a dash is dash-escaped in the signed file
+#	

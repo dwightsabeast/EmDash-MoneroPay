@@ -1,0 +1,24 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA384
+
+# xmr-pay hash-list verifier test file. Not a real Monero release.
+#
+## CLI
+1111111111111111111111111111111111111111111111111111111111111111  monero-linux-x64-v0.18.5.1.tar.bz2
+2222222222222222222222222222222222222222222222222222222222222222  monero-linux-armv8-v0.18.5.1.tar.bz2   
+- -- a line starting with a dash is dash-escaped in the signed file
+#	
+-----BEGIN PGP SIGNATURE-----
+
+iQGzBAEBCQAdFiEEE07x9M5KCjVM8eDPiIg3VrgVF0IFAmrCkDkACgkQiIg3VrgV
+F0Kb2wv+NkmRBNo7IOQlPzjRXJNLrxdYnyVhj3AOI4sufQ/KcNqD9tNVfJqZQf/5
+QVER6HhxekaN6ClorjgOYvxoWGhOShdj4NXTCIvu4eg8gkepkVBFiJQ3kXt9T+gy
+fbM2McTq+Ibm84WhnDt1Evn0ItUHjssMOb9GTm+J9BXvn6H9hsMjzY3oOehFuscB
+seicQTXKAl2AiCTtUS+PWe61wUngJvZrBRvf+TRlrRLd4P/WNxgY3dAxPFt4YeFp
+W7dX4uRSuuaAI6CzkSQAOnpPURoAbKlmx2BlBz/S+0EJyMewZCxw+JHla6BIhoyG
+TpLcjT44nQqtvElKtUoqnBveUJ6B52m+vUcLHvxmQDFHb4XPv5i3aE5xHQvYioHG
+Pa173K5XaQgynou71IAnGtdfhZKrWIc/5t/uDAL3I+O7RTP3S48K42PPHbYEuq3E
+OCopGFMFwTEUaHVgerrp+BUQ+MFklVuBZpqPjYlr1jpWvJcLRO+trHofp+O5+uro
+DUrtOoMM
+=sjNG
+-----END PGP SIGNATURE-----
