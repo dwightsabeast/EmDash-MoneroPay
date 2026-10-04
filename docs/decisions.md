@@ -56,4 +56,4 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | --- | --- |
 | Release signature scheme, and how the bridge checks Monero's GPG signature (library or system tool) | Phase 03 plan |
 | npm package name for the theme components (needs an npm account to publish) | Phase 06 |
-| Hosted bridge service: optional, paid, run by Wyatt, never the default; no keys in plaintext; one bridge per shop or a shared one | After phase 05 (current phases unchanged) |
+| Hosted bridge service: optional, paid, run by Wyatt, never the default; no keys in plaintext; one bridge per shop or a shared one. Pricing direction (Wyatt, 2026-10-03): tiers by monthly checkouts, with soft limits (going over doesn't cut a shop off); the plugin stays tier-free (it never knows or enforces a tier; the tiers live only in the hosted service) | After phase 05 (current phases unchanged) |
