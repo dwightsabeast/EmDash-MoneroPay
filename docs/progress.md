@@ -160,3 +160,54 @@ Done:
 Tests: no code changes.
 Open issues: Wyatt folds spec changes 6, 7 and 9 into the live spec. Delete the excludes on or after 2026-10-08. This entry and the spec change 9 acceptance are local, not pushed.
 Next step: phase 03, session 3a (`docs/phases/03-bridge-and-installer.md`).
+
+## 2026-10-04 · Phase 03 · Session 3a: bridge module, config, wallet-rpc client
+
+Correction to the "After the close" entry above: the spec change 9 acceptance (`7715fb8`) was pushed the same day, at Wyatt's request.
+
+Done:
+- **Plan and decisions.**
+  - Spec revision 70 snapshot committed with the matching `docs/decisions.md` row: the hash-list verifier is our own, standard library only, `4cb6ddd`.
+  - Wyatt approved all six plan items, `98f30a4`:
+    - `go-crypto` only in the separate test module `bridge/oracle/`
+    - `actions/setup-go` in CI
+    - the release-signature scheme
+    - dev release mode
+    - `CLAUDE.md`: no standard-library exception for the bridge
+    - 3b split into 3b-1 (verifier) and 3b-2 (download and supervise)
+- **`bridge/`**, Go module, no dependencies, `go 1.27`, built with `GOTOOLCHAIN=local`, commit `c5acc27`:
+  - `internal/secret`: values that format, log and marshal as `[redacted]`; only `Reveal` returns them; never unmarshalled.
+  - `internal/config`: one JSON file, mode 600 enforced on load, 64 KiB cap, unknown fields and trailing data refused, atomic save.
+    - The site must be https, or http on loopback only, with no path, query or login.
+    - The same-machine flag is allowed on stagenet only.
+    - No secrets in the file. `ReleaseURL` stays out until 3g, behind the `devrelease` build tag.
+  - `internal/walletrpc`: JSON-RPC client with hand-written digest auth.
+    - Real wallet-rpc 0.18.5.1 offers two challenges with one nonce, `algorithm=MD5` and `algorithm=MD5-sess`; MD5 with `qop=auth` is used.
+    - A stale nonce is retried once and a wrong password gives `ErrUnauthorized`, never a loop.
+    - Responses capped at 16 MiB; trailing data refused.
+    - Methods: `get_version`, `get_height`, `create_address` (account 0, label), and `get_transfers` (in and pool, account 0, `subaddr_indices`, no call for an empty list).
+    - Amounts and unlock times are read as `uint64` and returned as decimal strings; `locked` is ignored.
+    - Malformed txids and transfers for indexes that weren't asked for are refused.
+  - `cmd/xmr-bridge`: `version` and `run --config`. `run` loads the config, logs to stderr without timestamps (the journal adds them) and stops on SIGTERM; the sync loop is 3d.
+- **CI**, commit `4a06612`:
+  - A `bridge` job: gofmt, vet, tests, static build. `actions/setup-go` v7.0.0 pinned to `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` (released 2026-07-16), Go 1.27.1, cache off, `GOTOOLCHAIN=local`, `GOFLAGS=-mod=readonly`.
+  - Three `CLAUDE.md` command rows (bridge tests, static build, the live wallet-rpc test).
+
+Tests:
+- `cd bridge && go vet ./... && go test ./...`: 4 packages, 25 top-level tests (41 with subtests) passing, 1 skipped (the live test, without its variables). `gofmt -l .` empty.
+- `CGO_ENABLED=0 go build`: a static ELF of 4.5 MB.
+- **Live test** against a real `monero-wallet-rpc` 0.18.5.1 (stagenet, random login, no wallet; `~/xmr-pay-dev-data/3a-live-walletrpc.txt`): `get_version` 1.31 four times on one challenge, `get_height` returned wallet-rpc's `-13 No wallet file` after a successful login, and a wrong password gave `ErrUnauthorized`. The probe was stopped and its login and files deleted.
+- **Mutation checks**, each caught: a constant `nc` (2 failing), any digest algorithm accepted (3), the index check removed (3), the txid check removed (3), and the secret's `Format` or `LogValue` removed (1 each). Removing the JSON methods changed nothing because `MarshalText` covers JSON, so they were dropped.
+- CI rehearsed from a clean clone: all four bridge steps pass. The workflow parses (2 jobs). Not run on GitHub yet (needs a push).
+
+Not covered:
+- digest `opaque` and `qop` lists with `auth-int` against a real server (wallet-rpc sends neither)
+- concurrent use of one client (it's mutex-safe, not stress-tested)
+
+Open issues:
+- In the real install, wallet-rpc's `--rpc-login` on the command line is visible in the process list. Decide in 3b-2 how the supervised wallet-rpc gets its login (for example `--rpc-login` with the password fed another way, or `--rpc-login-file` if 0.18.5.1 has one; check `--help`).
+- Delete the excludes on or after 2026-10-08.
+- Wyatt folds spec changes 6, 7 and 9 into the live spec.
+- Commits `4cb6ddd` through this entry are local, not pushed.
+
+Next step: session 3b-1, the `hashes.txt` verifier. First download binaryFate's public key (monero-project repository) and the current `hashes.txt` (getmonero.org), confirm the fingerprint `81AC 591F E9C4 B65C 5806 AFC3 F0AF 4D46 2A0B DF92` with `gpg --show-keys` (no import), and record the key's algorithm before writing code; stop and tell Wyatt if it isn't RSA.
