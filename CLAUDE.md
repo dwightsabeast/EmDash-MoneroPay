@@ -185,7 +185,9 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Environment check | `scripts/check-env.sh` |
 | Plugin tests | `cd plugin && pnpm test` |
 | Plugin checks | `cd plugin && pnpm run typecheck && pnpm exec emdash-plugin validate && pnpm exec emdash-plugin bundle --validate-only` |
-| Bridge tests | `cd bridge && go vet ./... && go test ./...` |
+| Bridge tests | `cd bridge && export GOTOOLCHAIN=local && test -z "$(gofmt -l .)" && go vet ./... && go test ./...` |
+| Bridge build (static) | `cd bridge && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=<version>" -o <out> ./cmd/xmr-bridge` |
+| Bridge against a real wallet-rpc | Start `monero-wallet-rpc` with `--rpc-login` and no wallet, then `XMR_BRIDGE_LIVE_RPC=http://127.0.0.1:<port> XMR_BRIDGE_LIVE_LOGIN_FILE=<file holding user:password, mode 600> go test -count=1 -run TestLiveWalletRPC ./internal/walletrpc/` (skipped without both variables) |
 | Dev site | `~/sites/xmr-dev-site` on port 4321, answering on `localhost` (IPv6 `::1`), not `127.0.0.1`. Start: `tmux new -d -s site -c ~/sites/xmr-dev-site 'npm run dev; exec bash'`. When Claude starts it, astro moves itself to the background (outside tmux): stop it with `npx astro dev stop` in the site folder, check it with `npx astro dev status`, read its log with `npx astro dev logs`. When Wyatt starts it, it stays in tmux: stop it with `tmux kill-session -t site`. Wyatt views it through an SSH tunnel. Stop it when a step doesn't need it (see "Memory"). |
 | Built copy of the dev site | `npm run build` in the dev site, then tmux session `built` on port 4322 (workerd runner; the only thing the public test hostname may point at) |
 | Stagenet node | `systemctl is-active monerod-stagenet`; JSON-RPC at `http://127.0.0.1:38081/json_rpc` |
@@ -193,6 +195,6 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Dev-site products (collection and three test products) | With the site stopped, in `~/sites/xmr-dev-site`: `npx emdash seed ../../xmr-pay/scripts/dev-products.seed.json --on-conflict skip` (`--validate` for a dry run). No login needed; safe to re-run |
 | Plugin build for the dev site | `cd plugin && pnpm run build` (the site imports `plugin/` through `npm install file:../../xmr-pay/plugin` and `sandboxed: [xmrPay]`) |
 | Plugin end to end on the dev site (fake bridge) | With the dev site running a fresh plugin build: `node scripts/dev-e2e.mjs` (pairs through the KV shortcut, runs the host checks and checkout to settled, then removes what it created). `--pair <code>` uses a code from the admin page instead; `--keep` leaves the run's rows; `--cleanup-only` removes leftovers. Loopback sites only. Back up `data.db` first |
-| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening") |
+| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check, and the bridge's gofmt, vet, tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
 
 Fill in or correct this table as phases add commands.

@@ -1,4 +1,6 @@
 # Plugin checks on every push to main and every pull request: typecheck, manifest validation, tests, bundle caps.
+# Bridge checks (2026-10-04): gofmt, vet, tests, a static build. Go from actions/setup-go (GitHub's own), cache off;
+# GOTOOLCHAIN=local so Go never fetches another toolchain.
 # Hardening (Wyatt, 2026-10-03): read-only token, no pull_request_target, no persisted git credentials, frozen
 # lockfile, no dependency cache. Actions are GitHub's own, pinned to commit SHAs; pnpm comes from Node's corepack
 # at the exact version in plugin/package.json ("packageManager"), so there is no third-party setup action.
@@ -41,3 +43,30 @@ jobs:
         run: pnpm exec vitest run
       - name: Bundle caps
         run: pnpm exec emdash-plugin bundle --validate-only
+
+  bridge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bridge
+    env:
+      GOTOOLCHAIN: local
+      GOFLAGS: -mod=readonly
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - name: Formatting (gofmt)
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Tests
+        run: go test ./...
+      - name: Static build
+        run: go build -trimpath -o "$RUNNER_TEMP/xmr-bridge" ./cmd/xmr-bridge && file "$RUNNER_TEMP/xmr-bridge" | grep -q 'statically linked'
