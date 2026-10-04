@@ -81,3 +81,16 @@ func TestBadCodeNotSent(t *testing.T) {
 		t.Fatal("a key file appeared")
 	}
 }
+
+// Once a code is used or expired the site doesn't read the body before the signature, so a pairing request fails
+// as NOT_PAIRED or BAD_SIGNATURE (contract/test-vectors/README.md). During pairing that means the code is spent.
+func TestSpentCodeMessage(t *testing.T) {
+	for _, code := range []string{"BAD_SIGNATURE", "NOT_PAIRED", "PAIRING_REJECTED"} {
+		s := &site{fail: &syncclient.Error{Code: code}}
+		err := Pair(context.Background(), s, "AbCdEfGhIjKlMnOpQrSt_-", filepath.Join(t.TempDir(), "k"), 1, time.Now())
+		var e *syncclient.Error
+		if !errors.As(err, &e) || e.Code != code || !strings.Contains(err.Error(), "used or expired") || !strings.Contains(err.Error(), "Connect wallet host") {
+			t.Errorf("%s: %v", code, err)
+		}
+	}
+}

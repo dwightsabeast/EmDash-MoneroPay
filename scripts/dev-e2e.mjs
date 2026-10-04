@@ -4,6 +4,10 @@
 //   node scripts/dev-e2e.mjs --pair <code>    pair with a code from the admin page's "Connect wallet host" instead
 //   node scripts/dev-e2e.mjs --keep           leave the run's pool, invoice and bridge key in place afterwards
 //   node scripts/dev-e2e.mjs --cleanup-only   remove what an earlier run left behind, then stop
+//   node scripts/dev-e2e.mjs --issue-code <file>
+//                                            store a new pairing code through the KV shortcut (as the admin page's
+//                                            Connect wallet host would) and write the code to <file> (mode 600, under
+//                                            ~/xmr-pay-dev-data/), then stop. For pairing the real Go bridge (3d).
 //   Options: --site <loopback URL> (default http://localhost:4321), --db <path> (default ~/sites/xmr-dev-site/data.db)
 //
 // KV shortcut: the admin page stores only a SHA-256 hash of its code, so a script can't read one back. Instead this
@@ -17,7 +21,7 @@
 //
 // Node's fetch sends no Origin header, like the Go bridge. Prints one line per check; exit code 0 when all pass.
 import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 process.removeAllListeners("warning"); // node:sqlite's experimental notice
@@ -84,6 +88,19 @@ function cleanup() {
 }
 if (flag("--cleanup-only")) {
 	cleanup();
+	process.exit(0);
+}
+const issueTo = value("--issue-code", null);
+if (issueTo !== null) {
+	if (!issueTo.startsWith(`${homedir()}/xmr-pay-dev-data/`)) throw new Error("--issue-code writes only under ~/xmr-pay-dev-data/");
+	const code = Buffer.from(randomBytes(16)).toString("base64url");
+	const state = JSON.stringify({ codeHash: Buffer.from(createHash("sha256").update(code).digest()).toString("base64url"), expiresAt: Date.now() + 15 * 60_000, used: false });
+	const now = new Date().toISOString();
+	db.prepare(
+		"INSERT INTO _plugin_storage (plugin_id, collection, id, data, revision, created_at, updated_at) VALUES (?, '__kv', 'state:pairing', ?, ?, ?, ?) ON CONFLICT (plugin_id, collection, id) DO UPDATE SET data = excluded.data, revision = excluded.revision, updated_at = excluded.updated_at",
+	).run(PLUGIN, state, crypto.randomUUID(), now, now);
+	writeFileSync(issueTo, code + "\n", { mode: 0o600 });
+	console.log(`issued a pairing code (valid 15 minutes) into ${issueTo}`);
 	process.exit(0);
 }
 const found = leftovers();

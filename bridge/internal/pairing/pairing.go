@@ -37,6 +37,11 @@ func Pair(ctx context.Context, site Sender, code, keyFile string, height uint64,
 	body := syncclient.Body{V: syncclient.ProtocolV, Seq: now.UnixMilli(), Height: height,
 		Pair: &syncclient.Pair{Code: code, PublicKey: syncsign.PublicKeyText(k)}}
 	if _, err := site.Send(ctx, k, body); err != nil {
+		var se *syncclient.Error
+		if errors.As(err, &se) && (se.Code == "BAD_SIGNATURE" || se.Code == "NOT_PAIRED" || se.Code == "PAIRING_REJECTED") {
+			// A spent or expired code: the site no longer reads the body before the signature, so it can't say more.
+			return &syncclient.Error{Code: se.Code, Status: se.Status, Hint: "the pairing code is used or expired, or mistyped. Press Connect wallet host again for a new code (valid 15 minutes)"}
+		}
 		return err
 	}
 	if err := syncsign.SaveKey(keyFile, k); err != nil {

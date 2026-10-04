@@ -69,7 +69,7 @@ func TestPairCommand(t *testing.T) {
 	}
 	// The code is used: a second attempt fails with the fix and keeps the key.
 	code, _, errOut = run(context.Background(), "pair", "--config", p, "--code", testCode)
-	if code != 1 || !strings.Contains(errOut, "PAIRING_REJECTED") || !strings.Contains(errOut, "Connect wallet host") {
+	if code != 1 || !strings.Contains(errOut, "PAIRING_REJECTED") || !strings.Contains(errOut, "used or expired") {
 		t.Fatalf("reused code: %d %q", code, errOut)
 	}
 	if k2, _ := syncsign.LoadKey(filepath.Join(c.DataDir, "bridge.key")); !k2.Equal(k) {
