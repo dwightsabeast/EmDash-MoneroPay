@@ -8,7 +8,7 @@ function fakeCtx() {
 	const cols: Record<string, Map<string, unknown>> = { pool: new Map(), invoices: new Map() };
 	for (let i = 1; i <= 230; i++) cols.pool.set(String(i), { addrIndex: i });
 	for (let i = 1; i <= 7; i++) cols.invoices.set(`inv_${i}`, { id: `inv_${i}` });
-	const kv = new Map<string, unknown>([["state:pairing", {}], ["state:bridge", {}], ["state:alerts", []], ["unrelated", 1]]);
+	const kv = new Map<string, unknown>([["state:pairing", {}], ["state:bridge", {}], ["state:alerts", []], ["cache:rate:USD", {}], ["cache:rate:EUR", {}], ["unrelated", 1]]);
 	const settings = new Map<string, unknown>([["bridgePublicKey", "k"], ["currency", "USD"], ["speed", "fast"]]);
 	const collection = (m: Map<string, unknown>) => ({
 		async query({ limit }: { limit: number }) {
@@ -28,7 +28,7 @@ function fakeCtx() {
 	return { ctx, cols, kv, settings };
 }
 
-it("deletes the pool (across pages), the invoices, xmr-pay's KV state and its settings", async () => {
+it("deletes the pool (across pages), the invoices, xmr-pay's KV state (rate cache included) and its settings", async () => {
 	const f = fakeCtx();
 	await deletePluginData(f.ctx as never);
 	expect(f.cols.pool.size).toBe(0);

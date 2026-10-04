@@ -9,6 +9,7 @@ import type { PluginContext } from "emdash/plugin";
 
 import { LATE_WINDOW_MS } from "./core/constants";
 import type { Invoice } from "./core/invoice";
+import { CURRENCIES, rateCacheKey } from "./rates";
 import type { BridgeState, SyncStore } from "./sync/handle";
 import type { PairingState } from "./sync/pairing";
 
@@ -98,6 +99,7 @@ export async function deletePluginData(ctx: PluginContext): Promise<void> {
 		}
 	}
 	for (const key of Object.values(KV)) await ctx.kv.delete(key);
+	for (const c of CURRENCIES) await ctx.kv.delete(rateCacheKey(c));
 	for (const key of Object.values(SETTING)) await ctx.settings.delete(key);
 }
 

@@ -12,6 +12,7 @@ export type Currency = (typeof CURRENCIES)[number];
 export const isCurrency = (v: unknown): v is Currency => typeof v === "string" && (CURRENCIES as readonly string[]).includes(v);
 
 export const RATE_TTL_MS = 60_000;
+export const rateCacheKey = (currency: Currency) => `cache:rate:${currency}`;
 const FETCH_TIMEOUT_MS = 5_000;
 /** Refuse obviously broken prices: between $0.01 and $10,000,000 per XMR. */
 const MIN_RATE_MINOR = 1n;
@@ -65,7 +66,7 @@ interface CachedRate {
 
 /** The current rate, or null if neither source answers sensibly (checkout then returns RATE_UNAVAILABLE). */
 export async function getRate(ctx: PluginContext, currency: Currency, now: number): Promise<Rate | null> {
-	const key = `cache:rate:${currency}`;
+	const key = rateCacheKey(currency);
 	const cached = await ctx.kv.get<CachedRate>(key);
 	if (cached && now - cached.at < RATE_TTL_MS && now >= cached.at) return { minor: BigInt(cached.minor), source: cached.source, at: cached.at };
 	if (!ctx.http) return null;
