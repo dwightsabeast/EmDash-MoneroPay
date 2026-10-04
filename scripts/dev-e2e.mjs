@@ -252,7 +252,7 @@ try {
 	failures++;
 	console.log(`STOPPED: ${err.message}`);
 } finally {
-	if (flag("--keep")) console.log("--keep: the run's pool, invoice and bridge key stay (remove them with --cleanup-only)");
+	if (flag("--keep")) console.log("--keep: the run's pool, invoices and bridge key stay (remove them with --cleanup-only)");
 	else cleanup();
 	db.close();
 }

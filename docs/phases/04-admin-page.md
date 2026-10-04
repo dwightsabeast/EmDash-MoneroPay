@@ -27,6 +27,8 @@ Phase 04, admin page. Read docs/phases/04-admin-page.md and docs/progress.md, th
 6. **Settings:** currency and confirmation speed, with a note that changes affect new invoices only. The bridge public key read-only, with "paste a key by hand" as an advanced fallback.
 7. **Dashboard widget `xmr-status`:** one line of health and the count of review items.
 
+**Wording to change (Wyatt, phase 02 session 2f):** the 2e page's "Free addresses: 48 of 50" (and the widget's "48 free addresses") read to Wyatt like linked wallets. Reword both so they say what they are: unused one-time payment addresses from the shop's own wallet, which the wallet host tops up by itself. A suggestion for Wyatt to accept or change: "Payment addresses ready: 48 of 50", with a hint line "Each payment gets its own address from your wallet. The wallet host adds more automatically." Labels are in `plugin/src/admin.ts` (the status field and the widget's health line). The spec's Health list says "free addresses" as the check's name; whether its wording changes too is Wyatt's call. See `docs/setup-friction.md`, 2026-10-03, session 2f admin page wording.
+
 **Rules**
 
 - No new settings beyond the spec's three. If a design need seems to call for one, stop and ask.
