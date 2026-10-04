@@ -425,3 +425,63 @@ Next step: session 3d.
 - The sync loop (10–15 s and on SIGUSR1), snapshots from `get_transfers`, pool top-up with `create_address`, reconcile on start, backoff when the site is unreachable.
 - `xmr-bridge status`.
 - End to end against the dev site.
+
+## 2026-10-04 · Phase 03 · Session 3d: signing, pairing, sync loop
+
+Done:
+- Pushed `0590403..6a756ba` with Wyatt's approval. CI on GitHub: the new race-detector step passed on its first run.
+- Plan approved:
+  - spec change 12 (more than 32 transfers to one address: send the 32 largest), accepted
+  - pending pool addresses kept in `run/pending.json`
+  - `xmr-bridge pair` and `dev-e2e.mjs --issue-code`
+  - the shop wallet's real stagenet subaddresses in the dev site's pool during the test
+- **Code**, commit `af293af`:
+  - `internal/syncsign`: Ed25519 over `ts + "\n" + body`; key file with the seed, mode 600.
+  - `internal/syncclient`: one bridge/sync request.
+    - JSON without a BOM; no `Origin` or `Authorization` header; 256 KiB (4 KiB for pairing) checked before sending.
+    - Redirects are reported, not followed.
+    - Each refusal carries the site's code and its fix: pair again, the clock, or access rules for `/_emdash/api/plugins/xmr-pay/*`.
+  - `internal/pairing`: a fresh key and one `pair` request; the key is saved only when the site accepts it.
+  - `internal/bridgeloop`:
+    - syncs every 12–15 s, and on SIGUSR1 (debounced)
+    - reconcile on start
+    - a snapshot for every watched index, rotated past 100 and halved if a body is too large; at most the 32 largest transfers per index
+    - pool top-up up to 100 addresses per sync, pending ones persisted until the site takes them
+    - `seq` never goes back; backoff 15 s to 5 min; the key file read every sync, so re-pairing needs no restart
+    - `run/status.json` after every attempt
+  - Commands: `xmr-bridge pair --config --code` and `xmr-bridge status --config` (plain words and fixes; exit 1 unless healthy). `run` starts the loop beside the supervisor.
+- **Live end to end with the dev site**, commit `5e7306d`. The first run found that a used code answers `BAD_SIGNATURE`, as the contract README says (nothing is read before the signature once a code is spent). The test's expectation was wrong; pairing now explains `NOT_PAIRED`, `BAD_SIGNATURE` and `PAIRING_REJECTED` as "the pairing code is used or expired, or mistyped".
+- `scripts/dev-e2e.mjs --issue-code <file>`; CLAUDE.md command rows.
+
+Tests:
+- `cd bridge && go test ./...`: 121 top-level tests pass, 5 live tests skipped by default. `gofmt` and `vet` clean.
+- The Go signer reproduces all 9 cases of `contract/test-vectors/sync-signature.json` byte for byte (RFC 8032 TEST 1 and 2), and its verdicts match.
+- **Mutation checks:** 15 of 16 caught. They covered:
+  - the message separator, a readable key file, signing other bytes, the size limit, following redirects, a bad watch index
+  - the 32 cap, the tie rule, duplicate txids, `seq` going back, pending not saved, no immediate reconcile, too-large not split
+  - a key saved after a refusal, status hiding errors
+
+  The survivor, pending addresses in the top-up count, is redundant: after a successful sync nothing is pending.
+- **Live** (`~/xmr-pay-dev-data/3d-live-devsite.txt`; dev site on `astro dev` with a fresh plugin build; `data.db` backed up to `~/xmr-pay-dev-data/baseline/data.db.before-3d`), real wallet-rpc and view-only shop wallet, 51 s:
+  1. paired through an issued code
+  2. the used code refused with the key unchanged
+  3. pool filled to 50 of 50 real subaddresses; `xmr-bridge status` healthy
+  4. restarted: synced again, pool still 50, nothing new created
+  5. proxy down: "can't be reached: connection refused" in the status, and `status` exits 1
+  6. proxy back: syncing again after 15 s
+  7. paired again with a new code: the running bridge synced with the new key, and the old key got `BAD_SIGNATURE`
+  - Cleanup: the site's 50 pool rows, 2 KV rows and the bridge key removed. The database is back to its baseline (rate cache and cron flag only), the wallet copy and code files deleted, no wallet-rpc left, the dev site stopped.
+
+Not covered (3h, with Wyatt's payments):
+- snapshots carrying real transfers to a pool address
+- `--tx-notify` waking the loop
+- a checkout settling through the real bridge
+- the built (workerd) copy of the site
+
+Open issues:
+- Wyatt folds spec changes 6, 7 and 9–12 into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- Commits `af293af`, `5e7306d` and this entry are local.
+
+Next step: session 3e, the remote-node cross-check. Compare the block hash at each payment height with a second node before reporting confirmations; hold at 0 and turn a check red on a mismatch.
+- Open questions for Wyatt: which second nodes by default (open question 12), and whether the cross-check applies only when the configured node is remote.
