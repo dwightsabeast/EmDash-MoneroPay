@@ -185,3 +185,12 @@ Proposal:
 Effect on the admin budget: none. A wrong or spend key is caught at the prompt with a message, instead of a setup that never sees the test tip.
 Effect on the trust contract: none (plugin unchanged). The bridge gains about 150 lines of curve arithmetic that we own.
 Wyatt's decision (2026-10-04): accepted, the bridge's own check as proposed. This replaces item 3 of the approved 3c plan (relying on wallet-rpc's check). Wyatt updates the live spec and `docs/spec.md`.
+
+## 12. More than 32 transfers to one address: the bridge sends the 32 largest  (status: accepted, 2026-10-04)
+Found in: phase 03 session 3d plan, comparing the plugin's caps with what a wallet can report
+Spec says: API contracts, `POST bridge/sync`: a snapshot carries the transfers to one watched subaddress. The plugin caps a snapshot at 32 transfers (phase 02, `MAX_TRANSFERS`; `contract/test-vectors/README.md`) and refuses the whole request beyond that. The spec doesn't say what the bridge does when a subaddress has received more.
+Evidence: anyone who sees a pay address can send it many tiny payments, so more than 32 incoming transfers to one invoice address is possible, if unlikely from a real buyer.
+Proposal: when an index has more than 32 incoming transfers, the bridge sends the 32 largest (ties broken by the earlier height), logs a warning, and shows it in `xmr-bridge status`. Dropping the smallest can only lower the reported total, so it can't make an invoice look paid that isn't; an honest buyer paying in more than 32 parts would go to review as underpaid, where the admin sees the transfers in the wallet.
+Effect on the admin budget: none.
+Effect on the trust contract: none.
+Wyatt's decision (2026-10-04): accepted with the 3d plan. Wyatt updates the live spec and `docs/spec.md`.

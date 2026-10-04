@@ -1,0 +1,123 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/pairing"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
+)
+
+func keyFile(cfg config.Config) string { return filepath.Join(cfg.DataDir, "bridge.key") }
+
+func siteClient(cfg config.Config) *syncclient.Client {
+	return &syncclient.Client{Site: cfg.Site, UserAgent: "xmr-bridge/" + version}
+}
+
+// cmdPair pairs with the site using the one-time code from the admin page's Connect wallet host button. The
+// installer runs the same step; a running bridge picks up the new key at its next sync.
+func cmdPair(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("pair", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", "", "config file")
+	code := fs.String("code", "", "the one-time pairing code")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *path == "" || *code == "" {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	cfg, err := config.Load(*path)
+	if err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
+		return 1
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
+		return 1
+	}
+	var height uint64
+	nctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	if info, err := noderpc.GetInfo(nctx, cfg.Node, nil); err == nil {
+		height = info.Height
+	}
+	cancel()
+	if err := pairing.Pair(ctx, siteClient(cfg), *code, keyFile(cfg), height, time.Now()); err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: pairing failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Paired with %s. The site's Monero payments page now shows the wallet host as connected.\n", cfg.Site)
+	return 0
+}
+
+// staleAfter: a running bridge attempts a sync at least every 5 minutes (its longest backoff).
+const staleAfter = 6 * time.Minute
+
+// cmdStatus prints what the running bridge last recorded, in plain words with the fix for each problem. Exit 0 when
+// healthy, 1 otherwise.
+func cmdStatus(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", "", "config file")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *path == "" {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	cfg, err := config.Load(*path)
+	if err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
+		return 1
+	}
+	healthy := true
+	fmt.Fprintf(stdout, "Site:       %s\nNetwork:    %s\n", cfg.Site, cfg.Network)
+	if _, err := os.Stat(keyFile(cfg)); err == nil {
+		fmt.Fprintln(stdout, "Paired:     yes")
+	} else {
+		healthy = false
+		fmt.Fprintln(stdout, "Paired:     no: this wallet host is not paired yet. On the site's Monero payments page, press Connect wallet host and run the command it shows")
+	}
+	st, err := bridgeloop.ReadStatus(cfg.DataDir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		fmt.Fprintln(stdout, "Last sync:  never (the bridge hasn't run yet; check with: systemctl status xmr-bridge)")
+		return 1
+	case err != nil:
+		fmt.Fprintf(stdout, "Last sync:  unknown (%v)\n", err)
+		return 1
+	}
+	now := time.Now()
+	if st.LastSyncAt.IsZero() {
+		fmt.Fprintln(stdout, "Last sync:  never")
+		healthy = false
+	} else {
+		fmt.Fprintf(stdout, "Last sync:  %s ago\n", now.Sub(st.LastSyncAt).Round(time.Second))
+	}
+	if now.Sub(st.LastAttemptAt) > staleAfter {
+		healthy = false
+		fmt.Fprintf(stdout, "Problem:    the bridge hasn't tried to sync for %s. Is it running? Check with: systemctl status xmr-bridge\n", now.Sub(st.LastAttemptAt).Round(time.Second))
+	}
+	if st.LastError != "" {
+		healthy = false
+		fmt.Fprintf(stdout, "Problem:    %s\n", st.LastError)
+	}
+	fmt.Fprintf(stdout, "Wallet:     height %d\n", st.WalletHeight)
+	fmt.Fprintf(stdout, "Addresses:  %d of %d ready on the site", st.PoolFree, st.PoolTarget)
+	if st.Pending > 0 {
+		fmt.Fprintf(stdout, " (%d more waiting to be sent)", st.Pending)
+	}
+	fmt.Fprintf(stdout, "\nWatching:   %d payment address(es)\n", st.Watching)
+	for _, w := range st.Warnings {
+		fmt.Fprintf(stdout, "Warning:    %s\n", w)
+	}
+	if !healthy {
+		return 1
+	}
+	return 0
+}

@@ -1,6 +1,6 @@
 // Command xmr-bridge is the wallet host's half of xmr-pay: it runs Monero's monero-wallet-rpc with a view-only
-// wallet and pushes signed snapshots to the site. So far: version, run (install and supervise wallet-rpc, open the
-// wallet; the sync loop comes in 3d) and notify.
+// wallet and pushes signed snapshots to the site. Commands: version, run (install and supervise wallet-rpc, open
+// the wallet, sync), pair, status and notify.
 package main
 
 import (
@@ -24,6 +24,8 @@ var version = "dev"
 const usage = `usage:
   xmr-bridge version
   xmr-bridge run --config <file>
+  xmr-bridge pair --config <file> --code <one-time code>
+  xmr-bridge status --config <file>
   xmr-bridge notify --pid <bridge pid> [txid]   (run by monero-wallet-rpc's --tx-notify)
 `
 
@@ -47,6 +49,10 @@ func realMain(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return cmdRun(ctx, args[1:], stderr)
 	case "notify":
 		return cmdNotify(args[1:], stderr)
+	case "pair":
+		return cmdPair(ctx, args[1:], stdout, stderr)
+	case "status":
+		return cmdStatus(args[1:], stdout, stderr)
 	default:
 		fmt.Fprint(stderr, usage)
 		return 2

@@ -2,22 +2,26 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/hashsig"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/monerodl"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/supervise"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/wallet"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
-// bridgeHandle is a started bridge: Notify asks for an immediate sync (3d), Stop stops it and waits.
+// bridgeHandle is a started bridge: Notify asks for an immediate sync, Stop stops it and waits.
 type bridgeHandle interface {
 	Notify()
 	Stop()
@@ -30,9 +34,10 @@ type running struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	sup    *supervise.Supervisor
+	loop   *bridgeloop.Loop
 }
 
-func (r *running) Notify() {}
+func (r *running) Notify() { r.loop.Notify() }
 
 func (r *running) Stop() {
 	r.cancel()
@@ -67,12 +72,24 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 	if err != nil {
 		return nil, err
 	}
+	loop, err := bridgeloop.New(bridgeloop.Options{
+		Wallet:  func(ctx context.Context) (bridgeloop.Wallet, error) { return sup.WaitReady(ctx) },
+		Site:    siteClient(cfg),
+		LoadKey: func() (ed25519.PrivateKey, error) { return syncsign.LoadKey(keyFile(cfg)) },
+		DataDir: cfg.DataDir,
+		Log:     log,
+		Extra:   func() any { return sup.Status() },
+	})
+	if err != nil {
+		return nil, err
+	}
 	rctx, cancel := context.WithCancel(ctx)
-	r := &running{cancel: cancel, done: make(chan struct{}), sup: sup}
-	go func() {
-		defer close(r.done)
-		sup.Run(rctx)
-	}()
+	r := &running{cancel: cancel, done: make(chan struct{}), sup: sup, loop: loop}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); sup.Run(rctx) }()
+	go func() { defer wg.Done(); loop.Run(rctx) }()
+	go func() { wg.Wait(); close(r.done) }()
 	go func() {
 		c, err := sup.WaitReady(rctx)
 		if err != nil {
