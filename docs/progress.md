@@ -108,3 +108,45 @@ Done: everything in 2f except CI's first run on GitHub. Dev-site end to end with
 Tests: no new runs since the addendum above.
 Open issues: Wyatt's `--cleanup-only` hadn't run at the time of this entry (the dev database still held the hand run's 50 pool rows, 2 invoices, `state:bridge`, `state:pairing` and the bridge key); the dev site was stopped at the end of the day. `deletePluginData` leaves the rate cache (`cache:rate:*`). Excludes to delete on or after 2026-10-08. Spec changes 6 and 7 to fold into the live spec. Phase 04 wording note ("Free addresses").
 Next step: (1) If not done, `node ~/xmr-pay/scripts/dev-e2e.mjs --cleanup-only` and confirm it reports 52 pool and invoice rows, 2 KV rows and 1 bridge key removed. (2) Open the repository's Actions tab on GitHub and confirm the "CI" run for the pushed `main` passed all six steps (install, typecheck, validate, tests, bundle caps); if it failed, Claude reads the log and fixes it. (3) Then Claude checks phase 02's "done when" list against `docs/phases/02-plugin-core.md` and, if everything holds, writes phase 02's closing entry; the next phase is 03 (`docs/phases/03-bridge-and-installer.md`).
+
+## 2026-10-04 · Phase 02 · Session 2f close
+
+Done:
+- Dev-site cleanup: `data.db` backed up to `~/xmr-pay-dev-data/baseline/data.db.before-2f-cleanup`, then `dev-e2e.mjs --cleanup-only`: "removed 52 pool and invoice rows, 2 KV rows, 1 bridge key". Left: `cache:rate:USD` and `state:cronScheduled` (KV), plus Wyatt's settings.
+- CI on GitHub: the "CI" run for `5e9fe26` completed with success (read from the public Actions API; `gh` isn't installed).
+- `deletePluginData` now also removes the rate cache (`cache:rate:USD` and `cache:rate:EUR`): `a882711`, test first.
+- Done-when check, test by test against "Tests (minimum)" in `docs/phases/02-plugin-core.md`. One gap: spec change 3's "a second invoice with an address already used is refused and checkout retries" had no test. The route-level attempt showed that the runtime test host **doesn't apply `uniqueIndexes`**: a duplicate was stored without complaint. On a real site EmDash does: the dev DB has `CREATE UNIQUE INDEX uidx_plugin_xmr-pay_invoices_subaddress … json_extract(data, '$.subaddress')`, and a scratch copy refused a second invoice with the same address (`UNIQUE constraint failed`, `~/xmr-pay-dev-data/2f-unique-index-check.txt`). Added `tests/routes/claim.test.ts`: the exported `claimAndStore` against a fake store that refuses duplicates. The refused row stays claimed and another free address is used; with every free address taken it returns `NO_ADDRESS_AVAILABLE`. Mutation (rethrow on refusal) fails both tests. Commit `3d9b3c0`.
+- Spec change 9 proposed (Wyatt's request): the shop's wallet app may miss payments after 200 or more unpaid addresses in a row (subaddress lookahead). Notes added:
+  - phase 03: a stagenet test of the gap, a default-settings wallet as the shop's app, and a reinstalled bridge
+  - phase 04: a gap warning from a constant threshold, beside "a run of unpaid expired invoices"
+  - phase 05: the test tip must show up in the shop's wallet app, as a timing-sheet row and a pass criterion
+  - commit `6b5bba4`
+
+Phase 02 "done when":
+- all tests pass in the test hosts: yes
+- the plugin runs in the dev site: yes, since 2a
+- a signed sync sent by a script settles an invoice: yes (2f run 3 and Wyatt's hand run)
+- the bundle is under its caps: 27.5 KB
+- CI runs the tests: yes (run on `5e9fe26`)
+
+Phase 02 is done, with the open items below.
+
+Tests:
+- `cd plugin && pnpm test`: 12 files, 119 tests passing
+- `tsc --noEmit` clean
+- manifest valid
+- `bundle --validate-only` passed (27.5 KB across 3 files)
+
+Not covered:
+- unique-index enforcement through the plugin's own storage API on a live site (shown on the SQL index directly, and on the plugin's logic with a fake)
+- real concurrent claims and PostgreSQL (spike Q6)
+- the built workerd copy in 2f
+- the uninstall hook's host wiring
+
+Open issues:
+- The dev DB still has two SQL indexes from the phase 01 spike (`idx_plugin_xmr-spike_pool_status`, `uidx_plugin_xmr-spike_pool_addrIndex`; their `_plugin_indexes` rows were removed then, the indexes weren't). They're harmless. Ask Wyatt before dropping them.
+- Delete the excludes on or after 2026-10-08 (both packages).
+- Spec changes 6 and 7 are still to fold into the live spec; spec change 9 is for Wyatt to decide.
+- Commits `a882711`, `3d9b3c0`, `6b5bba4` and this entry are local, not pushed.
+
+Next step: with Wyatt's approval, push (CI should pass: same checks run locally). Then phase 03, session 3a, from `docs/phases/03-bridge-and-installer.md`. If Wyatt has decided spec change 9 by then, fold it into the 3a plan.
