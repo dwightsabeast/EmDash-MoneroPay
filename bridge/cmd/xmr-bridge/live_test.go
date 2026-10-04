@@ -139,14 +139,21 @@ func TestLiveShopWallet(t *testing.T) {
 		time.Sleep(5 * time.Second)
 	}
 	t.Logf("wallet synced to %d in %v", height, time.Since(begin).Round(time.Second))
-	transfers, err := c.GetTransfers(ctx, []uint32{0})
+	// The phase 01 spike's 0.001 XMR stagenet payment went to subaddress 1 at height 2221449
+	// (spikes/wallet/evidence/q7-normal-payment.txt); a fresh view-only wallet must find it.
+	transfers, err := c.GetTransfers(ctx, []uint32{0, 1})
 	if err != nil {
 		t.Fatal(err)
 	}
+	found := false
 	for _, tr := range transfers {
-		t.Logf("incoming to index 0: %s atomic, height %d, confirmations %d, unlock %s, pool %v", tr.Amount, tr.Height, tr.Confirmations, tr.UnlockTime, tr.Pool)
+		t.Logf("incoming to index %d: %s atomic, height %d, confirmations %d, unlock %s, pool %v", tr.Index, tr.Amount, tr.Height, tr.Confirmations, tr.UnlockTime, tr.Pool)
+		found = found || (tr.Index == 1 && tr.Amount == "1000000000" && tr.Height == 2221449 && tr.UnlockTime == "0")
 	}
-	t.Logf("%d incoming transfer(s) to index 0", len(transfers))
+	if !found && restore <= 2221449 {
+		t.Fatal("the spike's payment to subaddress 1 was not found")
+	}
+	t.Logf("%d incoming transfer(s) to indexes 0 and 1; the spike's payment found: %v", len(transfers), found)
 
 	// 3. kill -9: the supervisor restarts wallet-rpc and Init reopens the wallet.
 	first := r.sup.Status().PID
