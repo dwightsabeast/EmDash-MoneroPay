@@ -252,3 +252,39 @@ Open issues, for Wyatt:
 Also open: delete the excludes on or after 2026-10-08; spec changes 6, 7 and 9 to fold into the live spec. Commits `9e5c861`, `296601e`, `fa26968` and this entry are local.
 
 Next step: with Wyatt's answers, add `go-crypto` to `bridge/oracle` (exact versions, committed `go.sum`) as a third verdict in the same comparison, finish 3b-1, then 3b-2.
+
+## 2026-10-04 · Phase 03 · Session 3b-1 (part 2): comparison checks, 3b-1 done
+
+Done:
+- **Wyatt's answers.** Spec change 10 accepted, strict. `golang.org/x/crypto` and `golang.org/x/sys` approved for `bridge/oracle` only. Both recorded in `docs/spec-changes.md` and `docs/decisions.md`.
+- **`go-crypto` v1.5.2 added to `bridge/oracle`** (`go.sum` committed; `go mod verify`: all modules verified).
+  - Indirect: `circl` v1.6.3, `x/crypto` v0.41.0, `x/sys` v0.35.0, all far past 7 days old.
+  - `bridge/go.mod` is unchanged and has no `go.sum`.
+- **The second comparison** asks `go-crypto` the same question as `gpgv`: one signature packet, valid at the test time, issued by the primary key, and the text it returns. The CI step runs both. Commit `d8f2769`.
+- **Found by the comparison:**
+  - `go-crypto` refused the test-key files as "signature expired". They had been signed at 17:43 UTC, after the tests' fixed 12:00 "now", and `go-crypto` refuses future-dated signatures.
+  - Our verifier accepted them, which spec change 10 forbids. `Verify` now refuses a signature dated after "now" (test plus mutation check).
+  - The generator now signs at a fixed 2026-01-01 (expired case 2020), so the files don't depend on when they were made. Regenerated with new throwaway keys, public halves only. Commit `1ce6f68`.
+- **`go-crypto` is more lenient than `gpgv` in four ways:** it ignores the `Hash:` header (missing or mismatched), ignores a changed armor checksum, and reads only the first of two signed blocks. `gpgv` refuses all of these, as we do.
+
+Tests:
+- `cd bridge && go test ./...`: 5 packages pass (`hashsig` 15 tests plus 3 fuzz targets on their seeds); `gofmt`, `vet` clean.
+- **Comparison** (`~/xmr-pay-dev-data/3b1-oracle-both.txt`): 26 inputs × 3 keys × 2 oracles = 156 comparisons, 8 acceptances by ours, all three verifiers agreeing on each.
+  - Ours never accepted what an oracle refused, and accepted texts were identical.
+  - 10 rows where ours refuses and an oracle accepts, each named in the test with its policy: SHA-384; text outside the signed block (before, after, the file twice); a missing or mismatched `Hash:` header (3); armor checksum changed or removed; signature-block armor header.
+- `FuzzVerify` again for 90 s on the new seeds: about 3.4M inputs, no failures.
+- Clean-clone rehearsal of the whole CI bridge job, including the module download and `go mod verify`: passes.
+
+Not covered: hour-long fuzz runs; Monero's previous signing keys (none pinned, by design).
+
+Phase 03 so far: 3a and 3b-1 done. Revision 70's verifier tests (fuzzing, tampered files, two comparison oracles in CI) are all in place.
+
+Open issues:
+- Wyatt folds spec changes 6, 7, 9 and 10 into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- From 3a: how the supervised wallet-rpc gets its login without showing it in the process list (3b-2).
+- Commits `9e5c861` through this entry are local.
+
+Next step: session 3b-2.
+1. Check `monero-wallet-rpc --help` for how a login can be passed without the command line.
+2. Plan the download path: `hashes.txt` from getmonero.org, verify with `hashsig`, the archive for the CPU (linux64 or linuxarm8), its SHA-256 checked against the verified list, extract only `monero-wallet-rpc` (`compress/bzip2`, `archive/tar`), and supervision (localhost bind, generated login, `--tx-notify`).
