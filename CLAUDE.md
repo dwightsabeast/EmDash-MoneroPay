@@ -197,6 +197,6 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Dev-site products (collection and three test products) | With the site stopped, in `~/sites/xmr-dev-site`: `npx emdash seed ../../xmr-pay/scripts/dev-products.seed.json --on-conflict skip` (`--validate` for a dry run). No login needed; safe to re-run |
 | Plugin build for the dev site | `cd plugin && pnpm run build` (the site imports `plugin/` through `npm install file:../../xmr-pay/plugin` and `sandboxed: [xmrPay]`) |
 | Plugin end to end on the dev site (fake bridge) | With the dev site running a fresh plugin build: `node scripts/dev-e2e.mjs` (pairs through the KV shortcut, runs the host checks and checkout to settled, then removes what it created). `--pair <code>` uses a code from the admin page instead; `--keep` leaves the run's rows; `--cleanup-only` removes leftovers. Loopback sites only. Back up `data.db` first |
-| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check, and the bridge's gofmt, vet, tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
+| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check, and the bridge's gofmt, vet, tests, race-detector tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
 
 Fill in or correct this table as phases add commands.

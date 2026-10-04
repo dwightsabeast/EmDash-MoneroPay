@@ -1,5 +1,5 @@
 # Plugin checks on every push to main and every pull request: typecheck, manifest validation, tests, bundle caps.
-# Bridge checks (2026-10-04): gofmt, vet, tests, a static build. Go from actions/setup-go (GitHub's own), cache off;
+# Bridge checks (2026-10-04): gofmt, vet, tests, tests with the race detector, a static build. Go from actions/setup-go (GitHub's own), cache off;
 # GOTOOLCHAIN=local so Go never fetches another toolchain.
 # Hardening (Wyatt, 2026-10-03): read-only token, no pull_request_target, no persisted git credentials, frozen
 # lockfile, no dependency cache. Actions are GitHub's own, pinned to commit SHAs; pnpm comes from Node's corepack
@@ -68,6 +68,10 @@ jobs:
         run: go vet ./...
       - name: Tests
         run: go test ./...
+      - name: Tests with the race detector (needs cgo; the runner has gcc)
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./...
       - name: Static build
         run: go build -trimpath -o "$RUNNER_TEMP/xmr-bridge" ./cmd/xmr-bridge && file "$RUNNER_TEMP/xmr-bridge" | grep -q 'statically linked'
       - name: Hash-list verifier against gpgv and go-crypto (bridge/oracle, a separate test-only module)
