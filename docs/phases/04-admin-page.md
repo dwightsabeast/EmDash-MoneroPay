@@ -29,6 +29,8 @@ Phase 04, admin page. Read docs/phases/04-admin-page.md and docs/progress.md, th
 
 **Wording to change (Wyatt, phase 02 session 2f):** the 2e page's "Free addresses: 48 of 50" (and the widget's "48 free addresses") read to Wyatt like linked wallets. Reword both so they say what they are: unused one-time payment addresses from the shop's own wallet, which the wallet host tops up by itself. A suggestion for Wyatt to accept or change: "Payment addresses ready: 48 of 50", with a hint line "Each payment gets its own address from your wallet. The wallet host adds more automatically." Labels are in `plugin/src/admin.ts` (the status field and the widget's health line). The spec's Health list says "free addresses" as the check's name; whether its wording changes too is Wyatt's call. See `docs/setup-friction.md`, 2026-10-03, session 2f admin page wording.
 
+**Unpaid address gap (spec change 9, if Wyatt accepts it):** the shop's wallet app finds payments only within a lookahead window (200 addresses by default) past the last address that received money. Abandoned checkouts each use an address, so a long run of them can leave a real payment missing from the app's balance. Next to the Health line "a run of unpaid expired invoices", work out the gap (highest claimed pool index minus the highest index with a counted payment) and show a red line before it gets close: a constant threshold (proposed 150), never a setting. The line names the fix in the wallet app, using the remedy phase 03 found on stagenet. Test it in the runtime host at, just below and above the threshold.
+
 **Rules**
 
 - No new settings beyond the spec's three. If a design need seems to call for one, stop and ask.

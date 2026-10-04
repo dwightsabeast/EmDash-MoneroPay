@@ -108,3 +108,24 @@ Effect on the admin budget: none.
 Effect on the trust contract: none (the same two hosts; only the order changes).
 Wyatt's decision (2026-10-03): accepted: Kraken first; GBP left out for now. Wyatt updates the live spec and `docs/spec.md`.
 
+
+## 9. The shop's wallet app may miss payments after a long run of unpaid addresses (subaddress lookahead)  (status: proposed)
+Found in: Wyatt, 2026-10-04, reviewing phase 02 before phase 03
+Spec says: Key design decisions: "Pre-created address pool, one subaddress per invoice, never reused". Bridge service, Pool top-up: "create the missing subaddresses (`create_address`, account 0 …)". The spec says nothing about how other wallets holding the same keys find those addresses.
+Evidence (not yet tested; phase 03 tests it):
+- A Monero wallet doesn't scan every possible subaddress. It keeps a lookahead window past the highest index that has received money, 200 per account by default in `wallet2`, and grows the window as payments arrive (to be confirmed on stagenet).
+- The bridge's own `monero-wallet-rpc` knows every address it created with `create_address`, so the bridge and the plugin still see the payment.
+- The shop's wallet app (GUI, Feather, Cake, the CLI, restored from the seed) knows only its default window. Every checkout claims a new index, and abandoned checkouts are never paid. After 200 or more claimed-but-unpaid indexes in a row, a payment to a later index can be settled in the plugin but missing from the app's balance until the app's lookahead is raised.
+- The same applies to a reinstalled bridge: a fresh `generate_from_keys` wallet starts with the default window, so it must recreate addresses up to the highest pool index before it reconciles.
+- Checked 2026-10-04: `/opt/monero/monero-wallet-rpc --help` (0.18.5.1) lists no lookahead option.
+Proposal:
+1. Phase 03 tests it on stagenet. With more than 200 unpaid indexes past the last paid one, pay the far address, then check:
+   - the bridge reports the payment
+   - a second view-only wallet restored from the same keys with default settings (standing in for the shop's app) doesn't see it
+   - what makes it appear (raising the lookahead, creating addresses up to the index)
+   - that a reinstalled bridge (fresh wallet from keys) sees payments to high indexes after it reconciles
+2. The plugin computes the gap from data it already stores: the highest claimed pool index minus the highest index with a counted payment.
+3. The admin page (phase 04) warns before the gap gets close: a red health line from a constant threshold (proposed: 150 of 200; a constant, no setting), naming the fix in the wallet app. It belongs with the spec's existing Health check "a run of unpaid expired invoices".
+4. Address reuse is not proposed (`docs/decisions.md`: never reused).
+Effect on the admin budget: no new setting or install step. The fix for the warning (raising the app's lookahead, once, when it shows) is an occasional manual task and touches "no routine upkeep"; Wyatt decides whether that is acceptable or the feature must change.
+Effect on the trust contract: none (no capability, host, route, storage or admin declaration changes).

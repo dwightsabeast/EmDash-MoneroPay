@@ -63,6 +63,11 @@ Phase 03, bridge and installer. Read docs/phases/03-bridge-and-installer.md, doc
 - If Wyatt approved regtest in phase 01: chain tests with throwaway regtest wallets (send, confirm, pop blocks for a reorg, a double-spend if feasible). Otherwise these stay covered by the plugin-side scenario tests.
 - Installer: unit-test its pieces (argument parsing, prompts read from `/dev/tty`, the same-machine check, the network check) with a fake root directory; `shellcheck` it if Wyatt approves installing shellcheck. The real install runs by Wyatt's hand: on the dev box with the stagenet-only same-machine flag now, and on the second container in phase 05. There's no container runtime on the dev box.
 - End to end on stagenet (3h), each with Wyatt sending payments: happy path, two-part payment, underpayment, late payment, bridge stopped across an invoice's expiry then restarted, wallet-rpc killed (supervisor restarts it), site unreachable for a few minutes, re-pairing after deleting the bridge's key.
+- Subaddress lookahead (spec change 9, proposed; Wyatt's decision on it may change this), on stagenet:
+  - **Gap:** create more than 200 addresses past the last paid index (`create_address` on the bridge's wallet is enough; no need for 200 checkouts), have Wyatt pay the furthest one, and check that the bridge reports it.
+  - **Shop wallet stand-in:** a second view-only wallet-rpc restored from the same keys with default settings plays the shop's wallet app. Record whether it sees the payment, and what makes it appear.
+  - **Reinstall:** a reinstalled bridge (a fresh wallet from keys) recreates addresses up to the highest pool index before it reconciles, and sees payments to high indexes.
+  - Record the evidence in spec change 9.
 
 **Stop points:** the GPG-verification approach, the release-signature scheme and the dev release mode (Wyatt decides from your options); any dependency; any extra installer prompt or setting; anything needing `sudo` (Wyatt runs it).
 
