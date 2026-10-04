@@ -1,0 +1,43 @@
+# Plugin checks on every push to main and every pull request: typecheck, manifest validation, tests, bundle caps.
+# Hardening (Wyatt, 2026-10-03): read-only token, no pull_request_target, no persisted git credentials, frozen
+# lockfile, no dependency cache. Actions are GitHub's own, pinned to commit SHAs; pnpm comes from Node's corepack
+# at the exact version in plugin/package.json ("packageManager"), so there is no third-party setup action.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugin
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable pnpm && pnpm --version
+      - name: Install (frozen lockfile; pnpm-workspace.yaml's install-script allowlist and release-age rule apply)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Validate manifest
+        run: pnpm exec emdash-plugin validate
+      - name: Tests
+        run: pnpm exec vitest run
+      - name: Bundle caps
+        run: pnpm exec emdash-plugin bundle --validate-only
