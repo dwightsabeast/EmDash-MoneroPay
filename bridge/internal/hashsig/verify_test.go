@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The message the test files sign, as the verifier must return it: dash-escaping undone, trailing spaces and tabs
@@ -245,5 +246,17 @@ func TestNonMinimalMPI(t *testing.T) {
 	alt[at], alt[at+1] = byte(bits>>8), byte(bits)
 	if _, err := Verify(append(append([]byte{}, head...), armorSignature(alt)...), MoneroReleaseKey, now); err == nil || !strings.Contains(err.Error(), "MPI") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A signature dated after "now" is refused (as go-crypto does), so ours never accepts more than an oracle.
+func TestSignatureFromTheFuture(t *testing.T) {
+	a := loadKey(t, "testkey-a.asc")
+	data := readFile(t, "good-sha256.txt") // signed 2026-01-01
+	if _, err := Verify(data, a, time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "future") {
+		t.Fatalf("before the signing time: %v", err)
+	}
+	if _, err := Verify(data, a, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("at the signing time: %v", err)
 	}
 }

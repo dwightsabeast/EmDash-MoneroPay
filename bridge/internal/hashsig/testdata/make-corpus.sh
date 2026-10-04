@@ -38,7 +38,9 @@ cat > message.txt <<'MSG'
 #	
 MSG
 
-sign() { out=$1; shift; g --armor --output "$out" "$@" --clearsign message.txt; }
+# Signatures are dated 2026-01-01 so the files don't depend on when they were generated (the tests' "now" is
+# 2026-10-04; a signature dated after "now" is refused). The expired case overrides it with 2020.
+sign() { out=$1; shift; g --armor --output "$out" --faked-system-time 20260101T000000 "$@" --clearsign message.txt; }
 rm -f good-*.txt bad-*.txt
 sign good-sha256.txt          --local-user "$A!" --digest-algo SHA256
 sign good-sha512.txt          --local-user "$A!" --digest-algo SHA512

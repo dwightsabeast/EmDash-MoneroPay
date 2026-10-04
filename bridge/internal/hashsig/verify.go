@@ -430,6 +430,9 @@ func checkSignature(text, pkt []byte, wantHash byte, key PublicKey, now time.Tim
 	if s.created < key.Created {
 		return malformed("signature is older than its key")
 	}
+	if int64(s.created) > now.Unix() {
+		return malformed("signature is dated in the future")
+	}
 	if s.hasExpires && s.expires != 0 && now.Unix() >= int64(s.created)+int64(s.expires) {
 		return ErrExpired
 	}
