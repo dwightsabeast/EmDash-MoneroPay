@@ -288,3 +288,62 @@ Open issues:
 Next step: session 3b-2.
 1. Check `monero-wallet-rpc --help` for how a login can be passed without the command line.
 2. Plan the download path: `hashes.txt` from getmonero.org, verify with `hashsig`, the archive for the CPU (linux64 or linuxarm8), its SHA-256 checked against the verified list, extract only `monero-wallet-rpc` (`compress/bzip2`, `archive/tar`), and supervision (localhost bind, generated login, `--tx-notify`).
+
+## 2026-10-04 · Phase 03 · Session 3b-2: download, verify and supervise wallet-rpc
+
+Done:
+- Pushed `9f2515c..b33c514` with Wyatt's approval. Plan approved as written: `xmr-bridge notify` for `--tx-notify`, the two download hosts fixed in code, wallet-rpc in `<dataDir>/bin/`.
+- **Research.** wallet-rpc 0.18.5.1 has no login-file option, but `--config-file` takes `rpc-login=user:password`. A probe confirmed the login works that way and the password appears nowhere in the process list. Archives are direct downloads: linux-x64 0.18.5.1 is 84,575,716 bytes, linux-armv8 74,269,877.
+- **`internal/monerodl`**, commit `6388886`:
+  - `Latest`: `hashes.txt` over https from `www.getmonero.org`, verified with `hashsig` and the pinned key, then exactly one CLI archive for this CPU (x64 or armv8).
+  - `Install`: downloads from `downloads.getmonero.org/cli/` with a 256 MB cap, checks the SHA-256 against the verified list, then extracts only `<dir>/monero-wallet-rpc` (a regular file, exactly one, 128 MB cap, decompression bounded at 2 GB).
+  - Writes the binary (0755) and `installed.json` (version, archive and binary hashes) by temporary file and rename. A failure leaves the previous install untouched.
+  - Redirects only over https and only between the two hosts.
+  - Fixtures from `testdata/make-fixtures.sh`: tiny archives made with system `tar` and `bzip2`, lists signed by a throwaway key deleted on exit (public key and its parameters only).
+- **`internal/supervise`**, commit `0696c53`:
+  - wallet-rpc runs as a child, bound to 127.0.0.1 on a free port.
+  - A new random login each start, in a mode-600 `--config-file` that is removed once wallet-rpc answers.
+  - Empty environment, its own process group; wallet, ringdb and log (2 × 10 MB) under the data folder.
+  - Network flag, `--daemon-address` and `--daemon-ssl` from the node URL; `--tx-notify "<bridge> notify --pid <pid> %s"`.
+  - Ready when `get_version` answers. Restart backoff 1 s to 60 s, reset after 5 minutes of stable running. Stop: SIGTERM, then SIGKILL after 30 s.
+  - The parent-death signal is sent from a locked OS thread, so the child dies with the bridge. `Status` is ready for health and `xmr-bridge status`.
+- **`xmr-bridge notify --pid <pid> [txid]`** sends SIGUSR1. `run` takes SIGUSR1 from the start (Go's default for it is to exit) and logs it; the sync loop in 3d will act on it.
+
+Tests:
+- `cd bridge && go test ./...`: 7 packages pass. `gofmt` and `vet` clean, static build, `oracle` passes.
+  - `monerodl`: 9 top-level tests.
+  - `supervise`: 10 tests, using the test binary re-run as a fake wallet-rpc, or as a fake bridge.
+  - `cmd`: 3 new tests.
+- **`supervise` repeated 10 times:** no flakiness, no leftover processes. The race detector couldn't run: there's no C compiler on this box (see open issues).
+- **Mutation checks, all caught:**
+  - `monerodl`: archive hash check, redirect host check, https requirement, redirect scheme check, signature check, second entry, links, any depth, several releases, download size cap.
+  - `supervise`: login file kept, environment inherited, no SIGKILL fallback, ready without an answer, bind on all interfaces, backoff never resets.
+  - Redundant by construction: the binary's header size cap and its copy cap back each other up.
+  - Three test fixes were needed to catch these: a real plain-http server, a two-entry archive at the normal depth, and asserting the size-cap error.
+- **Live, download** (`~/xmr-pay-dev-data/3b2-live-download.txt`): the real list verified with the pinned key, the 85 MB archive matched `22a7dda7…c9958`, and the extracted binary is byte-identical to `/opt/monero/monero-wallet-rpc`. 48 s.
+- **Live, supervise** (`~/xmr-pay-dev-data/3b2-live-supervise.txt`), real wallet-rpc 0.18.5.1 against the stagenet node: ready with RPC 1.31, no `rpc-login` on its command line, login file gone, log written. After `kill -9` it was back about 1 s later with a new pid, port and login. Stop left nothing running. 8.4 s.
+- **Child dies with the bridge:** passed 5 of 5 times.
+
+Not covered:
+- `--tx-notify` actually firing (needs a wallet and a payment: 3c and 3h)
+- wallet-rpc's own behaviour under `systemd` hardening (3f)
+- the race detector (no `gcc`)
+
+Notes:
+- The parent-death signal is SIGTERM, so wallet-rpc can save its wallet. A child that ignored SIGTERM would survive a hard kill of the bridge; the real wallet-rpc honours it.
+- One leftover fake process, from the "no SIGKILL fallback" mutation run, was found and killed. Normal runs leave none.
+- `run` doesn't install or supervise yet: wiring belongs with the wallet (3c) and the sync loop (3d).
+
+Open issues:
+- **For Wyatt:** add a `go test -race ./...` step to CI? GitHub's Ubuntu runners have `gcc`, so it needs no new dependency. Locally it would need `gcc` installed (a system package).
+- Delete the excludes on or after 2026-10-08.
+- Wyatt folds spec changes 6, 7, 9 and 10 into the live spec.
+- The downloaded wallet-rpc stays in `~/xmr-pay-dev-data/3b2-live-download/` for 3c.
+- Commits `6388886`, `0696c53` and this entry are local.
+
+Next step: session 3c, wallet from keys.
+- `generate_from_keys` with the shop's address and view key, no spend key.
+- Restore height from the node's current height unless set.
+- The network check: the address prefix must match the node's network.
+- Wire install-if-missing and supervise into `run`.
+- Spec change 9's lookahead test needs a wallet, so it fits here or in 3h.
