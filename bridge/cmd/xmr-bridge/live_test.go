@@ -43,7 +43,10 @@ func TestLiveShopWallet(t *testing.T) {
 	if err := shopkeys.CheckViewKey(view.Reveal()); err != nil {
 		t.Fatalf("the shop view key fails the bridge's check: %v", err)
 	}
-	t.Log("the real stagenet address and view key pass the bridge's checks")
+	if err := shopkeys.CheckViewKeyMatches(addr, view); err != nil {
+		t.Fatalf("the shop view key doesn't match the shop address by the bridge's own check: %v", err)
+	}
+	t.Log("the real stagenet address and view key pass the bridge's checks, including view key * B == the address's public view key")
 
 	data, err := os.MkdirTemp(base, "3c-live-")
 	if err != nil {
@@ -100,7 +103,7 @@ func TestLiveShopWallet(t *testing.T) {
 	if wallet.Exists(data) {
 		t.Fatal("a wrong view key left a wallet")
 	}
-	t.Log("the real wallet-rpc refused a view key that isn't this address's")
+	t.Log("a view key that isn't this address's was refused before reaching wallet-rpc (spec change 11)")
 	if err := wallet.Create(ctx, c, cfg, view, node); err != nil {
 		t.Fatal(err)
 	}

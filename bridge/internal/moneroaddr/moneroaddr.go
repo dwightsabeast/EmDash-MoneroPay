@@ -68,6 +68,15 @@ func Parse(addr string) (string, Kind, error) {
 	return p.net, p.kind, nil
 }
 
+// PublicKeys returns the public spend and view keys an address carries (bytes 1-32 and 33-64).
+func PublicKeys(addr string) (spend, view []byte, err error) {
+	if _, _, err := Parse(addr); err != nil {
+		return nil, nil, err
+	}
+	b, _ := decode(addr)
+	return b[1:33], b[33:65], nil
+}
+
 // CheckPrimary returns nil if addr is a primary (standard) address on network, and otherwise a message an admin
 // can act on.
 func CheckPrimary(addr, network string) error {

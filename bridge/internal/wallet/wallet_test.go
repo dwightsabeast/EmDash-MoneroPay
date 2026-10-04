@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,13 +14,24 @@ import (
 	"testing"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/edwards"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/secret"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/testaddr"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
-const viewKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00"
+// A made-up key pair (reduced scalars) and the stagenet address it gives.
+const (
+	viewKey  = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00"
+	spendKey = "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf00"
+)
+
+var shopAddr = func() string {
+	v, _ := hex.DecodeString(viewKey)
+	sp, _ := hex.DecodeString(spendKey)
+	return testaddr.FromKeys(24, edwards.ScalarBaseMult(sp), edwards.ScalarBaseMult(v))
+}()
 
 // rpc is a wallet-rpc stand-in without a login: method -> raw "result" JSON, or a full body starting with "!".
 type rpc struct {
@@ -65,7 +77,7 @@ func (f *rpc) methods() []string {
 }
 
 func cfg(t *testing.T) config.Config {
-	return config.Config{Site: "https://shop.example", Network: config.Stagenet, Address: testaddr.Stagenet,
+	return config.Config{Site: "https://shop.example", Network: config.Stagenet, Address: shopAddr,
 		Node: "http://127.0.0.1:38081", DataDir: t.TempDir()}
 }
 
@@ -73,7 +85,7 @@ var stagenetNode = noderpc.Info{NetType: "stagenet", Height: 2222128, Synchroniz
 
 func TestCreate(t *testing.T) {
 	f, c := newRPC(t)
-	f.results["generate_from_keys"] = `{"address":"` + testaddr.Stagenet + `","info":"ok"}`
+	f.results["generate_from_keys"] = `{"address":"` + shopAddr + `","info":"ok"}`
 	conf := cfg(t)
 	if err := Create(context.Background(), c, conf, secret.New(viewKey), stagenetNode); err != nil {
 		t.Fatal(err)
@@ -95,7 +107,7 @@ func TestCreate(t *testing.T) {
 
 func TestCreateUsesConfiguredRestoreHeight(t *testing.T) {
 	f, c := newRPC(t)
-	f.results["generate_from_keys"] = `{"address":"` + testaddr.Stagenet + `","info":"ok"}`
+	f.results["generate_from_keys"] = `{"address":"` + shopAddr + `","info":"ok"}`
 	conf := cfg(t)
 	conf.RestoreHeight = 2100000
 	if err := Create(context.Background(), c, conf, secret.New(viewKey), stagenetNode); err != nil {
@@ -120,6 +132,8 @@ func TestCreateRefuses(t *testing.T) {
 			os.MkdirAll(filepath.Join(c.DataDir, "wallet"), 0o700)
 			os.WriteFile(filepath.Join(c.DataDir, "wallet", FileName+".keys"), []byte("x"), 0o600)
 		}, nil},
+		"the spend key":           {stagenetNode, "spend", nil, ErrSpendKey},
+		"another address's key":   {stagenetNode, "other", nil, ErrViewKeyMismatch},
 		"view key does not match": {stagenetNode, `!{"jsonrpc":"2.0","id":"0","error":{"code":-1,"message":"view key does not match standard address"}}`, nil, ErrViewKeyMismatch},
 		"view key unparsable":     {stagenetNode, `!{"jsonrpc":"2.0","id":"0","error":{"code":-1,"message":"Failed to parse view key secret key"}}`, nil, ErrViewKeyMismatch},
 		"other wallet-rpc error":  {stagenetNode, `!{"jsonrpc":"2.0","id":"0","error":{"code":-1,"message":"disk full"}}`, nil, nil},
@@ -128,15 +142,22 @@ func TestCreateRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, c := newRPC(t)
 			// wallet-rpc would succeed unless the case says otherwise, so only the check under test can refuse.
-			f.results["generate_from_keys"] = `{"address":"` + testaddr.Stagenet + `","info":"ok"}`
-			if cs.result != "" {
+			f.results["generate_from_keys"] = `{"address":"` + shopAddr + `","info":"ok"}`
+			key := viewKey
+			switch cs.result {
+			case "spend":
+				key, cs.result = spendKey, ""
+			case "other":
+				key, cs.result = "1112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00", ""
+			case "":
+			default:
 				f.results["generate_from_keys"] = cs.result
 			}
 			conf := cfg(t)
 			if cs.before != nil {
 				cs.before(conf)
 			}
-			err := Create(context.Background(), c, conf, secret.New(viewKey), cs.node)
+			err := Create(context.Background(), c, conf, secret.New(key), cs.node)
 			if err == nil {
 				t.Fatal("created")
 			}
@@ -146,7 +167,7 @@ func TestCreateRefuses(t *testing.T) {
 			if cs.result == "" && len(f.calls) != 0 {
 				t.Fatalf("wallet-rpc was asked to create the wallet: %v", f.methods())
 			}
-			if strings.Contains(err.Error(), viewKey) {
+			if strings.Contains(err.Error(), key) {
 				t.Fatal("the error leaks the view key")
 			}
 			if _, err := os.Stat(filepath.Join(conf.DataDir, "wallet", FileName+".password")); !os.IsNotExist(err) && name != "wallet exists" {
@@ -158,9 +179,9 @@ func TestCreateRefuses(t *testing.T) {
 
 func TestOpen(t *testing.T) {
 	f, c := newRPC(t)
-	f.results["generate_from_keys"] = `{"address":"` + testaddr.Stagenet + `","info":"ok"}`
+	f.results["generate_from_keys"] = `{"address":"` + shopAddr + `","info":"ok"}`
 	f.results["open_wallet"] = `{}`
-	f.results["get_address"] = `{"address":"` + testaddr.Stagenet + `"}`
+	f.results["get_address"] = `{"address":"` + shopAddr + `"}`
 	conf := cfg(t)
 	if err := Create(context.Background(), c, conf, secret.New(viewKey), stagenetNode); err != nil {
 		t.Fatal(err)

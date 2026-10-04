@@ -1,23 +1,32 @@
 // Package shopkeys reads and checks the two values an admin types once at the installer's prompt: the shop
 // wallet's primary address and its private view key. The view key is held as a secret.String from the moment it is
-// read. Nothing here can tell a private spend key from a view key (both are 64 hex characters); wallet-rpc refuses
-// a key that doesn't belong to the address, and the wallet package turns that into a plain message.
+// read. Its public key must be the address's public view key; wallet-rpc doesn't check that (spec change 11), so
+// it is checked here, and a spend key is recognised and refused.
 package shopkeys
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"io"
 	"math/big"
 	"strings"
 
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/edwards"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/moneroaddr"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/secret"
 )
 
 // l is the order of the ed25519 base point; Monero private keys are scalars below it.
 var l, _ = new(big.Int).SetString("1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed", 16)
+
+var (
+	// ErrSpendKey: the value typed as the view key is the address's private spend key.
+	ErrSpendKey = errors.New("that is the shop wallet's SPEND key. Never enter it here (it can move your money); paste the private VIEW key")
+	// ErrViewKeyMismatch: the value is a well-formed key, but not this address's view key.
+	ErrViewKeyMismatch = errors.New("that private view key doesn't belong to this address. Paste the shop wallet's private VIEW key; never enter the spend key or the seed")
+)
 
 var errSeed = errors.New("that looks like a mnemonic seed. Never enter a seed or a spend key here: paste the shop wallet's private view key (64 hexadecimal characters)")
 
@@ -79,5 +88,29 @@ func ReadKeys(r io.Reader, network string) (string, secret.String, error) {
 	if err := CheckViewKey(view.Reveal()); err != nil {
 		return "", secret.String{}, err
 	}
+	if err := CheckViewKeyMatches(lines[0], view); err != nil {
+		return "", secret.String{}, err
+	}
 	return lines[0], view, nil
+}
+
+// CheckViewKeyMatches checks that view (64 hex) is the private view key of addr: view*B must equal the address's
+// public view key. If it equals the public spend key instead, it is the spend key, and ErrSpendKey says so.
+func CheckViewKeyMatches(addr string, view secret.String) error {
+	spendPub, viewPub, err := moneroaddr.PublicKeys(addr)
+	if err != nil {
+		return err
+	}
+	if err := CheckViewKey(strings.ToLower(view.Reveal())); err != nil {
+		return err
+	}
+	k, _ := hex.DecodeString(view.Reveal())
+	got := edwards.ScalarBaseMult(k)
+	switch {
+	case bytes.Equal(got, viewPub):
+		return nil
+	case bytes.Equal(got, spendPub):
+		return ErrSpendKey
+	}
+	return ErrViewKeyMismatch
 }

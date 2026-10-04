@@ -1,33 +1,10 @@
 package shopkeys
 
 import (
-	"bytes"
 	"fmt"
-	"math/big"
 	"strings"
 	"testing"
 )
-
-// addrFor builds a stagenet primary address (prefix 24) with Monero's base58; not a real wallet's.
-func addrFor(t *testing.T) string {
-	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-	b := append([]byte{24}, bytes.Repeat([]byte{0x5a}, 68)...)
-	sizes := map[int]int{5: 7, 8: 11}
-	var out strings.Builder
-	for len(b) > 0 {
-		n := min(8, len(b))
-		v := new(big.Int).SetBytes(b[:n])
-		chars := make([]byte, sizes[n])
-		for i := len(chars) - 1; i >= 0; i-- {
-			m := new(big.Int)
-			v.DivMod(v, big.NewInt(58), m)
-			chars[i] = alphabet[m.Int64()]
-		}
-		out.Write(chars)
-		b = b[n:]
-	}
-	return out.String()
-}
 
 func TestCheckViewKey(t *testing.T) {
 	ok := []string{
@@ -68,23 +45,23 @@ func TestCheckViewKey(t *testing.T) {
 }
 
 func TestReadKeys(t *testing.T) {
-	key := "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00"
-	in := strings.NewReader(fmt.Sprintf("  %s \r\n%s\n", addrFor(t), key))
+	key := testView
+	in := strings.NewReader(fmt.Sprintf("  %s \r\n%s\n", shopAddress(t), key))
 	a, v, err := ReadKeys(in, "stagenet")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a != addrFor(t) || v.Reveal() != key {
+	if a != shopAddress(t) || v.Reveal() != key {
 		t.Fatal("values not read back")
 	}
 	if fmt.Sprint(v) != "[redacted]" {
 		t.Fatal("the view key is not a secret")
 	}
 	for name, input := range map[string]string{
-		"no view key":     addrFor(t) + "\n",
-		"seed instead":    addrFor(t) + "\n" + strings.TrimSpace(strings.Repeat("abbey ", 25)) + "\n",
-		"mainnet address": strings.Replace(addrFor(t), "5", "4", 1) + "\n" + key + "\n",
-		"extra line":      addrFor(t) + "\n" + key + "\nmore\n",
+		"no view key":     shopAddress(t) + "\n",
+		"seed instead":    shopAddress(t) + "\n" + strings.TrimSpace(strings.Repeat("abbey ", 25)) + "\n",
+		"mainnet address": strings.Replace(shopAddress(t), "5", "4", 1) + "\n" + key + "\n",
+		"extra line":      shopAddress(t) + "\n" + key + "\nmore\n",
 		"empty":           "",
 		"very long line":  strings.Repeat("a", 5000) + "\n" + key + "\n",
 	} {

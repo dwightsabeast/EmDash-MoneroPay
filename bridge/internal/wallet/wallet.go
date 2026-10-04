@@ -17,6 +17,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/moneroaddr"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/secret"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/shopkeys"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
@@ -24,9 +25,10 @@ import (
 const FileName = "shop"
 
 var (
-	// ErrViewKeyMismatch: wallet-rpc refused the key for this address, most likely a spend key or another
-	// wallet's view key.
-	ErrViewKeyMismatch = errors.New("that private view key doesn't belong to this address. Paste the shop wallet's private VIEW key; never enter the spend key or the seed")
+	// ErrViewKeyMismatch: the key isn't this address's view key (checked by the bridge: wallet-rpc doesn't).
+	ErrViewKeyMismatch = shopkeys.ErrViewKeyMismatch
+	// ErrSpendKey: the key given as the view key is the address's spend key.
+	ErrSpendKey = shopkeys.ErrSpendKey
 	// ErrNoWallet: the installer hasn't created the wallet yet.
 	ErrNoWallet = errors.New("no wallet yet: run the installer")
 )
@@ -47,6 +49,11 @@ func Exists(dataDir string) bool {
 // the node's height ("today") when that is 0. Create never overwrites an existing wallet.
 func Create(ctx context.Context, c *walletrpc.Client, cfg config.Config, viewKey secret.String, node noderpc.Info) error {
 	if err := moneroaddr.CheckPrimary(cfg.Address, string(cfg.Network)); err != nil {
+		return err
+	}
+	// wallet-rpc stores any well-formed view key unchecked (spec change 11): check it belongs to the address, and
+	// isn't the spend key, before anything reaches wallet-rpc.
+	if err := shopkeys.CheckViewKeyMatches(cfg.Address, viewKey); err != nil {
 		return err
 	}
 	if node.NetType != string(cfg.Network) {

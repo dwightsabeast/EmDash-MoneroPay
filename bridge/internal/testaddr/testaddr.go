@@ -17,9 +17,17 @@ var (
 	Testnet  = Make(53, 0x5a)
 )
 
+// FromKeys encodes prefix, the public spend and view keys (32 bytes each) and a placeholder checksum.
+func FromKeys(prefix byte, spendPub, viewPub []byte) string {
+	return encode(append(append(append([]byte{prefix}, spendPub...), viewPub...), 0, 0, 0, 0))
+}
+
 // Make encodes prefix, 64 key bytes of fill and a 4-byte placeholder checksum with Monero's base58.
 func Make(prefix, fill byte) string {
-	b := append([]byte{prefix}, bytes.Repeat([]byte{fill}, 68)...)
+	return encode(append([]byte{prefix}, bytes.Repeat([]byte{fill}, 68)...))
+}
+
+func encode(b []byte) string {
 	sizes := map[int]int{5: 7, 8: 11}
 	var out strings.Builder
 	for len(b) > 0 {

@@ -87,3 +87,18 @@ func TestCheckPrimary(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicKeys(t *testing.T) {
+	b := []byte{24}
+	for i := 0; i < 64; i++ {
+		b = append(b, byte(i))
+	}
+	a := encode(append(b, 9, 9, 9, 9))
+	spend, view, err := PublicKeys(a)
+	if err != nil || !bytes.Equal(spend, b[1:33]) || !bytes.Equal(view, b[33:65]) {
+		t.Fatalf("%x %x %v", spend, view, err)
+	}
+	if _, _, err := PublicKeys("not an address"); err == nil {
+		t.Fatal("accepted")
+	}
+}
