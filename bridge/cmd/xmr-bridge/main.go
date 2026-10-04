@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"syscall"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
@@ -23,6 +24,7 @@ var version = "dev"
 const usage = `usage:
   xmr-bridge version
   xmr-bridge run --config <file>
+  xmr-bridge notify --pid <bridge pid> [txid]   (run by monero-wallet-rpc's --tx-notify)
 `
 
 func main() {
@@ -43,6 +45,8 @@ func realMain(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return 0
 	case "run":
 		return cmdRun(ctx, args[1:], stderr)
+	case "notify":
+		return cmdNotify(args[1:], stderr)
 	default:
 		fmt.Fprint(stderr, usage)
 		return 2
@@ -75,8 +79,57 @@ func cmdRun(ctx context.Context, args []string, stderr io.Writer) int {
 			return a
 		},
 	}))
+	// SIGUSR1 comes from `xmr-bridge notify` (wallet-rpc's --tx-notify). Taken from the start: Go's default for
+	// it is to exit. The sync loop (3d) syncs on it; for now it is logged.
+	notified := make(chan os.Signal, 1)
+	signal.Notify(notified, syscall.SIGUSR1)
+	defer signal.Stop(notified)
 	log.Info("starting", "version", version, "network", string(cfg.Network), "site", cfg.Site, "node", cfg.Node)
-	<-ctx.Done()
-	log.Info("stopped")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("stopped")
+			return 0
+		case <-notified:
+			log.Info("notified")
+		}
+	}
+}
+
+// cmdNotify is what monero-wallet-rpc runs for each new incoming transaction (--tx-notify): it sends SIGUSR1 to
+// the bridge that started it, which syncs at once. The txid wallet-rpc appends is checked but not needed.
+func cmdNotify(args []string, stderr io.Writer) int {
+	fs := flag.NewFlagSet("notify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	pidText := fs.String("pid", "", "the bridge's process id")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 1 {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	pid, err := strconv.Atoi(*pidText)
+	if err != nil || pid <= 1 {
+		fmt.Fprint(stderr, "xmr-bridge notify: --pid must be the bridge's process id\n")
+		return 2
+	}
+	if fs.NArg() == 1 && !isTxID(fs.Arg(0)) {
+		fmt.Fprint(stderr, "xmr-bridge notify: not a transaction id\n")
+		return 2
+	}
+	if err := syscall.Kill(pid, syscall.SIGUSR1); err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge notify: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+func isTxID(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !('0' <= s[i] && s[i] <= '9' || 'a' <= s[i] && s[i] <= 'f') {
+			return false
+		}
+	}
+	return true
 }

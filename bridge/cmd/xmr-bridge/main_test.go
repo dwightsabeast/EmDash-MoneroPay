@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -69,5 +73,78 @@ func TestRunBadConfig(t *testing.T) {
 	code, _, errOut = run(context.Background(), "run")
 	if code != 2 || !strings.Contains(errOut, "--config") {
 		t.Fatalf("missing --config: %d %q", code, errOut)
+	}
+}
+
+// notify (run by wallet-rpc's --tx-notify) sends SIGUSR1 to the bridge, which syncs at once (3d).
+func TestNotifySignalsTheBridge(t *testing.T) {
+	got := make(chan os.Signal, 1)
+	signal.Notify(got, syscall.SIGUSR1)
+	defer signal.Stop(got)
+	code, _, errOut := run(context.Background(), "notify", "--pid", strconv.Itoa(os.Getpid()), strings.Repeat("ab", 32))
+	if code != 0 {
+		t.Fatalf("notify: %d %q", code, errOut)
+	}
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no SIGUSR1")
+	}
+}
+
+func TestNotifyRefuses(t *testing.T) {
+	for _, args := range [][]string{
+		{"notify"},
+		{"notify", "--pid", "0"},
+		{"notify", "--pid", "1"},
+		{"notify", "--pid", "-5"},
+		{"notify", "--pid", "x"},
+		{"notify", "--pid", "123", "not-a-txid"},
+		{"notify", "--pid", "123", strings.Repeat("ab", 32), "extra"},
+	} {
+		if code, _, _ := run(context.Background(), args...); code == 0 {
+			t.Errorf("%v: accepted", args)
+		}
+	}
+}
+
+// run takes SIGUSR1 (from notify) instead of dying of it, which is Go's default for that signal.
+func TestRunHandlesNotify(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config")
+	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Node: "http://127.0.0.1:38081", DataDir: "/tmp/x", AllowSameMachine: true}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var out syncBuffer
+	done := make(chan int)
+	go func() { done <- realMain(ctx, []string{"run", "--config", p}, &out, &out) }()
+	waitText(t, &out, "msg=starting")
+	syscall.Kill(os.Getpid(), syscall.SIGUSR1)
+	waitText(t, &out, "msg=notified")
+	cancel()
+	if code := <-done; code != 0 {
+		t.Fatalf("run: %d", code)
+	}
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+func waitText(t *testing.T, b *syncBuffer, want string) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); !strings.Contains(b.String(), want); {
+		if time.Now().After(deadline) {
+			t.Fatalf("no %q in %q", want, b.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
