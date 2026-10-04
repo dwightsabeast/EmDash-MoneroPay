@@ -1,6 +1,6 @@
 // Command xmr-bridge is the wallet host's half of xmr-pay: it runs Monero's monero-wallet-rpc with a view-only
-// wallet and pushes signed snapshots to the site. This is the phase 03a skeleton: version and run (config and
-// logging only; the sync loop comes in 3d).
+// wallet and pushes signed snapshots to the site. So far: version, run (install and supervise wallet-rpc, open the
+// wallet; the sync loop comes in 3d) and notify.
 package main
 
 import (
@@ -85,13 +85,20 @@ func cmdRun(ctx context.Context, args []string, stderr io.Writer) int {
 	signal.Notify(notified, syscall.SIGUSR1)
 	defer signal.Stop(notified)
 	log.Info("starting", "version", version, "network", string(cfg.Network), "site", cfg.Site, "node", cfg.Node)
+	b, err := startBridge(ctx, cfg, log)
+	if err != nil {
+		log.Error("cannot start", "err", err)
+		return 1
+	}
 	for {
 		select {
 		case <-ctx.Done():
+			b.Stop()
 			log.Info("stopped")
 			return 0
 		case <-notified:
 			log.Info("notified")
+			b.Notify()
 		}
 	}
 }

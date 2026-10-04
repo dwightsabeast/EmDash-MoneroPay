@@ -10,11 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
 type harness struct {
@@ -305,4 +307,34 @@ func zombieOrGone(pid int) bool {
 	}
 	f := strings.Fields(string(b))
 	return len(f) > 2 && f[2] == "Z"
+}
+
+// Init runs on every start with a working client, before the supervisor reports ready; if it fails, that start
+// counts as failed (child stopped, backoff, restart).
+func TestInitRunsEachStart(t *testing.T) {
+	var calls atomic.Int32
+	h := start(t, "", func(o *Options) {
+		o.Init = func(ctx context.Context, c *walletrpc.Client) error {
+			if _, err := c.GetVersion(ctx); err != nil {
+				return err
+			}
+			if calls.Add(1) == 1 {
+				return errors.New("wallet would not open")
+			}
+			return nil
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := h.s.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := h.s.Status()
+	if calls.Load() != 2 || st.Restarts != 1 || !strings.Contains(st.LastExit, "wallet would not open") {
+		t.Fatalf("calls %d, status %+v", calls.Load(), st)
+	}
+	recs := h.records(t)
+	if len(recs) != 2 || alive(recs[0].PID) {
+		t.Fatalf("the first child should have been stopped: %d starts", len(recs))
+	}
 }

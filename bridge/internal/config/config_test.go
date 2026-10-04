@@ -5,12 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/testaddr"
 )
 
 func valid() Config {
 	return Config{
 		Site:       "https://shop.example",
 		Network:    Stagenet,
+		Address:    testaddr.Stagenet,
 		Node:       "http://127.0.0.1:38081",
 		DataDir:    "/var/lib/xmr-bridge",
 		AutoUpdate: true,
@@ -63,7 +66,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 func TestLoadRefusesReadableByOthers(t *testing.T) {
 	for _, mode := range []os.FileMode{0o640, 0o604, 0o644, 0o660} {
-		p := write(t, `{"site":"https://shop.example","network":"stagenet","node":"http://127.0.0.1:38081","dataDir":"/var/lib/xmr-bridge"}`, mode)
+		p := write(t, `{"site":"https://shop.example","network":"stagenet","address":"`+testaddr.Stagenet+`","node":"http://127.0.0.1:38081","dataDir":"/var/lib/xmr-bridge"}`, mode)
 		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "chmod 600") {
 			t.Fatalf("mode %v: want a chmod 600 error, got %v", mode, err)
 		}
@@ -71,7 +74,7 @@ func TestLoadRefusesReadableByOthers(t *testing.T) {
 }
 
 func TestLoadStrictJSON(t *testing.T) {
-	base := `"site":"https://shop.example","network":"stagenet","node":"http://127.0.0.1:38081","dataDir":"/var/lib/xmr-bridge"`
+	base := `"site":"https://shop.example","network":"stagenet","address":"` + testaddr.Stagenet + `","node":"http://127.0.0.1:38081","dataDir":"/var/lib/xmr-bridge"`
 	cases := map[string]string{
 		"unknown field":   `{` + base + `,"viewKey":"abc"}`,
 		"trailing data":   `{` + base + `} {}`,
@@ -91,7 +94,7 @@ func TestLoadStrictJSON(t *testing.T) {
 }
 
 func TestLoadSizeCap(t *testing.T) {
-	big := `{"site":"https://shop.example","network":"stagenet","node":"http://127.0.0.1:38081","dataDir":"/x","pad":"` + strings.Repeat("a", 70_000) + `"}`
+	big := `{"site":"https://shop.example","network":"stagenet","address":"` + testaddr.Stagenet + `","node":"http://127.0.0.1:38081","dataDir":"/x","pad":"` + strings.Repeat("a", 70_000) + `"}`
 	if _, err := Load(write(t, big, 0o600)); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("want too large, got %v", err)
 	}
@@ -105,7 +108,11 @@ func TestValidate(t *testing.T) {
 		func(c *Config) { c.Site = "http://localhost:4321" },
 		func(c *Config) { c.Site = "http://127.0.0.1:4322" },
 		func(c *Config) { c.Site = "http://[::1]:4321" },
-		func(c *Config) { c.Network = Mainnet; c.Node = "https://node.example:18089" },
+		func(c *Config) {
+			c.Network = Mainnet
+			c.Address = testaddr.Mainnet
+			c.Node = "https://node.example:18089"
+		},
 		func(c *Config) { c.AllowSameMachine = true }, // stagenet only
 	}
 	for i, f := range ok {
@@ -116,20 +123,23 @@ func TestValidate(t *testing.T) {
 		}
 	}
 	bad := map[string]func(*Config){
-		"http site off loopback":  func(c *Config) { c.Site = "http://shop.example" },
-		"site with a path":        func(c *Config) { c.Site = "https://shop.example/blog" },
-		"site with a query":       func(c *Config) { c.Site = "https://shop.example/?a=1" },
-		"site with user info":     func(c *Config) { c.Site = "https://u:p@shop.example" },
-		"site not a URL":          func(c *Config) { c.Site = "shop.example" },
-		"site empty":              func(c *Config) { c.Site = "" },
-		"unknown network":         func(c *Config) { c.Network = "regtest" },
-		"node empty":              func(c *Config) { c.Node = "" },
-		"node not http":           func(c *Config) { c.Node = "ftp://127.0.0.1:38081" },
-		"node with user info":     func(c *Config) { c.Node = "http://u:p@127.0.0.1:38081" },
-		"data dir relative":       func(c *Config) { c.DataDir = "data" },
-		"data dir empty":          func(c *Config) { c.DataDir = "" },
-		"same machine on mainnet": func(c *Config) { c.Network = Mainnet; c.AllowSameMachine = true },
-		"same machine on testnet": func(c *Config) { c.Network = Testnet; c.AllowSameMachine = true },
+		"http site off loopback":     func(c *Config) { c.Site = "http://shop.example" },
+		"site with a path":           func(c *Config) { c.Site = "https://shop.example/blog" },
+		"site with a query":          func(c *Config) { c.Site = "https://shop.example/?a=1" },
+		"site with user info":        func(c *Config) { c.Site = "https://u:p@shop.example" },
+		"site not a URL":             func(c *Config) { c.Site = "shop.example" },
+		"site empty":                 func(c *Config) { c.Site = "" },
+		"unknown network":            func(c *Config) { c.Network = "regtest" },
+		"node empty":                 func(c *Config) { c.Node = "" },
+		"node not http":              func(c *Config) { c.Node = "ftp://127.0.0.1:38081" },
+		"node with user info":        func(c *Config) { c.Node = "http://u:p@127.0.0.1:38081" },
+		"data dir relative":          func(c *Config) { c.DataDir = "data" },
+		"data dir empty":             func(c *Config) { c.DataDir = "" },
+		"same machine on mainnet":    func(c *Config) { c.Network = Mainnet; c.Address = testaddr.Mainnet; c.AllowSameMachine = true },
+		"same machine on testnet":    func(c *Config) { c.Network = Testnet; c.Address = testaddr.Testnet; c.AllowSameMachine = true },
+		"address missing":            func(c *Config) { c.Address = "" },
+		"address of another network": func(c *Config) { c.Address = testaddr.Mainnet },
+		"subaddress":                 func(c *Config) { c.Address = testaddr.Make(36, 1) },
 	}
 	for name, f := range bad {
 		c := valid()
@@ -143,6 +153,7 @@ func TestValidate(t *testing.T) {
 func TestSaveRefusesInvalid(t *testing.T) {
 	c := valid()
 	c.Network = Mainnet
+	c.Address = testaddr.Mainnet
 	c.AllowSameMachine = true
 	p := filepath.Join(t.TempDir(), "config")
 	if err := Save(p, c); err == nil {

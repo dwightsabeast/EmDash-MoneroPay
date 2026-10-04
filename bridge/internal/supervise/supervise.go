@@ -44,6 +44,9 @@ type Options struct {
 	// Env is the child's whole environment (nothing is inherited).
 	Env []string
 	Log *slog.Logger
+	// Init runs on every start once wallet-rpc answers, before the supervisor reports ready (it opens the wallet).
+	// An error fails that start: the child is stopped and restarted with backoff.
+	Init func(ctx context.Context, c *walletrpc.Client) error
 
 	ReadyTimeout time.Duration // default 60 s
 	StopTimeout  time.Duration // default 30 s
@@ -291,6 +294,18 @@ func (s *Supervisor) runOnce(ctx context.Context) error {
 		}
 	}
 	os.Remove(conf) // wallet-rpc has read its login
+	if s.o.Init != nil {
+		ictx, cancel := context.WithTimeout(ctx, s.o.ReadyTimeout)
+		err := s.o.Init(ictx, client)
+		cancel()
+		if err != nil {
+			s.stop(pid, exited)
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("init: %w", err)
+		}
+	}
 	s.mu.Lock()
 	s.st.Ready = true
 	s.client = client

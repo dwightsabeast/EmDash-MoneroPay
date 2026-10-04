@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/moneroaddr"
 )
 
 // Network is the Monero network the wallet host runs on.
@@ -33,6 +35,8 @@ type Config struct {
 	// /_emdash/api/plugins/xmr-pay/bridge/sync under it.
 	Site    string  `json:"site"`
 	Network Network `json:"network"`
+	// Address is the shop wallet's primary address (not secret). The bridge checks the opened wallet against it.
+	Address string `json:"address"`
 	// Node is the monerod RPC address the wallet uses.
 	Node string `json:"node"`
 	// RestoreHeight is where the wallet starts scanning; 0 means the node's height when the wallet is created.
@@ -53,6 +57,9 @@ func (c Config) Validate() error {
 	case Mainnet, Stagenet, Testnet:
 	default:
 		return fmt.Errorf("config: network must be mainnet, stagenet or testnet, not %q", c.Network)
+	}
+	if err := moneroaddr.CheckPrimary(c.Address, string(c.Network)); err != nil {
+		return fmt.Errorf("config: address: %w", err)
 	}
 	if err := validateNode(c.Node); err != nil {
 		return err

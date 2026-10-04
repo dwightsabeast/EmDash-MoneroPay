@@ -3,17 +3,20 @@ package main
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/testaddr"
 )
 
 func run(ctx context.Context, args ...string) (int, string, string) {
@@ -38,9 +41,26 @@ func TestUsage(t *testing.T) {
 	}
 }
 
+// fakeBridge stands in for the real start-up (wallet, wallet-rpc) in the command's own tests.
+type fakeBridge struct {
+	notified, stopped atomic.Int32
+}
+
+func (f *fakeBridge) Notify() { f.notified.Add(1) }
+func (f *fakeBridge) Stop()   { f.stopped.Add(1) }
+
+func useFakeBridge(t *testing.T) *fakeBridge {
+	f := &fakeBridge{}
+	prev := startBridge
+	startBridge = func(context.Context, config.Config, *slog.Logger) (bridgeHandle, error) { return f, nil }
+	t.Cleanup(func() { startBridge = prev })
+	return f
+}
+
 func TestRunStopsOnCancel(t *testing.T) {
+	fb := useFakeBridge(t)
 	p := filepath.Join(t.TempDir(), "config")
-	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Node: "http://127.0.0.1:38081", DataDir: "/tmp/x", AllowSameMachine: true}); err != nil {
+	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: testaddr.Stagenet, Node: "http://127.0.0.1:38081", DataDir: t.TempDir(), AllowSameMachine: true}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,6 +80,9 @@ func TestRunStopsOnCancel(t *testing.T) {
 	}
 	if code != 0 || !strings.Contains(errOut, "msg=starting") || !strings.Contains(errOut, "network=stagenet") || !strings.Contains(errOut, "msg=stopped") {
 		t.Fatalf("run: %d %q", code, errOut)
+	}
+	if fb.stopped.Load() != 1 {
+		t.Fatal("the bridge was not stopped")
 	}
 }
 
@@ -110,8 +133,9 @@ func TestNotifyRefuses(t *testing.T) {
 
 // run takes SIGUSR1 (from notify) instead of dying of it, which is Go's default for that signal.
 func TestRunHandlesNotify(t *testing.T) {
+	fb := useFakeBridge(t)
 	p := filepath.Join(t.TempDir(), "config")
-	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Node: "http://127.0.0.1:38081", DataDir: "/tmp/x", AllowSameMachine: true}); err != nil {
+	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: testaddr.Stagenet, Node: "http://127.0.0.1:38081", DataDir: t.TempDir(), AllowSameMachine: true}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -121,6 +145,9 @@ func TestRunHandlesNotify(t *testing.T) {
 	waitText(t, &out, "msg=starting")
 	syscall.Kill(os.Getpid(), syscall.SIGUSR1)
 	waitText(t, &out, "msg=notified")
+	if fb.notified.Load() != 1 {
+		t.Fatal("the bridge was not notified")
+	}
 	cancel()
 	if code := <-done; code != 0 {
 		t.Fatalf("run: %d", code)
@@ -146,5 +173,17 @@ func waitText(t *testing.T, b *syncBuffer, want string) {
 			t.Fatalf("no %q in %q", want, b.String())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Without a wallet, run stops at once with the fix, before any network use.
+func TestRunWithoutWallet(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config")
+	if err := config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: testaddr.Stagenet, Node: "http://127.0.0.1:1", DataDir: t.TempDir(), AllowSameMachine: true}); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := run(context.Background(), "run", "--config", p)
+	if code != 1 || !strings.Contains(errOut, "no wallet yet") {
+		t.Fatalf("run: %d %q", code, errOut)
 	}
 }
