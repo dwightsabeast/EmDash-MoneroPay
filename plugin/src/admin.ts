@@ -88,14 +88,18 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 	});
 
 	blocks.push({ type: "divider" }, { type: "header", text: "Connect wallet host" });
-	if (shownCode) {
-		const siteUrl = ctx.site.url || ctx.url("/").replace(/\/$/, "");
+	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
+	const siteUrl = ctx.site.url.replace(/\/$/, "");
+	if (!siteUrl) {
+		blocks.push({ type: "banner", variant: "error", title: "Your site's address isn't known", description: "Set siteUrl in the site's Astro config (or the EMDASH_SITE_URL environment variable) to its public address, then reload this page." });
+	} else if (shownCode) {
 		blocks.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt));
 	} else {
 		const pairing = await ctx.kv.get<PairingState>(KV.pairing);
 		if (isPairingActive(pairing, now)) blocks.push({ type: "context", text: `A pairing code is active until ${utc(pairing.expiresAt)}. Codes are shown once; press the button for a new one (it replaces the old code).` });
 		else blocks.push({ type: "context", text: "Creates a one-time code (15 minutes) and the install command for your wallet host." });
 	}
+	if (siteUrl) blocks.push({ type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` });
 	blocks.push({
 		type: "actions",
 		elements: [
@@ -156,6 +160,8 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 		return { blocks: await page(ctx, now), toast: { message: "Settings saved. They apply to new invoices.", type: "success" } };
 	}
 	if (i.type === "block_action" && i.action_id === "connect_wallet_host") {
+		if (!ctx.site.url) return { blocks: await page(ctx, now), toast: { message: "Set your site's public address first.", type: "error" } };
+		// A new code replaces the stored hash, so any earlier code stops working at once.
 		const { code, state } = await newPairingCode(now);
 		await ctx.kv.set(KV.pairing, state);
 		return { blocks: await page(ctx, now, { code, expiresAt: now + PAIRING_TTL_MS }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };

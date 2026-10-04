@@ -73,7 +73,11 @@ describe("admin page", () => {
 		expect(state.codeHash).toBe(await hashPairingCode(code as string));
 		expect(state.used).toBe(false);
 		expect(state.expiresAt - before).toBeGreaterThanOrEqual(PAIRING_TTL_MS);
-		expect(JSON.stringify(await host.inspect.kv.list())).not.toContain(code as string); // the code itself is never stored
+		// The code itself is stored nowhere: not in KV, settings or storage (only returned once in this response).
+		expect(JSON.stringify(await host.inspect.kv.list())).not.toContain(code as string);
+		for (const key of ["bridgePublicKey", "currency", "speed"]) expect(JSON.stringify(await host.inspect.setting(key))).not.toContain(code as string);
+		for (const col of ["pool", "invoices"]) expect(JSON.stringify(await host.inspect.storage.list(col))).not.toContain(code as string);
+		expect(JSON.stringify(r.toast)).not.toContain(code as string);
 
 		// A reload doesn't show the code again; pressing the button again replaces it.
 		const reload = await host.admin.loadPage("/payments");
@@ -118,3 +122,39 @@ describe("admin page", () => {
 		expect(r.toast).toMatchObject({ type: "error" });
 	});
 });
+
+describe("pairing codes and the site URL", () => {
+	async function pairWith(h: PluginRuntimeTestHost, code: string | undefined) {
+		const now = Date.now();
+		const bytes = bytesOf({ v: 1, seq: now, height: 3_000_000, addresses: [], snapshots: [], pair: { code, publicKey: PUBLIC_KEYS.test1 } });
+		const res = await h.actions.routes.request("bridge/sync", { method: "POST", rawBody: bytes, headers: await signedHeaders(bytes, now) });
+		return ((await res.json()) as B).data;
+	}
+
+	it("a new code cancels the old one at once", async () => {
+		host = await createPluginRuntimeTestHost();
+		const first = codeFrom((await host.admin.act("/payments", "connect_wallet_host")).blocks as B[]);
+		const second = codeFrom((await host.admin.act("/payments", "connect_wallet_host")).blocks as B[]);
+		expect(await pairWith(host, first)).toEqual({ error: { code: "PAIRING_REJECTED" } });
+		expect(await host.inspect.setting("bridgePublicKey")).toBeNull();
+		expect(await pairWith(host, second)).toMatchObject({ ok: true });
+	});
+
+	it("the install command uses the configured site URL, not the request's host, and says which address it is", async () => {
+		host = await createPluginRuntimeTestHost({ site: { url: "https://shop.example" } });
+		const blocks = (await host.admin.act("/payments", "connect_wallet_host")).blocks as B[];
+		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).startsWith("curl")) as B).code as string;
+		expect(cmd).toContain("--site https://shop.example --pair ");
+		expect(texts(blocks)).toContain("The wallet host will connect to https://shop.example.");
+	});
+
+	it("with no site URL, no command is shown and no code is created", async () => {
+		host = await createPluginRuntimeTestHost({ site: { url: "" } });
+		const r = await host.admin.act("/payments", "connect_wallet_host");
+		expect(r.toast).toMatchObject({ type: "error" });
+		expect(codeFrom(r.blocks as B[])).toBeUndefined();
+		expect(find(r.blocks as B[], (x) => x.type === "banner" && x.variant === "error")).toMatchObject({ title: "Your site's address isn't known" });
+		expect(await host.inspect.kv.get("state:pairing")).toBeNull();
+	});
+});
+
