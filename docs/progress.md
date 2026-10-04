@@ -347,3 +347,81 @@ Next step: session 3c, wallet from keys.
 - The network check: the address prefix must match the node's network.
 - Wire install-if-missing and supervise into `run`.
 - Spec change 9's lookahead test needs a wallet, so it fits here or in 3h.
+
+## 2026-10-04 · Phase 03 · Session 3c: view-only wallet from keys, network checks, run wiring
+
+Done:
+- Pushed `b33c514..0590403` with Wyatt's approval. Added a race-detector step to CI (`ae5d394`, approved; it needs cgo, and the runner has `gcc`). Not runnable on the dev box; first run on the next push.
+- Plan approved:
+  - the wallet password saved mode 600
+  - restore height = the node's height
+  - the live test with a view-only copy of the stagenet shop wallet, deleted afterwards
+  - item 3, relying on wallet-rpc to refuse a mismatched view key, was reversed (below)
+- **Research.** `scripts/with-shop-env.sh` refuses `sh`, `printf` and similar, so the live test is a Go test run under it, reading `SHOP_*` from its environment. The shipped binary has no dev path for keys. The node's `get_info` gives `nettype`, `height`, `synchronized` and `offline`.
+- **Code**, commit `c9fa692`:
+  - `internal/moneroaddr`: Monero base58, address prefixes, the two public keys.
+  - `internal/shopkeys`: reads the installer's two lines; view-key format checks (64 hex, nonzero, below l, seed-like input refused).
+  - `internal/noderpc`: `get_info`.
+  - `walletrpc`: `generate_from_keys`, `open_wallet`, `close_wallet`, `get_address`.
+  - `internal/wallet`: Create and Open. The wallet password is random, mode 600, never overwritten. Open checks the opened wallet is the shop address.
+  - `config`: the shop address, checked against the network.
+  - supervisor `Init` hook: the wallet is opened on every start.
+  - `run`: without a wallet it stops with the fix before any network use. Otherwise it installs a verified wallet-rpc if one is missing and supervises it.
+  - `internal/testaddr`: test-only address builder.
+- **Found live: wallet-rpc doesn't check the view key** (spec change 11, accepted by Wyatt).
+  - The first live run gave the real wallet-rpc 0.18.5.1 the real shop address with a wrong (well-formed) view key. `generate_from_keys` succeeded.
+  - The v0.18.5.1 source confirms it: `on_generate_from_keys` only parses the hex, and `wallet2::generate` (view-only) calls `create_from_viewkey` with no comparison.
+  - Without a check of our own, a wrong key makes a wallet that never sees payments, and a pasted spend key would be stored.
+  - **Fix**, commit `a7a23cd`:
+    - `internal/edwards`: k·B on Ed25519, standard library `math/big`, complete addition law, not constant-time (used once at install).
+    - `shopkeys.CheckViewKeyMatches`: view·B must equal the address's public view key. Equal to the public spend key gives `ErrSpendKey`: "that is the shop wallet's SPEND key. Never enter it here…".
+    - `ReadKeys` and `wallet.Create` both check before wallet-rpc sees the key.
+  - The failed first run left a wallet-rpc briefly running (it exited on the parent-death SIGTERM) and a temporary folder with empty subfolders (no keys; the real key was never used). Both are gone. The test now stops wallet-rpc before deleting anything.
+
+Tests:
+- `cd bridge && go test ./...`: 92 top-level tests pass, 4 live tests skipped by default. `gofmt`, `vet`, static build clean. `oracle` passes.
+- **Curve code:**
+  - RFC 8032 section 7.1, TESTs 1 to 3
+  - 300 random seeds against Go's `crypto/ed25519` (the test's oracle)
+  - k·B == (k mod l)·B
+  - 0·B and 1·B
+  - fuzzed against `crypto/ed25519` for 2 min, about 124k inputs (`~/xmr-pay-dev-data/3c-fuzz-edwards.txt`)
+- **Mutation checks, all caught:**
+  - curve: sign bit, top scalar bit, d instead of 2d, wrong sign of d
+  - address: network check, subaddresses accepted, unreduced scalar, seed check
+  - node: status ignored, size cap
+  - wallet: node network check, node offline accepted, existing wallet overwritten, opened address unchecked, password file kept after a failure, created address unchecked
+  - supervisor: `Init` failure ignored
+  - config: address unchecked, same-machine flag anywhere
+  - the view-key match skipped in `Create` or in `ReadKeys`, the spend key not recognised, any key accepted
+- **Test gaps the mutation checks found, fixed:**
+  - two config cases ("same machine on mainnet/testnet") had been passing for the wrong reason since an edit silently didn't apply
+  - wallet refusal cases had passed because the fake wallet-rpc failed
+  - the node size cap's error wasn't asserted
+  - Not run: the "run without a wallet" mutation, which would start a real 85 MB download; without the check, the test hangs until its timeout.
+- **Live** (`~/xmr-pay-dev-data/3c-live-shop-wallet.txt`, run under `scripts/with-shop-env.sh`):
+  - The real stagenet address and view key pass every check, including view·B == the address's public view key.
+  - A wrong key was refused before wallet-rpc.
+  - The wallet was created from `SHOP_RESTORE_HEIGHT` (2219978) and opened by `run`'s start-up path; the address matches. Synced to the node's height 2222135 in 5 s.
+  - **The phase 01 spike's 0.001 XMR payment was found:** subaddress 1, height 2221449, 686 confirmations, unlock 0.
+  - After `kill -9` it was restarted and the wallet reopened.
+  - Wallet files mode 600, folder 700.
+  - Nothing left running; the temporary folder deleted. 24 s.
+
+Not covered:
+- `--tx-notify` firing on a new payment (3h)
+- the subaddress-lookahead test (spec change 9, 3h)
+- the race detector (CI only, not yet run)
+- a remote node that needs a login (no setting for it, by design)
+
+Open issues:
+- Wyatt folds spec changes 6, 7, 9, 10 and 11 into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- Commits `ae5d394` through this entry are local.
+
+Next step: session 3d.
+- The Ed25519 bridge key (`crypto/ed25519`, key file mode 600).
+- Pairing with the one-time code; signing that matches `contract/test-vectors/sync-signature.json` byte for byte.
+- The sync loop (10–15 s and on SIGUSR1), snapshots from `get_transfers`, pool top-up with `create_address`, reconcile on start, backoff when the site is unreachable.
+- `xmr-bridge status`.
+- End to end against the dev site.
