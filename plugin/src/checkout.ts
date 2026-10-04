@@ -93,7 +93,7 @@ async function findProduct(ctx: PluginContext, idOrSlug: string) {
 }
 
 /** Claims a free pool row with updateIf (one winner per row), then stores the invoice; `subaddress` is unique on invoices. */
-async function claimAndStore(ctx: PluginContext, build: (row: { addrIndex: number; address: string }) => Invoice): Promise<Invoice | null> {
+export async function claimAndStore(ctx: PluginContext, build: (row: { addrIndex: number; address: string }) => Invoice): Promise<Invoice | null> {
 	for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
 		const free = await pool(ctx).query({ where: { status: "free" }, orderBy: { addrIndex: "asc" }, limit: 5 });
 		if (free.items.length === 0) return null;
