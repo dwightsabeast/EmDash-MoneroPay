@@ -95,7 +95,7 @@ Decided by Wyatt on 2026-10-03 (`docs/decisions.md`). Asking first still applies
 **1. Shipped code has no third-party runtime code.** This covers the plugin bundle, the bridge, the installer and the theme components.
 
 - Plugin: our code plus, at most, EmDash's own plugin helpers. Signatures use WebCrypto, money uses BigInt, input validation is hand-written (no `zod` or other schema library), and Block Kit is written as plain JSON (no `@emdash-cms/blocks`).
-- Bridge: the Go standard library. Any exception (the OpenPGP check of Monero's `hashes.txt`) is decided in phase 03.
+- Bridge: the Go standard library, with no exception. Monero's `hashes.txt` is checked by the bridge's own minimal OpenPGP verifier. `gpgv` and ProtonMail `go-crypto` run only as comparison checks in CI, from the separate module `bridge/oracle/`, never in the shipped bridge (`docs/decisions.md`, 2026-10-04).
 - Installer: POSIX `sh`.
 - Theme: no runtime npm packages. A QR encoder, if one is needed, is vendored as reviewed source with its license.
 
