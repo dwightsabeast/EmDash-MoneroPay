@@ -211,3 +211,44 @@ Open issues:
 - Commits `4cb6ddd` through this entry are local, not pushed.
 
 Next step: session 3b-1, the `hashes.txt` verifier. First download binaryFate's public key (monero-project repository) and the current `hashes.txt` (getmonero.org), confirm the fingerprint `81AC 591F E9C4 B65C 5806 AFC3 F0AF 4D46 2A0B DF92` with `gpg --show-keys` (no import), and record the key's algorithm before writing code; stop and tell Wyatt if it isn't RSA.
+
+## 2026-10-04 · Phase 03 · Session 3b-1 (part 1): hashes.txt verifier
+
+Done:
+- Pushed `7715fb8..9f2515c` with Wyatt's approval. CI on GitHub passed for `9f2515c`, both jobs (the bridge job's first run).
+- **Key confirmed before any code**, from `utils/gpg_keys/binaryfate.asc` (monero-project repository) and `getmonero.org/downloads/hashes.txt`, with `gpg --show-keys` in a temporary home (no import):
+  - primary key RSA 4096 (algorithm 1), fingerprint `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92`, created 2019-12-12
+  - one RSA 4096 subkey that can also sign, `AD564CDA8F1665ACE78B5DFD2593838EABB1F655`
+  - `hashes.txt` is signed by the **primary** key: `gpgv` `VALIDSIG` signing and primary fingerprints are equal; v4, RSA, SHA-256, class 0x01, made 2026-07-20; hashed subpackets 33 (issuer fingerprint) and 2 (creation time), unhashed 16 (issuer key ID); armor checksum present, no armor headers
+  - the list covers CLI 0.18.5.1 and GUI 0.18.5.2
+- **`bridge/internal/hashsig`** (standard library only), commits `9e5c861` and `296601e`:
+  - `Verify` accepts exactly revision 70's shape and returns the canonical verified text.
+  - `ParseHashes` reads `<sha256>  <name>` lines from that text only.
+  - `pinned.go` holds the key as constants. `init` checks them against the fingerprint, and a test checks them against the published key.
+  - Errors are separate, for the health check: `ErrUnknownSigner` (keep the current wallet-rpc, ask for a bridge update), `ErrExpired`, `ErrBadSignature`.
+  - A signature by the subkey is refused as an unknown signer. If Monero ever signs with the subkey, the bridge treats it like a key change.
+- **Test files** (`testdata/make-corpus.sh`): two throwaway RSA 3072 keys made in a temporary gpg home, deleted on exit; only their public keys and the signed files are committed. 3 good files and 6 bad ones: wrong signer, subkey signer, two signatures, SHA-384, expired (signed with a faked 2020 time), and a mismatched `Hash:` header.
+- **Fuzzing**:
+  - `FuzzVerify`: no input verifies with text other than what that key actually signed. Changes to line endings, trailing whitespace and armor wrapping may verify, because they don't change the canonical text; that is how revision 70's "no generated input ever verifies" is read here.
+  - `FuzzSignaturePacket` and `FuzzParseHashes`: no panics.
+- **`bridge/oracle`**, a separate test-only module, compares our verdicts with `gpgv`'s (commit `fa26968`). Spec change 10 proposed (below). CI runs it.
+
+Tests:
+- `cd bridge && go test ./...`: 5 packages pass. `hashsig` has 14 tests plus 3 fuzz targets on their seeds. `gofmt` and `vet` clean.
+- **Mutation checks** (each removes one protection):
+  - Caught: RSA check, prefix check, issuer fingerprint check, issuer key ID check, expiry, extra packets allowed, text before BEGIN, other message headers, no trailing-whitespace canonicalization, armor checksum, signature older than its key, dash-escape not undone, non-minimal MPI.
+  - Three needed new tests, which were added: the signature value changed with the right prefix, the unsigned issuer key ID changed, an understated MPI bit count.
+  - Two are redundant by construction: the `Hash:` header check (the digest uses the header's algorithm, so a mismatch fails anyway) and END-must-be-last (text after END lands where the checksum must be).
+- **Fuzz runs** (`~/xmr-pay-dev-data/3b1-fuzz-*.txt`), 2 workers, no failures, no failing inputs saved: `FuzzVerify` 4 min, about 8.7M inputs; `FuzzSignaturePacket` 2 min, about 0.6M; `FuzzParseHashes` 2 min, about 8.2M.
+- **`gpgv` comparison** (`~/xmr-pay-dev-data/3b1-oracle-gpgv.txt`): 26 inputs × 3 keys = 78 comparisons with 8 acceptances. 73 match. Ours never accepted what `gpgv` refused, and accepted texts were identical. The 5 differences are our refusals by name (spec change 10).
+- Clean-clone rehearsal of the CI steps: passes.
+
+Not covered: the `go-crypto` comparison (waiting on a dependency answer), and long fuzz runs (minutes, not hours).
+
+Open issues, for Wyatt:
+1. `go-crypto` v1.5.2 (2026-09-25, 9 days old) requires `cloudflare/circl` v1.6.3 **and** `golang.org/x/crypto` v0.41.0 and `golang.org/x/sys` v0.35.0. The approval covered `go-crypto` and `circl` only. Approve the two `golang.org/x` modules (Go team, BSD-3) for `bridge/oracle` only?
+2. Spec change 10: approve the verdict definition, and choose strict (current) or RFC 9580-tolerant handling of a missing armor checksum and signature-block armor headers.
+
+Also open: delete the excludes on or after 2026-10-08; spec changes 6, 7 and 9 to fold into the live spec. Commits `9e5c861`, `296601e`, `fa26968` and this entry are local.
+
+Next step: with Wyatt's answers, add `go-crypto` to `bridge/oracle` (exact versions, committed `go.sum`) as a third verdict in the same comparison, finish 3b-1, then 3b-2.
