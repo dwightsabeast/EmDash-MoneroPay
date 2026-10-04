@@ -160,13 +160,20 @@ func exitText(err error) string {
 
 // expectedDifferences lists inputs where our verifier refuses by policy something an oracle accepts. Each entry
 // names the policy. Nothing else may differ.
-// Our verifier never accepts what an oracle refuses, and accepted texts always match; see spec change 10.
+// Our refusals of what an oracle accepts, each with its policy (spec change 10, accepted 2026-10-04).
 var expectedDifferences = map[string]string{
 	"bad-sha384.txt/A":              "hash algorithms limited to SHA-256 and SHA-512 (spec revision 70)",
 	"real: text before/monero":      "text outside the signed block refused (spec revision 70)",
 	"real: text after/monero":       "text outside the signed block refused (spec revision 70)",
-	"real: checksum removed/monero": "armor checksum required (spec change 10, proposed)",
-	"real: armor header/monero":     "no armor headers in the signature block (spec change 10, proposed)",
+	"real: checksum removed/monero": "armor checksum required (spec change 10)",
+	"real: armor header/monero":     "no armor headers in the signature block (spec change 10)",
+	// go-crypto treats the Hash header as unverified, doesn't check the armor checksum, and reads only the first
+	// signed block; gpgv refuses all four, as we do.
+	"bad-hash-header-mismatch.txt/A":   "the Hash header must match the signature's hash (spec revision 70)",
+	"real: Hash header SHA512/monero":  "the Hash header must match the signature's hash (spec revision 70)",
+	"real: Hash header missing/monero": "a Hash header of SHA256 or SHA512 is required (spec revision 70)",
+	"real: checksum changed/monero":    "a bad armor checksum is refused (spec revision 70)",
+	"real: twice/monero":               "text outside the signed block refused (spec revision 70)",
 }
 
 type input struct {
@@ -215,47 +222,69 @@ func inputs(t *testing.T) []input {
 	return list
 }
 
-func TestGpgvAgrees(t *testing.T) {
+// TestOraclesAgree compares our verdict with gpgv's and go-crypto's for every input and key (spec change 10): the
+// test fails if ours accepts what an oracle refuses, if accepted texts differ, or if ours refuses what an oracle
+// accepts without a named policy in expectedDifferences.
+func TestOraclesAgree(t *testing.T) {
 	if _, err := exec.LookPath("gpgv"); err != nil {
-		t.Skip("gpgv not installed")
+		t.Fatal("gpgv is required for the comparison checks")
 	}
-	signers := []signer{
-		loadSigner(t, "monero", filepath.Join(testdata, "binaryfate.asc")),
-		loadSigner(t, "A", filepath.Join(testdata, "testkey-a.asc")),
-		loadSigner(t, "B", filepath.Join(testdata, "testkey-b.asc")),
+	files := map[string]string{
+		"monero": filepath.Join(testdata, "binaryfate.asc"),
+		"A":      filepath.Join(testdata, "testkey-a.asc"),
+		"B":      filepath.Join(testdata, "testkey-b.asc"),
+	}
+	var signers []signer
+	for _, name := range []string{"monero", "A", "B"} {
+		signers = append(signers, loadSigner(t, name, files[name]))
 	}
 	if signers[0].key.Fingerprint != hashsig.MoneroReleaseKey.Fingerprint {
 		t.Fatal("published key and pinned key differ")
 	}
 	var table strings.Builder
-	accepted := 0
+	accepted, compared := 0, 0
 	for _, in := range inputs(t) {
 		for _, s := range signers {
-			o, g := ours(in.data, s), gpgvVerdict(t, in.data, s)
+			o := ours(in.data, s)
 			key := in.name + "/" + s.name
-			mark := "same"
-			switch {
-			case o.accepted && g.accepted && o.text != g.text:
-				t.Errorf("%s: both accept, texts differ\nours %q\ngpgv %q", key, o.text, g.text)
-				mark = "TEXT DIFFERS"
-			case o.accepted != g.accepted:
-				if why, ok := expectedDifferences[key]; ok && !o.accepted {
-					mark = "expected: " + why
-				} else {
-					t.Errorf("%s: ours accepted=%v (%s), gpgv accepted=%v (%s)", key, o.accepted, o.detail, g.accepted, g.detail)
-					mark = "DIFFERS"
+			row := key + "\tours=" + yes(o.accepted)
+			for _, oracle := range []struct {
+				name string
+				v    verdict
+			}{
+				{"gpgv", gpgvVerdict(t, in.data, s)},
+				{"go-crypto", goCryptoVerdict(in.data, files[s.name])},
+			} {
+				compared++
+				g := oracle.v
+				mark := "same"
+				switch {
+				case o.accepted && !g.accepted:
+					t.Errorf("%s: ours accepted, %s refused (%s)", key, oracle.name, g.detail)
+					mark = "OURS ACCEPTS MORE"
+				case o.accepted && g.accepted && o.text != g.text:
+					t.Errorf("%s: texts differ from %s\nours %q\n%s %q", key, oracle.name, o.text, oracle.name, g.text)
+					mark = "TEXT DIFFERS"
+				case !o.accepted && g.accepted:
+					if why, ok := expectedDifferences[key]; ok {
+						mark = "policy: " + why
+					} else {
+						t.Errorf("%s: ours refused (%s), %s accepted, and no policy names it", key, o.detail, oracle.name)
+						mark = "UNEXPLAINED"
+					}
 				}
+				row += "\t" + oracle.name + "=" + yes(g.accepted) + " (" + mark + ")"
 			}
 			if o.accepted {
 				accepted++
 			}
-			table.WriteString(key + "\tours=" + yes(o.accepted) + "\tgpgv=" + yes(g.accepted) + "\t" + mark + "\n")
+			table.WriteString(row + "\n")
 		}
 	}
 	if accepted < 6 {
 		t.Errorf("only %d acceptances: the comparison isn't exercising valid inputs", accepted)
 	}
-	t.Log("\n" + table.String())
+	t.Logf("%d comparisons, %d inputs accepted by ours\n%s", compared, accepted, table.String())
 }
 
 func yes(b bool) string {
