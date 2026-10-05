@@ -455,3 +455,22 @@ func TestNoCrossCheckIsOff(t *testing.T) {
 		t.Fatalf("status %+v", st.NodeCheck)
 	}
 }
+
+// The loop counts what the site did with each sync it sent: accepted, refused (answered with an error), or never
+// reached. Wallet errors before sending count as none of these (the 10-minute update rule depends on it).
+func TestSiteAnswerCounts(t *testing.T) {
+	l, _, s, _ := setup(t)
+	ctx := context.Background()
+	l.SyncOnce(ctx)
+	s.fail = &syncclient.Error{Code: "BAD_SIGNATURE"}
+	l.SyncOnce(ctx)
+	s.fail = errors.New("syncclient: the site can't be reached: connection refused")
+	l.SyncOnce(ctx)
+	l.SyncOnce(ctx)
+	l.o.Wallet = func(context.Context) (Wallet, error) { return nil, errors.New("wallet-rpc not ready") }
+	l.SyncOnce(ctx)
+	st := l.Status()
+	if st.Synced != 1 || st.SiteRefused != 1 || st.Unreachable != 2 {
+		t.Fatalf("counts synced %d refused %d unreachable %d", st.Synced, st.SiteRefused, st.Unreachable)
+	}
+}

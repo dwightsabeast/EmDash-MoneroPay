@@ -26,19 +26,23 @@ import (
 type bridgeHandle interface {
 	Notify()
 	Stop()
+	Updates() <-chan updateEvent
 }
 
 // startBridge is replaced in tests.
 var startBridge = defaultStartBridge
 
 type running struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	sup    *supervise.Supervisor
-	loop   *bridgeloop.Loop
+	cancel     context.CancelFunc
+	done       chan struct{}
+	sup        *supervise.Supervisor
+	loop       *bridgeloop.Loop
+	updates    chan updateEvent
+	updateText updateStatus
 }
 
-func (r *running) Notify() { r.loop.Notify() }
+func (r *running) Notify()                     { r.loop.Notify() }
+func (r *running) Updates() <-chan updateEvent { return r.updates }
 
 func (r *running) Stop() {
 	r.cancel()
@@ -80,8 +84,10 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 		cc = crosscheck.New(cfg.Node, string(cfg.Network), crosscheck.DefaultNodes(string(cfg.Network)), nil)
 		log.Info("the node is remote: payments are cross-checked with a second node")
 	}
+	r := &running{updates: make(chan updateEvent)}
 	loop, err := bridgeloop.New(bridgeloop.Options{
 		CrossCheck: cc,
+		Updates:    func() string { return r.updateText.get() },
 		Wallet:     func(ctx context.Context) (bridgeloop.Wallet, error) { return sup.WaitReady(ctx) },
 		Site:       siteClient(cfg),
 		LoadKey:    func() (ed25519.PrivateKey, error) { return syncsign.LoadKey(keyFile(cfg)) },
@@ -93,12 +99,13 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 		return nil, err
 	}
 	rctx, cancel := context.WithCancel(ctx)
-	r := &running{cancel: cancel, done: make(chan struct{}), sup: sup, loop: loop}
+	r.cancel, r.done, r.sup, r.loop = cancel, make(chan struct{}), sup, loop
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); sup.Run(rctx) }()
 	go func() { defer wg.Done(); loop.Run(rctx) }()
 	go func() { wg.Wait(); close(r.done) }()
+	startUpdates(rctx, cfg, r, log)
 	go func() {
 		c, err := sup.WaitReady(rctx)
 		if err != nil {

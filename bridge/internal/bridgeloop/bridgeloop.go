@@ -65,6 +65,8 @@ type Options struct {
 	Extra func() any
 	// CrossCheck, when set, adjusts confirmations of mined transfers (spec change 13).
 	CrossCheck CrossChecker
+	// Updates, when set, describes the update state for the status file.
+	Updates func() string
 
 	Interval   time.Duration // default 12 s
 	Jitter     time.Duration // default 3 s
@@ -85,7 +87,12 @@ type Status struct {
 	Pending       int               `json:"pending"`
 	Warnings      []string          `json:"warnings,omitempty"`
 	NodeCheck     crosscheck.Report `json:"nodeCheck"`
-	WalletRPC     any               `json:"walletRpc,omitempty"`
+	// What the site did with the syncs sent since this process started (for the update rule).
+	Synced      int    `json:"synced"`
+	SiteRefused int    `json:"siteRefused"`
+	Unreachable int    `json:"unreachable"`
+	Updates     string `json:"updates,omitempty"`
+	WalletRPC   any    `json:"walletRpc,omitempty"`
 }
 
 // Loop is one bridge's sync loop.
@@ -295,6 +302,17 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 			sent /= 2
 			continue
 		}
+		l.mu.Lock()
+		var se *syncclient.Error
+		switch {
+		case err == nil:
+			l.st.Synced++
+		case errors.As(err, &se):
+			l.st.SiteRefused++
+		case !errors.Is(err, syncclient.ErrTooLarge):
+			l.st.Unreachable++
+		}
+		l.mu.Unlock()
 		if err != nil {
 			return err
 		}
@@ -447,6 +465,9 @@ func (l *Loop) writeStatus() {
 	st := l.Status()
 	if l.o.Extra != nil {
 		st.WalletRPC = l.o.Extra()
+	}
+	if l.o.Updates != nil {
+		st.Updates = l.o.Updates()
 	}
 	data, _ := json.MarshalIndent(st, "", "  ")
 	if err := writeAtomic(filepath.Join(l.runDir(), "status.json"), append(data, '\n')); err != nil {

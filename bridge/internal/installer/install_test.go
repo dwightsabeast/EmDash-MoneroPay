@@ -9,6 +9,7 @@ import (
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/selfupdate"
 )
 
 func TestInstall(t *testing.T) {
@@ -37,8 +38,25 @@ func TestInstall(t *testing.T) {
 	if fi, _ := os.Stat(p.Binary()); fi.Mode().Perm() != 0o755 {
 		t.Fatalf("binary mode %v", fi.Mode().Perm())
 	}
-	if target, err := os.Readlink(p.Link()); err != nil || target != "/var/lib/xmr-bridge/bin/xmr-bridge" {
-		t.Fatalf("symlink %q %v", target, err)
+	// The admin copy: a root-owned file (never a link into a folder the service can write), its hash recorded.
+	if fi, err := os.Lstat(p.Link()); err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm() != 0o755 {
+		t.Fatalf("admin copy %v %v", fi, err)
+	}
+	if b, _ := os.ReadFile(p.Link()); string(b) != "#!bridge binary\n" {
+		t.Fatal("admin copy content")
+	}
+	if sys.chowned[p.Link()] != [2]int{0, 0} {
+		t.Fatal("admin copy not root-owned")
+	}
+	if h, err := os.ReadFile(filepath.Join(p.EtcDir(), "admin-binary.sha256")); err != nil || len(strings.TrimSpace(string(h))) != 64 {
+		t.Fatalf("admin copy hash not recorded: %q %v", h, err)
+	}
+	// The update guard, run by systemd as the service user.
+	if g, err := os.ReadFile(filepath.Join(p.BinDir(), "update-guard.sh")); err != nil || string(g) != selfupdate.GuardScript {
+		t.Fatalf("guard %v", err)
+	}
+	if fi, _ := os.Stat(filepath.Join(p.BinDir(), "update-guard.sh")); fi.Mode().Perm() != 0o755 {
+		t.Fatalf("guard mode %v", fi.Mode().Perm())
 	}
 	if fi, _ := os.Stat(p.DataDir()); fi.Mode().Perm() != 0o700 {
 		t.Fatalf("data folder mode %v", fi.Mode().Perm())
@@ -265,7 +283,7 @@ func TestUninstall(t *testing.T) {
 		t.Fatal("unit kept")
 	}
 	if _, err := os.Lstat(p.Link()); !os.IsNotExist(err) {
-		t.Fatal("symlink kept")
+		t.Fatal("admin copy kept")
 	}
 	if _, err := os.Stat(filepath.Join(p.DataDir(), "wallet", "shop.keys")); err != nil {
 		t.Fatal("the wallet was removed without --delete-data")
@@ -291,8 +309,68 @@ func TestUninstall(t *testing.T) {
 	}
 }
 
+// The 3f layout had a symlink; installing again replaces it with the root-owned copy.
+func TestReplacesOldSymlink(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	os.MkdirAll(filepath.Dir(opts.Paths.Link()), 0o755)
+	os.Symlink("/var/lib/xmr-bridge/bin/xmr-bridge", opts.Paths.Link())
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Lstat(opts.Paths.Link()); !fi.Mode().IsRegular() {
+		t.Fatal("the old symlink wasn't replaced")
+	}
+}
+
+// A changed admin copy (not the one the installer recorded) is left alone by uninstall.
+func TestUninstallLeavesAChangedAdminCopy(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(opts.Paths.Link(), []byte("replaced by someone"), 0o755)
+	var out strings.Builder
+	if err := Uninstall(opts.Paths, false, sys, &out); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(opts.Paths.Link()); string(b) != "replaced by someone" {
+		t.Fatal("removed a file it didn't install")
+	}
+}
+
+// The admin copy refuses to act on a state written by a newer bridge (it may lag after a self-update).
+func TestUninstallChecksStateFormat(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(opts.Paths.DataDir(), "run", "update-state.json"), []byte(`{"format":99}`), 0o600)
+	var out strings.Builder
+	err := Uninstall(opts.Paths, false, sys, &out)
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "re-run the installer") {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := os.Stat(opts.Paths.Unit()); err != nil {
+		t.Fatal("removed the service anyway")
+	}
+}
+
 func TestUnit(t *testing.T) {
 	u := UnitText()
+	unitSection, serviceSection, _ := strings.Cut(u, "[Service]")
+	for _, want := range []string{"StartLimitIntervalSec=600", "StartLimitBurst=20"} {
+		if !strings.Contains(unitSection, want) {
+			t.Errorf("[Unit] lacks %q", want)
+		}
+	}
+	for _, want := range []string{"ExecStartPre=/var/lib/xmr-bridge/bin/update-guard.sh\n", "RestartForceExitStatus=75", "RestartSec=10"} {
+		if !strings.Contains(serviceSection, want) {
+			t.Errorf("[Service] lacks %q", want)
+		}
+	}
+	if strings.Contains(u, "ExecStartPre=+") || strings.Contains(u, "ExecStartPre=!") {
+		t.Error("the guard must run as the service user, not with root privileges")
+	}
 	for _, want := range []string{
 		"User=xmr-bridge", "Group=xmr-bridge", "NoNewPrivileges=yes", "ProtectSystem=strict", "ReadWritePaths=/var/lib/xmr-bridge",
 		"ProtectHome=yes", "PrivateTmp=yes", "PrivateDevices=yes", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",

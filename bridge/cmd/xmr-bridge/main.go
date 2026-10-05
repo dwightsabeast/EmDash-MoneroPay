@@ -111,6 +111,14 @@ func cmdRun(ctx context.Context, args []string, stderr io.Writer) int {
 		case <-notified:
 			log.Info("notified")
 			b.Notify()
+		case ev := <-b.Updates():
+			log.Info("update", "what", ev.reason)
+			b.Stop() // wallet-rpc stops before any file is swapped
+			if err := ev.apply(); err != nil {
+				log.Error("update", "err", err)
+			}
+			log.Info("restarting for the update")
+			return exitForUpdate
 		}
 	}
 }

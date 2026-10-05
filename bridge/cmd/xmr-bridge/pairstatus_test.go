@@ -136,3 +136,43 @@ func TestStatusNodeCheck(t *testing.T) {
 		}
 	}
 }
+
+// The admin copy may lag the self-updated service copy: status and pair refuse a newer state format.
+func TestAdminCommandsCheckStateFormat(t *testing.T) {
+	srv, _ := pairingSite(t)
+	p, c := writeConfig(t, srv.URL)
+	os.MkdirAll(filepath.Join(c.DataDir, "run"), 0o700)
+	os.WriteFile(filepath.Join(c.DataDir, "run", "update-state.json"), []byte(`{"format":99}`), 0o600)
+	for _, args := range [][]string{{"status", "--config", p}, {"pair", "--config", p, "--code", testCode}} {
+		code, out, errOut := run(context.Background(), args...)
+		if code != 1 || !strings.Contains(strings.ToLower(out+errOut), "re-run the installer") {
+			t.Errorf("%v: %d %q %q", args[0], code, out, errOut)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(c.DataDir, "bridge.key")); !os.IsNotExist(err) {
+		t.Fatal("pair went ahead")
+	}
+}
+
+// Run as root, pair hands the new key to the service account (otherwise the service couldn't read it).
+func TestPairAsRootHandsTheKeyOver(t *testing.T) {
+	srv, _ := pairingSite(t)
+	p, c := writeConfig(t, srv.URL)
+	var handed [2]int
+	prevRoot, prevOwner := isRoot, chownKey
+	isRoot = func() bool { return true }
+	chownKey = func(path string) error {
+		handed = [2]int{1, 1}
+		if path != keyFile(c) {
+			t.Errorf("handed %s", path)
+		}
+		return nil
+	}
+	defer func() { isRoot, chownKey = prevRoot, prevOwner }()
+	if code, _, errOut := run(context.Background(), "pair", "--config", p, "--code", testCode); code != 0 {
+		t.Fatalf("%d %s", code, errOut)
+	}
+	if handed != [2]int{1, 1} {
+		t.Fatal("the key wasn't handed to the service account")
+	}
+}

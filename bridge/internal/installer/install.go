@@ -7,6 +7,8 @@ package installer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +23,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/moneroaddr"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/secret"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/selfupdate"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/shopkeys"
 )
 
@@ -210,7 +213,7 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	if prev, err := config.Load(p.Config()); err == nil && prev.Address != addr {
 		return errors.New("this machine already hosts a wallet for another address. Run xmr-bridge uninstall --delete-data first (it deletes the old view-only wallet)")
 	}
-	if err := checkLink(p.Link()); err != nil {
+	if err := checkAdminCopy(p); err != nil {
 		return err
 	}
 
@@ -241,14 +244,28 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	if err := copyBinary(o.Exe, p.Binary()); err != nil {
 		return fmt.Errorf("installing the bridge binary: %w", err)
 	}
+	if err := os.WriteFile(p.Guard(), []byte(selfupdate.GuardScript), 0o755); err != nil {
+		return fmt.Errorf("installing the update guard: %w", err)
+	}
+	os.Chmod(p.Guard(), 0o755)
+	if err := os.MkdirAll(p.EtcDir(), 0o755); err != nil {
+		return err
+	}
+	// The admin's copy: root-owned, outside anything the service can write.
 	if err := os.MkdirAll(filepath.Dir(p.Link()), 0o755); err != nil {
 		return err
 	}
-	os.Remove(p.Link())
-	if err := os.Symlink(binaryPath, p.Link()); err != nil {
+	if err := copyBinary(o.Exe, p.Link()); err != nil {
+		return fmt.Errorf("installing %s: %w", linkPath, err)
+	}
+	if err := sys.Chown(p.Link(), 0, 0); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(p.EtcDir(), 0o755); err != nil {
+	sum, err := fileHash(p.Link())
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(p.AdminHash(), []byte(sum+"\n"), 0o644); err != nil {
 		return err
 	}
 	if err := config.Save(p.Config(), cfg); err != nil {
@@ -393,21 +410,44 @@ func serviceUser(sys System) (int, int, error) {
 	return uid, gid, nil
 }
 
-// checkLink refuses to replace anything at the symlink's place that isn't our own symlink.
-func checkLink(link string) error {
-	fi, err := os.Lstat(link)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+// ownAdminCopy reports whether the file at the admin copy's place is this installer's: the admin copy it recorded,
+// or the symlink the 3f layout used.
+func ownAdminCopy(p Paths) bool {
+	fi, err := os.Lstat(p.Link())
 	if err != nil {
-		return err
+		return false
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
-		if t, _ := os.Readlink(link); t == binaryPath {
-			return nil
-		}
+		t, _ := os.Readlink(p.Link())
+		return t == binaryPath
 	}
-	return fmt.Errorf("%s already exists and isn't this installer's; move it away and run the installer again", link)
+	want, err := os.ReadFile(p.AdminHash())
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	got, err := fileHash(p.Link())
+	return err == nil && got == strings.TrimSpace(string(want))
+}
+
+// checkAdminCopy refuses to replace a file at the admin copy's place that isn't this installer's.
+func checkAdminCopy(p Paths) error {
+	if _, err := os.Lstat(p.Link()); errors.Is(err, os.ErrNotExist) || ownAdminCopy(p) {
+		return nil
+	}
+	return fmt.Errorf("%s already exists and isn't this installer's; move it away and run the installer again", p.Link())
+}
+
+func fileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // copyBinary installs the running binary (unless it is already the installed one), mode 755.
@@ -446,12 +486,15 @@ func Uninstall(p Paths, deleteData bool, sys System, out io.Writer) error {
 	if sys.Euid() != 0 {
 		return errors.New("uninstalling needs root: run it with sudo")
 	}
+	if err := selfupdate.CheckFormat(p.DataDir()); err != nil {
+		return err
+	}
 	sys.Systemctl("disable", "--now", ServiceName) // not loaded is fine
 	if err := os.Remove(p.Unit()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	sys.Systemctl("daemon-reload")
-	if checkLink(p.Link()) == nil {
+	if ownAdminCopy(p) {
 		os.Remove(p.Link())
 	}
 	if !deleteData {

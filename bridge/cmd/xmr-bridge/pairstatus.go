@@ -13,12 +13,26 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/installer"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/pairing"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/selfupdate"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 )
 
 func keyFile(cfg config.Config) string { return filepath.Join(cfg.DataDir, "bridge.key") }
+
+// isRoot and chownKey are replaced in tests.
+var (
+	isRoot   = func() bool { return os.Geteuid() == 0 }
+	chownKey = func(path string) error {
+		uid, gid, ok, err := installer.RealSystem().LookupUser(installer.ServiceUser)
+		if err != nil || !ok {
+			return fmt.Errorf("the %s user isn't there: %v", installer.ServiceUser, err)
+		}
+		return os.Chown(path, uid, gid)
+	}
+)
 
 func siteClient(cfg config.Config) *syncclient.Client {
 	return &syncclient.Client{Site: cfg.Site, UserAgent: "xmr-bridge/" + version}
@@ -40,6 +54,10 @@ func cmdPair(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
 		return 1
 	}
+	if err := selfupdate.CheckFormat(cfg.DataDir); err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
+		return 1
+	}
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
 		return 1
@@ -53,6 +71,12 @@ func cmdPair(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err := pairing.Pair(ctx, siteClient(cfg), *code, keyFile(cfg), height, time.Now()); err != nil {
 		fmt.Fprintf(stderr, "xmr-bridge: pairing failed: %v\n", err)
 		return 1
+	}
+	if isRoot() {
+		if err := chownKey(keyFile(cfg)); err != nil {
+			fmt.Fprintf(stderr, "xmr-bridge: paired, but the key couldn't be handed to the service account: %v\n", err)
+			return 1
+		}
 	}
 	fmt.Fprintf(stdout, "Paired with %s. The site's Monero payments page now shows the wallet host as connected.\n", cfg.Site)
 	return 0
@@ -73,6 +97,10 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	cfg, err := config.Load(*path)
 	if err != nil {
+		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
+		return 1
+	}
+	if err := selfupdate.CheckFormat(cfg.DataDir); err != nil {
 		fmt.Fprintf(stderr, "xmr-bridge: %v\n", err)
 		return 1
 	}

@@ -44,10 +44,12 @@ func TestUsage(t *testing.T) {
 // fakeBridge stands in for the real start-up (wallet, wallet-rpc) in the command's own tests.
 type fakeBridge struct {
 	notified, stopped atomic.Int32
+	updates           chan updateEvent
 }
 
-func (f *fakeBridge) Notify() { f.notified.Add(1) }
-func (f *fakeBridge) Stop()   { f.stopped.Add(1) }
+func (f *fakeBridge) Notify()                     { f.notified.Add(1) }
+func (f *fakeBridge) Stop()                       { f.stopped.Add(1) }
+func (f *fakeBridge) Updates() <-chan updateEvent { return f.updates }
 
 func useFakeBridge(t *testing.T) *fakeBridge {
 	f := &fakeBridge{}
@@ -185,5 +187,19 @@ func TestRunWithoutWallet(t *testing.T) {
 	code, _, errOut := run(context.Background(), "run", "--config", p)
 	if code != 1 || !strings.Contains(errOut, "no wallet yet") {
 		t.Fatalf("run: %d %q", code, errOut)
+	}
+}
+
+// An update event stops the bridge first, then swaps, then exits 75 so systemd starts the new version.
+func TestRunExitsForUpdate(t *testing.T) {
+	fb := useFakeBridge(t)
+	fb.updates = make(chan updateEvent, 1)
+	var stoppedBeforeApply bool
+	fb.updates <- updateEvent{reason: "test", apply: func() error { stoppedBeforeApply = fb.stopped.Load() == 1; return nil }}
+	p := filepath.Join(t.TempDir(), "config")
+	config.Save(p, config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: testaddr.Stagenet, Node: "http://127.0.0.1:38081", DataDir: t.TempDir(), AllowSameMachine: true})
+	code, _, errOut := run(context.Background(), "run", "--config", p)
+	if code != 75 || !stoppedBeforeApply || !strings.Contains(errOut, "restarting for the update") {
+		t.Fatalf("exit %d, stopped before apply %v: %s", code, stoppedBeforeApply, errOut)
 	}
 }
