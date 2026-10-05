@@ -194,3 +194,21 @@ Proposal: when an index has more than 32 incoming transfers, the bridge sends th
 Effect on the admin budget: none.
 Effect on the trust contract: none.
 Wyatt's decision (2026-10-04): accepted with the 3d plan. Wyatt updates the live spec and `docs/spec.md`.
+
+## 13. The remote-node cross-check: what is compared, when, with whom, and how the site hears of it  (status: accepted, 2026-10-04)
+Found in: phase 03 session 3e plan
+Spec says: Bridge service, duty 6: "Cross-check on remote nodes: before reporting a transfer as confirmed, compare the block hash at its height with a second node. A mismatch holds the transfer at 0 confirmations and turns a health check red." Open question 12: which second nodes to use by default.
+Evidence (reasoning, before code): the wallet trusts its node's view of the chain. Comparing "the block hash at its height" means asking the configured node for that hash, and a dishonest node could serve the wallet a fabricated block yet answer that question honestly. Asking the second node about the txid directly would close that, but tells the second node's operator which transactions this wallet host cares about.
+Proposal (Wyatt's decisions, 2026-10-04):
+1. **What:**
+   - For each mined transfer the bridge is about to report, it asks a second node for the whole block at that height (`get_block`).
+   - The transfer's txid must be in that block's transaction list, and that block's hash must equal the configured node's hash at the same height.
+   - Confirmations reported are the smaller of the two nodes' counts.
+   - The second node learns a height, not a txid.
+   - Results are kept per (txid, height); a reorg changes the height, so the transfer is checked again.
+2. **When:** only when the configured node is not your own, meaning its address is not loopback and not a private or link-local address (a host name is resolved first). A node on the same machine or your LAN is trusted.
+3. **With whom:** a built-in list of public nodes per network, tried in random order; no setting. The list is chosen with Wyatt in 3e (open question 12) and changes only with a bridge release.
+4. **A mismatch** holds the transfer at 0 confirmations and turns the check red. **No second node answering** reports confirmations as they are, with an amber "node check unavailable", so a public-node outage can't stall every payment.
+5. **The site:** the bridge sends an optional `checks` field in the sync body (the plugin ignores unknown fields today); the plugin shows it on the admin page in phase 04. Until then it shows in `xmr-bridge status` and the log.
+Effect on the admin budget: none (no setting; your own node needs nothing).
+Effect on the trust contract: none for the plugin. The bridge makes outbound requests to the listed public nodes only when the configured node is remote.
