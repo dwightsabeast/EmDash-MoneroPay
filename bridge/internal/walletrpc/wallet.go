@@ -52,3 +52,10 @@ func (c *Client) GetAddress(ctx context.Context) (string, error) {
 	err := c.call(ctx, "get_address", map[string]any{"account_index": 0}, &r)
 	return r.Address, err
 }
+
+// RescanBlockchain rescans the open wallet from its restore height, finding payments to subaddresses created after
+// the blocks holding them were first scanned (spec change 9). wallet-rpc answers once the rescan is done.
+func (c *Client) RescanBlockchain(ctx context.Context) error {
+	var r struct{}
+	return c.call(ctx, "rescan_blockchain", struct{}{}, &r)
+}

@@ -180,3 +180,14 @@ func TestGetVersionAndCreateAddress(t *testing.T) {
 		t.Fatalf("create_address params = %v", params)
 	}
 }
+
+func TestRescanBlockchain(t *testing.T) {
+	f, srv := newFake(t)
+	f.results["rescan_blockchain"] = `{}`
+	if err := client(f, srv).RescanBlockchain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.calls[len(f.calls)-1].Method; got != "rescan_blockchain" {
+		t.Fatalf("called %s", got)
+	}
+}
