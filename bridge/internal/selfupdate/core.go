@@ -259,6 +259,16 @@ func (f Files) state() stateJSON {
 	return s
 }
 
+// WriteFormat records this build's state format, keeping the rest of the state. The running bridge calls it at every
+// start, so an older admin copy of xmr-bridge always has a format to check (CheckFormat).
+func (f Files) WriteFormat() error {
+	data, err := json.Marshal(f.state())
+	if err != nil {
+		return err
+	}
+	return f.write("update-state.json", string(data)+"\n")
+}
+
 // FirstSeen returns when version of kind was first seen (now, the first time), for the 48-hour wait on releases
 // that carry no signed date (Monero's).
 func (f Files) FirstSeen(kind, v string, now time.Time) time.Time {

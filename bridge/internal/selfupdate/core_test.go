@@ -147,3 +147,23 @@ func TestFirstSeenAndFormat(t *testing.T) {
 		t.Fatalf("no state yet: %v", err)
 	}
 }
+
+// The running bridge writes its state format at every start, so an admin copy can always compare (Wyatt, 3g):
+// without it, update-state.json only appears once a wallet-rpc version has been seen.
+func TestWriteFormat(t *testing.T) {
+	dir := t.TempDir()
+	f := Files{DataDir: dir}
+	if err := f.WriteFormat(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "run", "update-state.json"))
+	if err != nil || !strings.Contains(string(raw), `"format":1`) {
+		t.Fatalf("%s %v", raw, err)
+	}
+	// It keeps what else is there.
+	f.FirstSeen(KindWalletRPC, "0.18.6.0", time.Unix(1790000000, 0))
+	f.WriteFormat()
+	if got := f.FirstSeen(KindWalletRPC, "0.18.6.0", time.Unix(1790009999, 0)); got.Unix() != 1790000000 {
+		t.Fatal("WriteFormat lost the first-seen time")
+	}
+}

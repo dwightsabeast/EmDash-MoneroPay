@@ -176,3 +176,15 @@ func TestPairAsRootHandsTheKeyOver(t *testing.T) {
 		t.Fatal("the key wasn't handed to the service account")
 	}
 }
+
+func TestStatusShowsUpdates(t *testing.T) {
+	p, c := writeConfig(t, "https://shop.example")
+	os.MkdirAll(filepath.Join(c.DataDir, "run"), 0o700)
+	now := time.Now()
+	b, _ := json.Marshal(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now, PoolTarget: 50, PoolFree: 50, Updates: "bridge updates off: no release key pinned yet; Monero wallet program updates on"})
+	os.WriteFile(filepath.Join(c.DataDir, "run", "status.json"), b, 0o600)
+	_, out, _ := run(context.Background(), "status", "--config", p)
+	if !strings.Contains(out, "Updates:    bridge updates off: no release key pinned yet") {
+		t.Fatalf("%q", out)
+	}
+}

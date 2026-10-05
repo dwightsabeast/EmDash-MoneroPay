@@ -153,6 +153,9 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, " (%d more waiting to be sent)", st.Pending)
 	}
 	fmt.Fprintf(stdout, "\nWatching:   %d payment address(es)\n", st.Watching)
+	if st.Updates != "" {
+		fmt.Fprintf(stdout, "Updates:    %s\n", st.Updates)
+	}
 	for _, w := range st.Warnings {
 		fmt.Fprintf(stdout, "Warning:    %s\n", w)
 	}

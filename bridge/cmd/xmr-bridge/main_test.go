@@ -86,6 +86,10 @@ func TestRunStopsOnCancel(t *testing.T) {
 	if fb.stopped.Load() != 1 {
 		t.Fatal("the bridge was not stopped")
 	}
+	cfg, _ := config.Load(p)
+	if raw, err := os.ReadFile(filepath.Join(cfg.DataDir, "run", "update-state.json")); err != nil || !strings.Contains(string(raw), `"format":1`) {
+		t.Fatalf("run didn't record the state format: %s %v", raw, err)
+	}
 }
 
 func TestRunBadConfig(t *testing.T) {

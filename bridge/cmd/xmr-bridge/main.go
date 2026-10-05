@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/selfupdate"
 )
 
 // version is set at build time with -ldflags "-X main.version=…".
@@ -97,6 +98,10 @@ func cmdRun(ctx context.Context, args []string, stderr io.Writer) int {
 	signal.Notify(notified, syscall.SIGUSR1)
 	defer signal.Stop(notified)
 	log.Info("starting", "version", version, "network", string(cfg.Network), "site", cfg.Site, "node", cfg.Node)
+	// Record this build's state format for older admin copies of xmr-bridge (selfupdate.CheckFormat).
+	if err := (selfupdate.Files{DataDir: cfg.DataDir}).WriteFormat(); err != nil {
+		log.Warn("writing the state format", "err", err)
+	}
 	if devBreakMode() == "crash" {
 		log.Error("deliberately broken development build (devBreak=crash): exiting")
 		return 1
