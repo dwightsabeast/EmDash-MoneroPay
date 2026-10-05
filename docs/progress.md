@@ -526,3 +526,59 @@ Open issues:
 - Plaintext second nodes: five of the six stagenet nodes are http only. A network attacker between the wallet host and that node could answer for it, but would also have to fake the configured node's view to cause harm. https entries are preferred when the list is chosen for mainnet.
 
 Next step: session 3f, `installer/install.sh` and the systemd unit (Wyatt runs it with `sudo`; the same-machine check; prompts read from `/dev/tty`; the cautious path `xmr-bridge install`).
+
+## 2026-10-04 · Phase 03 · Session 3f-1: xmr-bridge install and uninstall
+
+Done:
+- Pushed `5423a71..453538a` with Wyatt's approval. 3f plan approved (all five); `shellcheck` skipped.
+- **The install flow**, commit `320ac1b`. Everything the machine sees goes through small interfaces, so the whole flow runs against a fake root folder.
+  - Checks before any prompt: root, systemd, `--site`, `--pair`.
+  - Prompts on `/dev/tty`: the address, then the view key with echo off. Three tries each, with the 3c checks, including the view key belonging to the address and the spend key recognised. The network comes from the address.
+  - The same-machine check (site process, `astro.config.*` importing `emdash`, the site's name resolving here), refused unless `--allow-same-machine` on stagenet. How reliable each signal is (open question 17) is documented in `internal/installer/samemachine.go`.
+  - The local node is tried on 127.0.0.1 and [::1] at the network's port, else asked for.
+  - The service user and files:
+    - `/var/lib/xmr-bridge` (700) holds the bridge binary, wallet-rpc, wallet and key
+    - `/etc/xmr-bridge/config` (600, the service account's)
+    - `/usr/local/bin/xmr-bridge` symlink, which never replaces a file the installer didn't make
+  - wallet-rpc runs as the service account even during install: the supervisor's new `Credential` option, with root's groups dropped.
+  - Running it again keeps the wallet for the same address and pairs again; another address is refused.
+  - Then systemd: `enable --now`, or `restart` when the unit already existed.
+  - `uninstall` keeps the data unless `--delete-data` is given.
+  - Commands: `xmr-bridge install --site --pair [--node] [--restore-height] [--no-auto-update] [--allow-same-machine]` and `xmr-bridge uninstall [--delete-data]`.
+- **The unit:** a dedicated user, `NoNewPrivileges`, `ProtectSystem=strict` with `ReadWritePaths=/var/lib/xmr-bridge`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, the kernel, cgroup, clock and hostname protections, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces`, `SystemCallFilter=@system-service`, `MemoryDenyWriteExecute`, `ProtectProc=invisible`, `RemoveIPC`, an empty capability set, `UMask=0077`.
+  - `systemd-analyze verify`: clean apart from the binary not existing yet.
+  - `systemd-analyze security --offline`: exposure 3.0, then **1.5** after the last five directives.
+  - `MemoryDenyWriteExecute` and `SystemCallFilter` are confirmed against the real wallet-rpc in Wyatt's run (3f-2).
+  - The dev box runs systemd 257 (Debian 13), not Debian 12 as I'd assumed.
+
+Tests:
+- `cd bridge && go test ./...`: all pass, live tests skipped by default. `gofmt` and `vet` clean.
+- Installer tests:
+  - a full install: config, files, modes, owners, symlink, order, the credential, the unit, systemd calls, no key in the output
+  - early refusals that leave nothing behind
+  - retries and giving up
+  - mainnet and the IPv6 local node
+  - the node prompt and `--node`
+  - same machine, with and without the flag
+  - running it again
+  - a foreign file at the symlink's place
+  - uninstall, with and without `--delete-data`
+  - the unit's directives
+  - the same-machine signals against a fake `/proc` and fake folders
+  - the prompter (echo restored, line cap)
+  - `Chown` not following links
+- **The real detector on the dev box** (dev site stopped) found the dev site's `astro.config.mjs`, the baseline copy of it in `~/xmr-pay-dev-data/baseline/`, and `localhost` resolving here.
+- **Mutation checks:** 12 of 13 caught. The survivor (the dev flag on mainnet) is refused by config validation too, before any change.
+
+Not covered: anything as real root (3f-2, Wyatt's run). Not unit-tested without a terminal or root: `useradd`, `userdel`, `systemctl`, and the terminal echo ioctls.
+
+Open issues:
+- Commit `320ac1b` and this entry are local.
+- Spec changes 6, 7 and 9–13 to fold into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- The mainnet second-node list.
+
+Next step: session 3f-2.
+- `installer/install.sh` (POSIX `sh`): detect the CPU, download the bridge, check the embedded SHA-256, then `sudo <bridge> install "$@"`.
+- `scripts/build-dev-release.sh`, with a dev `install.sh` pointing at `http://127.0.0.1:8099`.
+- Wyatt's real run on the dev box: stagenet, `--allow-same-machine`, a code from the admin page, then status, restart and uninstall.
