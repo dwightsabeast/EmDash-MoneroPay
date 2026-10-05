@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
@@ -406,5 +407,51 @@ func TestKeyReadEachSync(t *testing.T) {
 	k, keyErr = func() (ed25519.PrivateKey, error) { return syncsign.NewKey() }()
 	if err := l.SyncOnce(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// fakeCheck stands in for the cross-check: it zeroes every mined transfer's confirmations and reports a mismatch.
+type fakeCheck struct{ calls int }
+
+func (f *fakeCheck) Check(_ context.Context, ts []walletrpc.Transfer) ([]walletrpc.Transfer, crosscheck.Report) {
+	f.calls++
+	out := append([]walletrpc.Transfer{}, ts...)
+	for i := range out {
+		if out[i].Height > 0 {
+			out[i].Confirmations = 0
+		}
+	}
+	return out, crosscheck.Report{State: crosscheck.Mismatch, Detail: "block 100 differs", Node: "second.example:38089"}
+}
+
+func TestCrossCheckApplied(t *testing.T) {
+	l, w, s, _ := setup(t)
+	fc := &fakeCheck{}
+	l.o.CrossCheck = fc
+	s.target, s.watch = 0, []uint32{5}
+	w.transfers[5] = []walletrpc.Transfer{tr('a', "1000", 100)}
+	ctx := context.Background()
+	l.SyncOnce(ctx)
+	l.SyncOnce(ctx)
+	b := s.last()
+	if b.Snapshots[0].Transfers[0].Confirmations != 0 {
+		t.Fatal("the cross-check's confirmations weren't used")
+	}
+	if b.Checks == nil || b.Checks.Node == nil || b.Checks.Node.State != "mismatch" || !strings.Contains(b.Checks.Node.Detail, "block 100") {
+		t.Fatalf("checks sent: %+v", b.Checks)
+	}
+	if st := l.Status(); st.NodeCheck.State != crosscheck.Mismatch {
+		t.Fatalf("status %+v", st.NodeCheck)
+	}
+}
+
+func TestNoCrossCheckIsOff(t *testing.T) {
+	l, _, s, _ := setup(t)
+	l.SyncOnce(context.Background())
+	if b := s.last(); b.Checks == nil || b.Checks.Node == nil || b.Checks.Node.State != "off" {
+		t.Fatalf("checks %+v", b.Checks)
+	}
+	if st := l.Status(); st.NodeCheck.State != crosscheck.Off {
+		t.Fatalf("status %+v", st.NodeCheck)
 	}
 }

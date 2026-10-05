@@ -12,6 +12,7 @@ import (
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/pairing"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
@@ -107,6 +108,17 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		healthy = false
 		fmt.Fprintf(stdout, "Problem:    %s\n", st.LastError)
 	}
+	switch nc := st.NodeCheck; nc.State {
+	case "", crosscheck.Off:
+		fmt.Fprintln(stdout, "Node check: off (the node is your own)")
+	case crosscheck.OK:
+		fmt.Fprintf(stdout, "Node check: ok%s\n", via(nc.Node))
+	case crosscheck.Unavailable:
+		fmt.Fprintf(stdout, "Node check: unavailable: %s\n", nc.Detail)
+	case crosscheck.Mismatch:
+		healthy = false
+		fmt.Fprintf(stdout, "Node check: MISMATCH: %s\n", nc.Detail)
+	}
 	fmt.Fprintf(stdout, "Wallet:     height %d\n", st.WalletHeight)
 	fmt.Fprintf(stdout, "Addresses:  %d of %d ready on the site", st.PoolFree, st.PoolTarget)
 	if st.Pending > 0 {
@@ -120,4 +132,11 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func via(node string) string {
+	if node == "" {
+		return ""
+	}
+	return " (checked with " + node + ")"
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/hashsig"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/monerodl"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/supervise"
@@ -72,13 +73,21 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 	if err != nil {
 		return nil, err
 	}
+	// The cross-check runs only when the node isn't the shop's own (spec change 13). A name that can't be resolved
+	// now is treated as remote.
+	var cc bridgeloop.CrossChecker
+	if own, _ := crosscheck.IsOwnNode(ctx, cfg.Node); !own {
+		cc = crosscheck.New(cfg.Node, string(cfg.Network), crosscheck.DefaultNodes(string(cfg.Network)), nil)
+		log.Info("the node is remote: payments are cross-checked with a second node")
+	}
 	loop, err := bridgeloop.New(bridgeloop.Options{
-		Wallet:  func(ctx context.Context) (bridgeloop.Wallet, error) { return sup.WaitReady(ctx) },
-		Site:    siteClient(cfg),
-		LoadKey: func() (ed25519.PrivateKey, error) { return syncsign.LoadKey(keyFile(cfg)) },
-		DataDir: cfg.DataDir,
-		Log:     log,
-		Extra:   func() any { return sup.Status() },
+		CrossCheck: cc,
+		Wallet:     func(ctx context.Context) (bridgeloop.Wallet, error) { return sup.WaitReady(ctx) },
+		Site:       siteClient(cfg),
+		LoadKey:    func() (ed25519.PrivateKey, error) { return syncsign.LoadKey(keyFile(cfg)) },
+		DataDir:    cfg.DataDir,
+		Log:        log,
+		Extra:      func() any { return sup.Status() },
 	})
 	if err != nil {
 		return nil, err

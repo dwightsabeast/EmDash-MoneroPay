@@ -40,6 +40,20 @@ type Body struct {
 	Addresses []Address  `json:"addresses"`
 	Snapshots []Snapshot `json:"snapshots"`
 	Pair      *Pair      `json:"pair,omitempty"`
+	// Checks reports the wallet host's checks for the admin page (spec change 13). Optional: the plugin ignores
+	// fields it doesn't know, and shows this one from phase 04.
+	Checks *Checks `json:"checks,omitempty"`
+}
+
+// Checks are the wallet host's health checks.
+type Checks struct {
+	Node *Check `json:"node,omitempty"` // the remote-node cross-check
+}
+
+// Check is one check's state ("off", "ok", "unavailable" or "mismatch") and what it means.
+type Check struct {
+	State  string `json:"state"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // Address is a new pool subaddress.

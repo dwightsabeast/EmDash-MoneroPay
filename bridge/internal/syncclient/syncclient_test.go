@@ -176,3 +176,21 @@ func TestSiteURL(t *testing.T) {
 		}
 	}
 }
+
+func TestChecksField(t *testing.T) {
+	srv, s := site(t, 200, okReply)
+	k, _ := syncsign.NewKey()
+	c := client(srv)
+	if _, err := c.Send(context.Background(), k, Body{V: 1, Seq: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(s.body), "checks") {
+		t.Fatalf("checks sent when unset: %s", s.body)
+	}
+	if _, err := c.Send(context.Background(), k, Body{V: 1, Seq: 2, Checks: &Checks{Node: &Check{State: "unavailable", Detail: "no second node answered"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(s.body), `"checks":{"node":{"state":"unavailable","detail":"no second node answered"}}`) {
+		t.Fatalf("body %s", s.body)
+	}
+}

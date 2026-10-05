@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
@@ -39,6 +40,12 @@ type Wallet interface {
 	CreateAddress(ctx context.Context, label string) (walletrpc.NewAddress, error)
 }
 
+// CrossChecker confirms mined transfers against a second node (*crosscheck.Checker); nil when the node is the
+// shop's own.
+type CrossChecker interface {
+	Check(ctx context.Context, ts []walletrpc.Transfer) ([]walletrpc.Transfer, crosscheck.Report)
+}
+
 // Sender posts one request to the site (*syncclient.Client).
 type Sender interface {
 	Send(ctx context.Context, key ed25519.PrivateKey, body syncclient.Body) (syncclient.Response, error)
@@ -56,6 +63,8 @@ type Options struct {
 	Now     func() time.Time
 	// Extra is merged into the status file (wallet-rpc's state).
 	Extra func() any
+	// CrossCheck, when set, adjusts confirmations of mined transfers (spec change 13).
+	CrossCheck CrossChecker
 
 	Interval   time.Duration // default 12 s
 	Jitter     time.Duration // default 3 s
@@ -66,16 +75,17 @@ type Options struct {
 
 // Status is written to <dataDir>/run/status.json after every sync attempt and read by `xmr-bridge status`.
 type Status struct {
-	LastAttemptAt time.Time `json:"lastAttemptAt"`
-	LastSyncAt    time.Time `json:"lastSyncAt"`
-	LastError     string    `json:"lastError,omitempty"`
-	WalletHeight  uint64    `json:"walletHeight"`
-	PoolFree      int       `json:"poolFree"`
-	PoolTarget    int       `json:"poolTarget"`
-	Watching      int       `json:"watching"`
-	Pending       int       `json:"pending"`
-	Warnings      []string  `json:"warnings,omitempty"`
-	WalletRPC     any       `json:"walletRpc,omitempty"`
+	LastAttemptAt time.Time         `json:"lastAttemptAt"`
+	LastSyncAt    time.Time         `json:"lastSyncAt"`
+	LastError     string            `json:"lastError,omitempty"`
+	WalletHeight  uint64            `json:"walletHeight"`
+	PoolFree      int               `json:"poolFree"`
+	PoolTarget    int               `json:"poolTarget"`
+	Watching      int               `json:"watching"`
+	Pending       int               `json:"pending"`
+	Warnings      []string          `json:"warnings,omitempty"`
+	NodeCheck     crosscheck.Report `json:"nodeCheck"`
+	WalletRPC     any               `json:"walletRpc,omitempty"`
 }
 
 // Loop is one bridge's sync loop.
@@ -111,6 +121,10 @@ func New(o Options) (*Loop, error) {
 		o.Now = time.Now
 	}
 	l := &Loop{o: o, notify: make(chan struct{}, 1)}
+	l.st.NodeCheck = crosscheck.Report{State: crosscheck.Off, Detail: "the configured node is your own"}
+	if o.CrossCheck != nil {
+		l.st.NodeCheck = crosscheck.Report{State: crosscheck.OK, Detail: "no mined payments checked yet"}
+	}
 	if err := os.MkdirAll(l.runDir(), 0o700); err != nil {
 		return nil, err
 	}
@@ -270,8 +284,12 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 	}
 	var resp syncclient.Response
 	sent := len(snapshots)
+	l.mu.Lock()
+	nc := l.st.NodeCheck
+	l.mu.Unlock()
+	checks := &syncclient.Checks{Node: &syncclient.Check{State: string(nc.State), Detail: nc.Detail}}
 	for {
-		body := syncclient.Body{V: syncclient.ProtocolV, Seq: l.nextSeq(), Height: height, Addresses: addresses, Snapshots: snapshots[:sent]}
+		body := syncclient.Body{V: syncclient.ProtocolV, Seq: l.nextSeq(), Height: height, Addresses: addresses, Snapshots: snapshots[:sent], Checks: checks}
 		resp, err = l.o.Site.Send(ctx, key, body)
 		if errors.Is(err, syncclient.ErrTooLarge) && sent > 1 {
 			sent /= 2
@@ -344,6 +362,16 @@ func (l *Loop) snapshots(ctx context.Context, w Wallet, chunk []uint32) ([]syncc
 	all, err := w.GetTransfers(ctx, chunk)
 	if err != nil {
 		return nil, nil, fmt.Errorf("wallet: %w", err)
+	}
+	if l.o.CrossCheck != nil {
+		var rep crosscheck.Report
+		all, rep = l.o.CrossCheck.Check(ctx, all)
+		l.mu.Lock()
+		l.st.NodeCheck = rep
+		l.mu.Unlock()
+		if rep.State == crosscheck.Mismatch || rep.State == crosscheck.Unavailable {
+			l.o.Log.Warn("node cross-check", "state", rep.State, "detail", rep.Detail)
+		}
 	}
 	by := map[uint32][]walletrpc.Transfer{}
 	seen := map[uint32]map[string]bool{}

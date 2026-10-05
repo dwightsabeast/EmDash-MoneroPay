@@ -16,6 +16,7 @@ import (
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/testaddr"
 )
@@ -108,5 +109,30 @@ func TestStatusCommand(t *testing.T) {
 	code, out, _ = run(context.Background(), "status", "--config", p)
 	if code != 1 || !strings.Contains(out, "systemctl status xmr-bridge") {
 		t.Fatalf("not running: %d %q", code, out)
+	}
+}
+
+func TestStatusNodeCheck(t *testing.T) {
+	p, c := writeConfig(t, "https://shop.example")
+	k, _ := syncsign.NewKey()
+	syncsign.SaveKey(filepath.Join(c.DataDir, "bridge.key"), k)
+	os.MkdirAll(filepath.Join(c.DataDir, "run"), 0o700)
+	now := time.Now()
+	for state, want := range map[crosscheck.State]struct {
+		code int
+		text string
+	}{
+		crosscheck.Off:         {0, "off (the node is your own)"},
+		crosscheck.OK:          {0, "ok (checked with second.example:38089)"},
+		crosscheck.Unavailable: {0, "unavailable"},
+		crosscheck.Mismatch:    {1, "MISMATCH: block 100 differs"},
+	} {
+		b, _ := json.Marshal(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now, PoolTarget: 50, PoolFree: 50,
+			NodeCheck: crosscheck.Report{State: state, Detail: "block 100 differs", Node: "second.example:38089"}})
+		os.WriteFile(filepath.Join(c.DataDir, "run", "status.json"), b, 0o600)
+		code, out, _ := run(context.Background(), "status", "--config", p)
+		if code != want.code || !strings.Contains(out, "Node check: "+want.text) {
+			t.Errorf("%s: %d %q", state, code, out)
+		}
 	}
 }
