@@ -753,3 +753,45 @@ Next step: session 3h, end to end on stagenet with the dev site, with Wyatt send
 - wallet-rpc killed, the site unreachable
 - re-pairing after deleting the bridge's key
 - plus spec change 9's subaddress-lookahead test
+
+## 2026-10-05 · Phase 03 · Before 3h: the plugin is renamed Coffer (slug `coffer`)
+
+Done:
+- **Rename** (Wyatt's decision; spec change 14, proposed; `docs/decisions.md`), commits `2f0bdf1` (code) and `5fbda8c` (docs). Every `xmr-pay` hit was sorted into three groups:
+  - **Slug or brand, changed:** the manifest slug `coffer` and name `Coffer`, the npm name `coffer`, the bridge's sync route `/_emdash/api/plugins/coffer/bridge/sync`, the access-rule hint path, the `BAD_RESPONSE` hint, the subaddress label `coffer` (write-only, nothing reads it back), doc comments, `dev-e2e.mjs`, the seed wording, README, CLAUDE.md, the contract README, phases 06 and 08, the setup-friction lessons.
+  - **Installer wording:** `install.sh` now says `xmr-bridge installer:` and uses `xmr-bridge.XXXXXX` temp folders (Wyatt's choice: the wallet host keeps the xmr-bridge name).
+  - **Unchanged:** the xmr-bridge layer (binary, user, paths, unit including its `Description`, guard, the signed `"xmr-bridge-release-v1\n"`), dev-box paths, signed hash-list fixtures, dated history, the PoC snapshot.
+- **Dev site:**
+  - Old plugin's data removed. EmDash can't uninstall a config-listed plugin from the admin page, so Wyatt ran `~/xmr-pay-dev-data/purge-xmr-pay.cjs` after the auto-mode classifier blocked it for Claude; it ran 2 storage rows, 7 indexes and the cron row down to 0. A read-only scan finds no `xmr-pay` in any table or index.
+  - Dependency and `astro.config.mjs` switched to `coffer`.
+  - This replaces the end-of-phase-03 cleanup: `dev-e2e.mjs --cleanup-only` and Wyatt's `sudo xmr-bridge uninstall --delete-data` both ran.
+- **Dev bridge reinstalled and re-paired:** `dev-release/` emptied, then rebuilt as `0.0.202610051631-dev.5fbda8c`; the binary holds the coffer path and no `plugins/xmr-pay`.
+  - Wyatt's install with a `--issue-code` code; the service is active.
+  - `xmr-bridge status`: paired, synced 5 s before, stagenet, node check off (own node), 50 of 50 addresses, **`Updates:    on`**. That line is from `52cf950`, now live.
+  - Site side: 50 `coffer` pool rows, `state:bridge` at height 2222773, the bridge key option, the 7 `idx_plugin_coffer_*` indexes (created on EmDash's periodic sweep, not at plugin load).
+- **The transcript** `coffer-install-output.txt` was written (12:16:12, checked with `ls -l` in the same command). As 3g found, it holds only `install.sh`'s two lines; the installer talks through `/dev/tty`, and its record is `install.log`. So the missing 3f and 3g key files remain unexplained, but this run shows `tee` itself works from Wyatt's shell.
+- Setup-friction rows (`2e4becf`): a handed-over script that was never written (Claude's error), and a `cp` backup of `data.db` without its WAL.
+
+Tests:
+- Tests first. Each new expectation failed before the code change: the source manifest's slug and name, the pool label `coffer`, the `xmr-bridge installer:` prefix, the sync and hint paths.
+- Plugin: typecheck clean, `validate` ok, 120 of 120 tests, bundle check ok (27.5 KB).
+- Bridge: gofmt and vet clean; `go test ./...` and `go test -tags devrelease ./...` all pass.
+- Live: the steps above.
+
+Not covered:
+- `walletrpc/client_test.go` passes with any label (it tests the pass-through only); `bridgeloop`'s test pins the label.
+- The `housekeeping` cron row doesn't exist yet. As designed, a config-listed install schedules it on the first admin page load (`src/admin.ts:148`), and pairing went through `--issue-code`, so the admin page hasn't been opened.
+- Backups: `data.db.before-coffer.NO-WAL` lacks the WAL. The full copy is `data.db.coffer-after-cleanup` (`VACUUM INTO`, after the old-slug cleanup).
+
+State left:
+- The wallet host service runs `0.0.202610051631-dev.5fbda8c`, paired with the dev site under `coffer`, and backs off while the site is stopped.
+- The dev site and release server are stopped; ports free. `dev-release/` holds this build (unsigned `release.json`).
+
+Open issues:
+- **For Wyatt:**
+  - spec change 14: fold it into the live spec, and decide on the unit's `Description` and the PoC
+  - whether `coffer` is free in the registry and on npm
+- Commits `2f0bdf1`, `5fbda8c`, `2e4becf` and this entry are not pushed.
+- Carried over: spec changes 6, 7 and 9–13 to fold in; delete the release-age excludes on or after 2026-10-08; the mainnet second-node list.
+
+Next step: session 3h as planned (stagenet end to end with the dev site, Wyatt sending payments). Open the admin page first, which schedules the cron. Back up `data.db` with `VACUUM INTO`.
