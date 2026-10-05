@@ -47,7 +47,7 @@ async function checkoutWithIp(body: unknown, ip: string) {
 	return (host as any).transport.invokeRoute("checkout", body, { method: "POST", meta: { ip, userAgent: null, referer: null, geo: null } });
 }
 async function status(token: string) {
-	const res = await (host as PluginRuntimeTestHost).actions.routes.request("status", { method: "GET", url: `https://site.test/_emdash/api/plugins/xmr-pay/status?token=${encodeURIComponent(token)}` });
+	const res = await (host as PluginRuntimeTestHost).actions.routes.request("status", { method: "GET", url: `https://site.test/_emdash/api/plugins/coffer/status?token=${encodeURIComponent(token)}` });
 	return { cacheControl: res.headers.get("cache-control"), data: ((await res.json()) as any).data };
 }
 

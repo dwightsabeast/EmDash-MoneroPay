@@ -1,5 +1,5 @@
 #!/bin/sh
-# xmr-pay wallet host installer.
+# xmr-bridge installer for the wallet host.
 #
 #   curl -fsSL <release host>/install.sh | sh -s -- --site https://your-site.example --pair <one-time code>
 #
@@ -19,7 +19,7 @@ SHA256_ARM64="__SHA256_ARM64__"
 CURL_PROTO="__CURL_PROTO__"
 
 fail() {
-	printf 'xmr-pay installer: %s\n' "$*" >&2
+	printf 'xmr-bridge installer: %s\n' "$*" >&2
 	exit 1
 }
 
@@ -42,7 +42,7 @@ else
 fi
 
 # A folder for the download; /tmp may forbid running programs, so fall back to the home folder.
-dir=$(mktemp -d "${TMPDIR:-/tmp}/xmr-pay.XXXXXX")
+dir=$(mktemp -d "${TMPDIR:-/tmp}/xmr-bridge.XXXXXX")
 trap 'rm -rf "$dir"' EXIT INT TERM
 bin="$dir/xmr-bridge"
 
@@ -52,7 +52,7 @@ got=$(sha256sum "$bin" | cut -d ' ' -f 1)
 [ "$got" = "$sum" ] || fail "the download doesn't match this release's checksum; nothing was installed"
 chmod 755 "$bin"
 if ! "$bin" version >/dev/null 2>&1; then
-	home_dir=$(mktemp -d "$HOME/.xmr-pay.XXXXXX") || fail "can't run the download from ${TMPDIR:-/tmp}"
+	home_dir=$(mktemp -d "$HOME/.xmr-bridge.XXXXXX") || fail "can't run the download from ${TMPDIR:-/tmp}"
 	cp "$bin" "$home_dir/xmr-bridge" || fail "can't run the download from ${TMPDIR:-/tmp}"
 	rm -rf "$dir"
 	dir=$home_dir

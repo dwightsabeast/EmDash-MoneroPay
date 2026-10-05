@@ -27,6 +27,7 @@ type fakeWallet struct {
 	transfers map[uint32][]walletrpc.Transfer
 	next      uint32
 	created   int
+	labels    map[string]int
 	asked     [][]uint32
 }
 
@@ -44,9 +45,13 @@ func (w *fakeWallet) GetTransfers(_ context.Context, idx []uint32) ([]walletrpc.
 	}
 	return out, nil
 }
-func (w *fakeWallet) CreateAddress(context.Context, string) (walletrpc.NewAddress, error) {
+func (w *fakeWallet) CreateAddress(_ context.Context, label string) (walletrpc.NewAddress, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.labels == nil {
+		w.labels = map[string]int{}
+	}
+	w.labels[label]++
 	w.next++
 	w.created++
 	return walletrpc.NewAddress{Index: w.next, Address: "5" + strings.Repeat(strconv.Itoa(int(w.next%10)), 94)}, nil
@@ -143,8 +148,8 @@ func TestPoolTopUp(t *testing.T) {
 	l, w, s, dir := setup(t)
 	ctx := context.Background()
 	l.SyncOnce(ctx) // free 0 of 50: creates 50
-	if w.created != 50 {
-		t.Fatalf("created %d", w.created)
+	if w.created != 50 || w.labels["coffer"] != 50 {
+		t.Fatalf("created %d, labels %v", w.created, w.labels)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "run", "pending.json")); err != nil {
 		t.Fatalf("pending addresses not saved: %v", err)

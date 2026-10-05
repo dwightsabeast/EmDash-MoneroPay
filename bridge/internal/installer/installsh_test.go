@@ -140,7 +140,7 @@ func TestInstallShRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, out, rec, _, _ := runInstallSh(t, c.c)
-			if code == 0 || rec != "" || !strings.Contains(out, c.want) {
+			if code == 0 || rec != "" || !strings.Contains(out, "xmr-bridge installer: ") || !strings.Contains(out, c.want) {
 				t.Fatalf("exit %d, record %q: %s", code, rec, out)
 			}
 		})
@@ -151,7 +151,7 @@ func TestInstallShNoexecTmp(t *testing.T) {
 	c := linuxAmd64()
 	c.noexecTmp = true
 	code, out, rec, _, tmp := runInstallSh(t, c)
-	if code != 0 || !strings.Contains(rec, "/home/.xmr-pay.") {
+	if code != 0 || !strings.Contains(rec, "/home/.xmr-bridge.") {
 		t.Fatalf("exit %d, record %q: %s", code, rec, out)
 	}
 	if e, _ := os.ReadDir(tmp); len(e) != 0 {

@@ -1,4 +1,4 @@
-# xmr-pay
+# Coffer
 
 A sandboxed plugin for [EmDash CMS](https://emdashcms.com).
 
@@ -14,8 +14,8 @@ pnpm run build
 
 To test against a running EmDash site, run `pnpm run dev` in this
 directory (rebuilds on save) and `pnpm add file:../path/to/this`
-in the site. Then `import xmrPay from "xmr-pay"` and pass
-it into `emdash({ sandboxed: [xmrPay] })`.
+in the site. Then `import coffer from "coffer"` and pass
+it into `emdash({ sandboxed: [coffer] })`.
 
 `pnpm run test` builds the plugin and runs its tests through Worker Loader using
 EmDash's production sandbox wrapper and host bridge.

@@ -32,7 +32,7 @@ const maxSize = 64 << 10
 // Config is the bridge's configuration.
 type Config struct {
 	// Site is the EmDash site's base URL (scheme, host, optional port). The bridge posts to
-	// /_emdash/api/plugins/xmr-pay/bridge/sync under it.
+	// /_emdash/api/plugins/coffer/bridge/sync under it.
 	Site    string  `json:"site"`
 	Network Network `json:"network"`
 	// Address is the shop wallet's primary address (not secret). The bridge checks the opened wallet against it.

@@ -1,7 +1,7 @@
 {
 	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
 
-	"slug": "xmr-pay",
+	"slug": "coffer",
 	"publisher": "did:plc:cmbxrwdt4hdl43g67bd6xegk",
 
 	"license": "MIT",
@@ -10,7 +10,7 @@
 	"description": "Accept Monero for products or tips. No keys in the plugin.",
 	"repo": "https://github.com/dwightsabeast/EmDash-MoneroPay",
 
-	"name": "Monero Payments",
+	"name": "Coffer",
 
 	// Trust contract (spec, "Plugin manifest", revision 69; CLAUDE.md, "Plugin trust contract (frozen)").
 	// Changing any of it needs a new version and Wyatt's approval; broadening it is a major version.

@@ -60,7 +60,7 @@ func TestSend(t *testing.T) {
 	if resp.PoolFree != 41 || resp.PoolTarget != 50 || len(resp.Watch) != 2 || resp.Watch[1] != 17 {
 		t.Fatalf("response %+v", resp)
 	}
-	if s.method != "POST" || s.path != "/_emdash/api/plugins/xmr-pay/bridge/sync" || s.ct != "application/json" || s.origin != "" || s.auth != "" {
+	if s.method != "POST" || s.path != "/_emdash/api/plugins/coffer/bridge/sync" || s.ct != "application/json" || s.origin != "" || s.auth != "" {
 		t.Fatalf("request %+v", s)
 	}
 	if s.ts != strconv.FormatInt(now.Unix(), 10) {
@@ -116,12 +116,12 @@ func TestErrors(t *testing.T) {
 		"too large":         {413, `{"success":false,"error":{"code":"INVALID_PLUGIN_REQUEST"}}`, "INVALID_PLUGIN_REQUEST", "large"},
 		"401 bearer":        {401, `{"success":false,"error":{"code":"INVALID_TOKEN"}}`, "INVALID_TOKEN", "Authorization"},
 		"403 csrf":          {403, `{"success":false,"error":{"code":"CSRF_REJECTED"}}`, "CSRF_REJECTED", "Origin"},
-		"403 access page":   {403, `<html>Forbidden</html>`, "HTTP_403", "login"},
+		"403 access page":   {403, `<html>Forbidden</html>`, "HTTP_403", "/_emdash/api/plugins/coffer/*"},
 		"login redirect":    {0, "redirect:https://login.example/", "HTTP_302", "login"},
 		"server error":      {502, `bad gateway`, "HTTP_502", ""},
 		"not a sync answer": {200, `{"success":true,"data":{"ok":true,"poolFree":-1,"poolTarget":50,"watch":[]}}`, "BAD_RESPONSE", ""},
 		"watch index 0":     {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"watch":[0]}}`, "BAD_RESPONSE", ""},
-		"html":              {200, `<html>`, "BAD_RESPONSE", ""},
+		"html":              {200, `<html>`, "BAD_RESPONSE", "coffer plugin"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -168,8 +168,8 @@ func TestSizeLimitsBeforeSending(t *testing.T) {
 
 func TestSiteURL(t *testing.T) {
 	for in, want := range map[string]string{
-		"https://shop.example":  "https://shop.example/_emdash/api/plugins/xmr-pay/bridge/sync",
-		"https://shop.example/": "https://shop.example/_emdash/api/plugins/xmr-pay/bridge/sync",
+		"https://shop.example":  "https://shop.example/_emdash/api/plugins/coffer/bridge/sync",
+		"https://shop.example/": "https://shop.example/_emdash/api/plugins/coffer/bridge/sync",
 	} {
 		if got := (&Client{Site: in}).endpoint(); got != want {
 			t.Errorf("%s: %s", in, got)

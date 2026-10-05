@@ -170,13 +170,13 @@ func TestGetVersionAndCreateAddress(t *testing.T) {
 	if err != nil || v.Version != 65562 || !v.Release {
 		t.Fatalf("GetVersion = %+v, %v", v, err)
 	}
-	a, err := c.CreateAddress(context.Background(), "xmr-pay")
+	a, err := c.CreateAddress(context.Background(), "coffer")
 	if err != nil || a.Index != 51 || a.Address != "7"+strings.Repeat("B", 94) {
 		t.Fatalf("CreateAddress = %+v, %v", a, err)
 	}
 	var params map[string]any
 	json.Unmarshal(f.calls[len(f.calls)-1].Params, &params)
-	if params["account_index"] != float64(0) || params["label"] != "xmr-pay" {
+	if params["account_index"] != float64(0) || params["label"] != "coffer" {
 		t.Fatalf("create_address params = %v", params)
 	}
 }

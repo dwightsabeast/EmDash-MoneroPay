@@ -1,5 +1,5 @@
 /**
- * Where xmr-pay keeps things (docs/spec.md, Plugin manifest and Security model):
+ * Where Coffer keeps things (docs/spec.md, Plugin manifest and Security model):
  * - ctx.settings: the bridge's public key, the currency and the confirmation speed (no secret fields).
  * - ctx.kv: pairing state (a hash, never the code), the bridge's last sync, alerts, housekeeping cursors.
  * - ctx.storage: the address pool and the invoices.
@@ -89,7 +89,7 @@ export class CtxSyncStore implements SyncStore {
 	}
 }
 
-/** plugin:uninstall with deleteData: the pool, the invoices, xmr-pay's KV state and its settings (the bridge key too). */
+/** plugin:uninstall with deleteData: the pool, the invoices, Coffer's KV state and its settings (the bridge key too). */
 export async function deletePluginData(ctx: PluginContext): Promise<void> {
 	for (const col of [pool(ctx), invoices(ctx)] as Array<StorageCollection<unknown>>) {
 		for (let page = 0; page < 1000; page++) {

@@ -1,4 +1,4 @@
-// Command xmr-bridge is the wallet host's half of xmr-pay: it runs Monero's monero-wallet-rpc with a view-only
+// Command xmr-bridge is the wallet host's half of Coffer: it runs Monero's monero-wallet-rpc with a view-only
 // wallet and pushes signed snapshots to the site. Commands: version, run (install and supervise wallet-rpc, open
 // the wallet, sync), pair, status and notify.
 package main

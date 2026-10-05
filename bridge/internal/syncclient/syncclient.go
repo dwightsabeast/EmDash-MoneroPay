@@ -21,12 +21,12 @@ import (
 )
 
 const (
-	routePath    = "/_emdash/api/plugins/xmr-pay/bridge/sync"
+	routePath    = "/_emdash/api/plugins/coffer/bridge/sync"
 	MaxBody      = 256 << 10
 	MaxPairBody  = 4 << 10
 	maxResponse  = 1 << 20
 	ProtocolV    = 1
-	accessFixURL = "/_emdash/api/plugins/xmr-pay/*"
+	accessFixURL = "/_emdash/api/plugins/coffer/*"
 )
 
 // ErrTooLarge: the body is over the plugin's limit; the caller sends fewer snapshots or addresses.
@@ -215,7 +215,7 @@ func parse(status int, data []byte) (Response, error) {
 		}
 		return Response{}, &Error{Code: code, Status: status, Hint: h}
 	}
-	bad := &Error{Code: "BAD_RESPONSE", Status: status, Hint: "the site's answer isn't a bridge/sync response. Is the xmr-pay plugin installed on this site?"}
+	bad := &Error{Code: "BAD_RESPONSE", Status: status, Hint: "the site's answer isn't a bridge/sync response. Is the coffer plugin installed on this site?"}
 	if jsonErr != nil || !env.Success || len(data) > maxResponse {
 		return Response{}, bad
 	}

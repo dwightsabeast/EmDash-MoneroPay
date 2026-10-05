@@ -4,6 +4,8 @@ import { afterEach, expect, it } from "vitest";
 
 import { createPluginTestHost, type PluginTestHost } from "@emdash-cms/plugin-test";
 
+import manifestSource from "../emdash-plugin.jsonc?raw";
+
 let host: PluginTestHost | undefined;
 afterEach(async () => {
 	await host?.dispose();
@@ -13,7 +15,7 @@ afterEach(async () => {
 it("the built manifest matches the spec's trust contract exactly", async () => {
 	host = await createPluginTestHost();
 	const m = host.manifest as unknown as Record<string, any>;
-	expect(m.id).toBe("xmr-pay");
+	expect(m.id).toBe("coffer");
 	expect(m.capabilities).toEqual(["content:read", "network:request"]);
 	expect(m.allowedHosts).toEqual(["api.coingecko.com", "api.kraken.com"]);
 	expect(m.storage).toEqual({
@@ -47,4 +49,11 @@ it("the admin page and the xmr-status widget load through the host's admin path"
 	} finally {
 		await runtime.dispose();
 	}
+});
+
+it("the source manifest names the plugin Coffer, slug coffer", () => {
+	// The display name isn't in the built manifest, so read the source (JSONC: drop whole-line comments).
+	const m = JSON.parse(manifestSource.replace(/^\s*\/\/.*$/gm, ""));
+	expect(m.slug).toBe("coffer");
+	expect(m.name).toBe("Coffer");
 });

@@ -2,8 +2,8 @@
 	"$schema": "https://emdashcms.com/seed.schema.json",
 	"version": "1",
 	"meta": {
-		"name": "xmr-pay dev products",
-		"description": "The products collection xmr-pay reads (a numeric price in the site currency) and three test products. Apply with: npx emdash seed <path to this file> --on-conflict skip, in the site folder, with the site stopped."
+		"name": "Coffer dev products",
+		"description": "The products collection Coffer reads (a numeric price in the site currency) and three test products. Apply with: npx emdash seed <path to this file> --on-conflict skip, in the site folder, with the site stopped."
 	},
 	"collections": [
 		{

@@ -29,7 +29,7 @@ const (
 	maxSnapshots  = 100 // the plugin's caps per request
 	maxAddresses  = 100
 	maxTransfers  = 32
-	addressLabel  = "xmr-pay"
+	addressLabel  = "coffer"
 	walletTimeout = 30 * time.Second
 )
 

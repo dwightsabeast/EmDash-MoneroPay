@@ -10,7 +10,7 @@ import { handleSync } from "./sync/handle";
 import { MAX_BODY_BYTES } from "./sync/protocol";
 
 /**
- * xmr-pay: Monero payments for EmDash (docs/spec.md). The trust contract is pinned by tests/manifest.test.ts.
+ * Coffer: Monero payments for EmDash (docs/spec.md). The trust contract is pinned by tests/manifest.test.ts.
  */
 
 const MAX_ALERTS = 100;

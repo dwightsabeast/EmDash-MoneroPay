@@ -1,4 +1,4 @@
-// plugin:uninstall with deleteData removes everything xmr-pay stored. Tested against a minimal fake context: the test
+// plugin:uninstall with deleteData removes everything Coffer stored. Tested against a minimal fake context: the test
 // hosts can't both seed this state and invoke uninstall, so this covers the logic, not the host's wiring.
 import { expect, it } from "vitest";
 
@@ -28,7 +28,7 @@ function fakeCtx() {
 	return { ctx, cols, kv, settings };
 }
 
-it("deletes the pool (across pages), the invoices, xmr-pay's KV state (rate cache included) and its settings", async () => {
+it("deletes the pool (across pages), the invoices, Coffer's KV state (rate cache included) and its settings", async () => {
 	const f = fakeCtx();
 	await deletePluginData(f.ctx as never);
 	expect(f.cols.pool.size).toBe(0);

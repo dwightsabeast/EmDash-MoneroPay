@@ -27,7 +27,7 @@ import { homedir } from "node:os";
 process.removeAllListeners("warning"); // node:sqlite's experimental notice
 const { DatabaseSync } = await import("node:sqlite");
 
-const PLUGIN = "xmr-pay";
+const PLUGIN = "coffer";
 const PRODUCT = "test-sticker";
 const FAKE_HEIGHT = 1_000_000;
 const POOL_TARGET = 50;
