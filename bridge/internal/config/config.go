@@ -73,6 +73,9 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// CheckSite checks a site URL the way Validate does (https, or http on loopback; the base address only).
+func CheckSite(s string) error { return validateSite(s) }
+
 func validateSite(s string) error {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" || u.Opaque != "" {
@@ -92,6 +95,9 @@ func validateSite(s string) error {
 	}
 	return nil
 }
+
+// CheckNode checks a node URL the way Validate does.
+func CheckNode(s string) error { return validateNode(s) }
 
 func validateNode(s string) error {
 	u, err := url.Parse(s)

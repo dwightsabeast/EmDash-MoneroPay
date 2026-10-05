@@ -338,3 +338,20 @@ func TestInitRunsEachStart(t *testing.T) {
 		t.Fatalf("the first child should have been stopped: %d starts", len(recs))
 	}
 }
+
+// With a credential, wallet-rpc runs as that account (here: our own, since tests aren't root) and the login file
+// it reads is owned by it.
+func TestCredential(t *testing.T) {
+	uid, gid := os.Getuid(), os.Getgid()
+	h := start(t, "", func(o *Options) {
+		o.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), NoSetGroups: true}
+	}) // setgroups needs root
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := h.s.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if h.s.owner == nil || *h.s.owner != [2]int{uid, gid} {
+		t.Fatalf("the login file wasn't handed to the account: %v", h.s.owner)
+	}
+}

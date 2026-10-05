@@ -44,6 +44,9 @@ type Options struct {
 	// Env is the child's whole environment (nothing is inherited).
 	Env []string
 	Log *slog.Logger
+	// Credential, when set, runs wallet-rpc as that account (the installer runs as root but wallet-rpc never does);
+	// the login file is handed to the account so it can read it.
+	Credential *syscall.Credential
 	// Init runs on every start once wallet-rpc answers, before the supervisor reports ready (it opens the wallet).
 	// An error fails that start: the child is stopped and restarted with backoff.
 	Init func(ctx context.Context, c *walletrpc.Client) error
@@ -72,6 +75,8 @@ type Supervisor struct {
 	daemonAddr string
 	daemonSSL  string
 	notify     string
+
+	owner *[2]int // uid, gid the login file was handed to (tests)
 
 	mu      sync.Mutex
 	st      Status
@@ -214,6 +219,12 @@ func (s *Supervisor) runOnce(ctx context.Context) error {
 	if err := writePrivate(conf, "rpc-login="+rpcUser+":"+pass.Reveal()+"\n"); err != nil {
 		return fmt.Errorf("config file: %w", err)
 	}
+	if c := s.o.Credential; c != nil {
+		if err := os.Chown(conf, int(c.Uid), int(c.Gid)); err != nil {
+			return fmt.Errorf("config file: %w", err)
+		}
+		s.owner = &[2]int{int(c.Uid), int(c.Gid)}
+	}
 
 	args := []string{
 		"--config-file", conf,
@@ -242,7 +253,7 @@ func (s *Supervisor) runOnce(ctx context.Context) error {
 	cmd.Env = s.o.Env
 	cmd.Dir = s.o.DataDir
 	cmd.Stdout, cmd.Stderr = tail, tail
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM, Credential: s.o.Credential}
 
 	// The parent-death signal follows the thread that started the child, so that thread stays locked to this
 	// goroutine until the child has exited.

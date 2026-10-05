@@ -22,6 +22,8 @@ import (
 var version = "dev"
 
 const usage = `usage:
+  xmr-bridge install --site <site URL> --pair <one-time code> [--node <URL>] [--restore-height <n>] [--no-auto-update]
+  xmr-bridge uninstall [--delete-data]
   xmr-bridge version
   xmr-bridge run --config <file>
   xmr-bridge pair --config <file> --code <one-time code>
@@ -49,6 +51,10 @@ func realMain(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return cmdRun(ctx, args[1:], stderr)
 	case "notify":
 		return cmdNotify(args[1:], stderr)
+	case "install":
+		return cmdInstall(ctx, args[1:], stdout, stderr)
+	case "uninstall":
+		return cmdUninstall(args[1:], stdout, stderr)
 	case "pair":
 		return cmdPair(ctx, args[1:], stdout, stderr)
 	case "status":
