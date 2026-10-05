@@ -12,6 +12,8 @@
       "Read(~/.emdash/**)",
       "Read(~/.config/emdash/**)",
       "Read(**/*.keys)",
+      "Read(~/xmr-pay-devkeys/**)",
+      "Edit(~/xmr-pay-devkeys/**)",
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Edit(./docs/spec.md)",
