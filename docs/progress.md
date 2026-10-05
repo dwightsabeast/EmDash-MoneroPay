@@ -582,3 +582,61 @@ Next step: session 3f-2.
 - `installer/install.sh` (POSIX `sh`): detect the CPU, download the bridge, check the embedded SHA-256, then `sudo <bridge> install "$@"`.
 - `scripts/build-dev-release.sh`, with a dev `install.sh` pointing at `http://127.0.0.1:8099`.
 - Wyatt's real run on the dev box: stagenet, `--allow-same-machine`, a code from the admin page, then status, restart and uninstall.
+
+## 2026-10-04 · Phase 03 · Session 3f-2: install.sh, dev release, Wyatt's real install
+
+Done:
+- Pushed `453538a..73e2ea2` with Wyatt's approval.
+- **`installer/install.sh`**, POSIX `sh`, a template the build fills in (an unfilled one refuses to run), commit `89635ac`.
+  - Linux and x86-64 or 64-bit ARM only.
+  - Downloads that release's `xmr-bridge` and checks it against the SHA-256 written into the script.
+  - Falls back to the home folder when `/tmp` can't run programs.
+  - Then `sudo xmr-bridge install "$@"`, reading the terminal so it works piped from curl.
+- **`scripts/build-dev-release.sh`:** both CPUs and a filled `install.sh` for `http://127.0.0.1:8099` in `~/xmr-pay-dev-data/dev-release/`. Built at `0.0.0-dev.89635ac`; about 11 MB per binary (4.5 MB at 3a).
+- **`scripts/dev-bridge-checks.sh`:** Wyatt's `sudo` checks, written to one file.
+- **Wyatt's real install on the dev box** (stagenet, `--allow-same-machine`, a code from the admin page; `data.db` backed up to `~/xmr-pay-dev-data/baseline/data.db.before-3f2`). From `~/xmr-pay-dev-data/3f-checks-output.txt`, `3f-where.txt`, `systemctl` and the site's database:
+  - **Installed:** `xmr-bridge status` paired, synced, node check off (own node), 50 of 50 addresses on the site, exit 0. The service ran as `xmr-bridge` with wallet-rpc on 127.0.0.1, no login on its command line, 72 MB.
+  - **Files:** config 600 and the wallet files 600, all owned by `xmr-bridge`; data folder 700; the symlink in place.
+  - **Hardening:** live `systemd-analyze security` 1.5 OK. wallet-rpc runs under `MemoryDenyWriteExecute` and `SystemCallFilter=@system-service`, so both stay.
+  - **Restart:** synced 3 s after.
+  - **`kill -9` wallet-rpc:** restarted 6 s later, wallet reopened, height advancing.
+  - **Uninstall:** service and symlink gone; wallet, key and config kept, with the message saying where.
+  - **The second install with a new code:** the service started at 20:49:56, the wallet opened at height 2222352, the code was marked used, syncing resumed, and the pool stayed at 50 with no new addresses created.
+  - The view-only wallet file is about 54 MB just after creation, at a restore height of today.
+- **Not recorded:** `3f-install-output.txt` and `3f-reinstall-output.txt` were never written, in `/home/dev` or `/root`; the cause is unknown. That leaves the installer's messages unseen, including "Keeping the existing view-only wallet" on the second run, which is proven only by `TestRunAgain`. Setup-friction row added, with a proposal for Wyatt: `xmr-bridge install` writes its own messages (never the answers) to `/var/lib/xmr-bridge/log/install.log`.
+
+Tests:
+- `install.sh` under `/bin/sh` (dash), with a fake release server and fake `sudo`, `uname` and `id`:
+  - a good install, with sudo and as root
+  - arm64
+  - tampered or missing download
+  - an unfilled template, another CPU, not Linux
+  - the noexec `/tmp` fallback
+  - the download folder removed afterwards
+- Mutation: without the checksum comparison, 2 tests fail.
+- `cd bridge && go test ./...`: all pass.
+
+Not covered:
+- the installer's messages in a real run (not captured)
+- a separate wallet-host machine (phase 05)
+- a remote node in a real install (phase 05)
+- arm64 on real hardware
+
+State left:
+- **The wallet host service stays installed and enabled on the dev box** for 3g and 3h, paired with the dev site. It backs off while the dev site is stopped.
+- The dev site and release server are stopped.
+- The dev database holds the pairing: the bridge key, 50 real stagenet subaddresses of the shop wallet in the pool, and `state:bridge`. Remove with `dev-e2e.mjs --cleanup-only` and `sudo xmr-bridge uninstall --delete-data` when done with phase 03.
+
+Open issues:
+- **For Wyatt:** the `install.log` proposal (above).
+- Spec changes 6, 7 and 9–13 to fold into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- The mainnet second-node list.
+- Commit `89635ac`, the setup-friction row, CLAUDE.md and this entry are local.
+
+Next step: session 3g, signed self-update.
+- `release.json` signed with Ed25519 (`"xmr-bridge-release-v1\n"` prefix), up to two pinned keys.
+- The `devrelease` build tag pins a dev key from `~/xmr-pay-devkeys/`.
+- `--release-url` on stagenet only.
+- Downgrade refused, a 48-hour staged delay, rollback on a failed health check.
+- The daily check for new Monero wallet-rpc releases (3b-2's verifier).
