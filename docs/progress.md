@@ -704,3 +704,52 @@ Next step: session 3g, signed self-update.
   - delete the release-age excludes on or after 2026-10-08
   - the mainnet second-node list
   - the 3f-2 transcripts were never captured
+
+## 2026-10-05 · Phase 03 · Session 3g: live update and rollback runs (3g done)
+
+Done:
+- **Wyatt's steps:** made the dev key (`dev-release-key.sh`; the public key in `~/xmr-pay-dev-data/dev-release.pub`, 32 bytes), committed his deny rules (`34f1000`), reinstalled from a dev release, and signed V2, V3 and V4. Each signature was checked with the public key only (`scripts/check-dev-signature.sh`), which also proved the public file matches his key.
+- **V1 install** (`0.0.202610051414-dev.34f1000`), from `~/xmr-pay-dev-data/3g-final-output.txt` and what I could see without root:
+  - The 3f layout migrated: `/usr/local/bin/xmr-bridge` is now a root-owned copy, and the guard is installed.
+  - The unit systemd loaded has every new line: `StartLimitIntervalSec=600` and `StartLimitBurst=20` in `[Unit]`, `User=` and `Group=xmr-bridge`, `ExecStartPre=…/update-guard.sh` with no prefix, `RestartForceExitStatus=75`, `RestartSec=10`, and the hardening.
+  - `install.log`: questions shown as `[answered]`, "Keeping the existing view-only wallet for this address", pairing done, the dev-flag signals listed.
+- **V2, good update** (`…1436`): at 08:39:43 it verified the signed `release.json`, downloaded and checked the binary, and swapped it in. It logged "restarting for the update" (exit 75), systemd restarted it 10 s later, and it logged "update confirmed" 15 s after starting (08:40:09). Later checks fetched `release.json` and its signature but never the binary again.
+- **V3, crash** (`…1447`): swapped in at 08:50:33. Three starts each logged "deliberately broken … exiting", 10 s apart. Then the guard, as the service user: "the update to bridge …1447 didn't start 3 times in a row; rolled back and refused it" (08:51:14), and V2 started again. Later checks never downloaded V3. systemd stayed well inside its start limit (5 starts in about 45 s).
+- **V4, bad signature** (`…1451`, newer than the refused V3, so it got past that refusal): swapped in at 08:54:35 and ran normally. The site's last accepted sync stayed frozen at 14:54:29 UTC for 10 minutes; every sync was refused with `BAD_SIGNATURE`. At 09:04:46, 10 minutes after the swap: "the update to bridge …1451 didn't work; rolling back to …1436 and refusing …1451". V2 was back at 09:04:57, and the site accepted syncs again from 15:05:27 UTC.
+  - `run/refused` holds both V3 and V4.
+  - The admin copy (still V1) ran `status` successfully against the self-updated V2 service: same state format, exit 0.
+- **Two gaps found by the live run, fixed** (commit `52cf950`, tests first, mutation checks caught):
+  - `xmr-bridge status` didn't print the update state it records; it now prints `Updates:`.
+  - `update-state.json`, which the admin copy's format check reads, only appeared once a wallet-rpc version had been seen; `run` now writes the format at every start.
+  - Both are unit-tested; neither is live yet (the service runs V2, built before them). A V5, signed the same way, would deliver them.
+- Setup-friction row: why `tee` transcripts can't hold the installer's messages, and the still-missing files.
+
+Tests:
+- `cd bridge && go test ./...`: all pass, with and without `-tags devrelease`; `gofmt` and `vet` clean.
+- Live: V1 install, V2 update, V3 crash rollback, V4 10-minute rollback, all as designed (watch files `~/xmr-pay-dev-data/3g-v3-watch.txt`, `3g-v4-watch.txt`; journal and state in `3g-final-output.txt`).
+
+Not covered:
+- wallet-rpc updates live (there is no newer Monero release than 0.18.5.1; unit tests only)
+- an update while the site is unreachable (unit-tested as "wait, never roll back")
+- a real arm64 machine
+- release builds' "no key pinned" state on a live machine (unit-tested)
+
+State left:
+- The wallet host service runs V2 (`0.0.202610051436-dev.34f1000`), paired, and backs off while the dev site is stopped.
+- The dev site and release server are stopped; no tmux sessions.
+- `~/xmr-pay-dev-data/dev-release/` holds the V4 files.
+- The dev database still holds the pairing and 50 real stagenet subaddresses.
+
+Open issues:
+- Commits `bfa1f94`, `2d62ff5`, `4754c7b`, `a0b03fd`, `52cf950` and this entry are not pushed; CI hasn't run on them.
+- Spec changes 6, 7 and 9–13 to fold into the live spec.
+- Delete the release-age excludes on or after 2026-10-08.
+- The mainnet second-node list.
+- The cause of the missing transcript files is still unknown.
+
+Next step: session 3h, end to end on stagenet with the dev site, with Wyatt sending payments:
+- happy path, two-part payment, underpayment, late payment
+- the bridge stopped across an invoice's expiry
+- wallet-rpc killed, the site unreachable
+- re-pairing after deleting the bridge's key
+- plus spec change 9's subaddress-lookahead test
