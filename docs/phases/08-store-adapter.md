@@ -1,8 +1,8 @@
 # Phase 08 — Store adapter and the payment contract
 
-**Goal:** make xmr-pay a payment method any EmDash store can use, and publish the contract so other payment methods can implement it too.
+**Goal:** make Coffer a payment method any EmDash store can use, and publish the contract so other payment methods can implement it too.
 **Spec sections:** Commerce readiness (all), API contracts (`checkout` with `kind: "order"`, `status`), Security model (price manipulation).
-**Done when:** `kind: "order"` works and is tested; `contract/` holds the contract doc and a conformance suite that xmr-pay passes; a DashCommerce adapter works against the dev site on stagenet; an upstream proposal draft is ready for Wyatt to post.
+**Done when:** `kind: "order"` works and is tested; `contract/` holds the contract doc and a conformance suite that Coffer passes; a DashCommerce adapter works against the dev site on stagenet; an upstream proposal draft is ready for Wyatt to post.
 
 ## For Wyatt, before the session
 
@@ -19,7 +19,7 @@ Phase 08, store adapter. Read docs/phases/08-store-adapter.md and docs/progress.
 
 **Plugin: `kind: "order"`**
 
-- `checkout` accepts `orderRef`, `amountMinor`, `currency`, `description` and `returnUrl`. `status` echoes `orderRef`, `amountMinor` and `currency`, and maps xmr-pay states to the contract's five statuses (`open`, `processing`, `paid`, `expired`, `needs_review`) with `paidAt`.
+- `checkout` accepts `orderRef`, `amountMinor`, `currency`, `description` and `returnUrl`. `status` echoes `orderRef`, `amountMinor` and `currency`, and maps Coffer states to the contract's five statuses (`open`, `processing`, `paid`, `expired`, `needs_review`) with `paidAt`.
 - `returnUrl` must be on the site's own origin (no open redirects).
 - Currencies the rate source can't price return a domain error. A new error code is a spec change: note it in `docs/spec-changes.md`.
 - No webhooks and no shared secret, per the spec. The store confirms by calling `status` on its server and checking `orderRef`, `amountMinor` and `currency` against its own order.
@@ -28,7 +28,7 @@ Phase 08, store adapter. Read docs/phases/08-store-adapter.md and docs/progress.
 **Contract (`contract/`)**
 
 - `contract/README.md`: the payment contract as a short standalone doc (create, get, five statuses, what the store must check, no webhooks, no shared secret, security notes), written so a card, Lightning or bank-transfer method could implement it.
-- A conformance suite built from the POC scenarios, runnable against any implementation through an adapter interface; xmr-pay's adapter runs it in CI.
+- A conformance suite built from the POC scenarios, runnable against any implementation through an adapter interface; Coffer's adapter runs it in CI.
 - The signing test vectors from phase 02 live here too.
 
 **DashCommerce adapter**

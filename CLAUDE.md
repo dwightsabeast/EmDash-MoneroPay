@@ -1,6 +1,6 @@
-# xmr-pay — Claude Code ground rules
+# Coffer (xmr-pay repo) — Claude Code ground rules
 
-This repo builds **xmr-pay**: a sandboxed EmDash plugin that takes Monero payments and tips, plus a small Go bridge and a one-command Linux installer for the wallet host. The plugin holds no wallet keys and never calls the wallet; the bridge pushes Ed25519-signed snapshots in.
+This repo builds **Coffer** (plugin slug `coffer`; called xmr-pay until 2026-10-05, a name the repo folder and dev-box paths keep): a sandboxed EmDash plugin that takes Monero payments and tips, plus a small Go bridge and a one-command Linux installer for the wallet host. The plugin holds no wallet keys and never calls the wallet; the bridge pushes Ed25519-signed snapshots in.
 
 The owner is Wyatt. He makes every design decision and handles every account, key and release. You write code, tests and docs on this dev box. Repository: https://github.com/dwightsabeast/EmDash-MoneroPay (cloned at `~/xmr-pay`).
 
@@ -117,7 +117,7 @@ START-HERE.md           Wyatt's setup notes (local only, gitignored)
 .mcp.json               emdash-docs MCP server
 docs/                   spec, decisions, phases, progress, spec changes, references, proof of concept
 spikes/                 throwaway spike code (phase 01), never shipped
-plugin/                 the sandboxed EmDash plugin, slug xmr-pay (phase 02), pnpm + @emdash-cms/plugin-cli
+plugin/                 the sandboxed EmDash plugin, slug coffer (phase 02), pnpm + @emdash-cms/plugin-cli
 bridge/                 Go module for xmr-bridge (phase 03)
 installer/              install.sh and the systemd unit (phase 03)
 theme/                  Astro components: pay button and /pay page (phase 06)

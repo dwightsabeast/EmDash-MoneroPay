@@ -212,3 +212,27 @@ Proposal (Wyatt's decisions, 2026-10-04):
 5. **The site:** the bridge sends an optional `checks` field in the sync body (the plugin ignores unknown fields today); the plugin shows it on the admin page in phase 04. Until then it shows in `xmr-bridge status` and the log.
 Effect on the admin budget: none (no setting; your own node needs nothing).
 Effect on the trust contract: none for the plugin. The bridge makes outbound requests to the listed public nodes only when the configured node is remote.
+
+## 14. The plugin is renamed Coffer (slug `coffer`)  (status: proposed, 2026-10-05; the rename itself is Wyatt's decision, the spec text is for him to fold in)
+Found in: Wyatt's request before phase 03 session 3h. Code changed in commit `2f0bdf1`.
+Spec says: Plugin manifest: `"slug": "xmr-pay"`, `"name": "Monero Payments"`. The plugin is called xmr-pay throughout.
+Evidence: EmDash takes the plugin id from the manifest slug, and the id is part of everything the plugin owns on a site. So the rename makes a new plugin, not an upgrade of the old one:
+- The route prefix `/_emdash/api/plugins/<id>/…`. The bridge's sync URL is now `/_emdash/api/plugins/coffer/bridge/sync`, and the access-rule advice says `/_emdash/api/plugins/coffer/*`.
+- `_plugin_storage.plugin_id`, the index names `idx_plugin_<id>_<collection>_<field>`, the `plugin:<id>:settings:*` options and the `_emdash_cron_tasks` row (dev site, `data.db`, checked 2026-10-05).
+- A site that ran xmr-pay keeps that data until it's removed. On the dev site it was removed by hand: EmDash's own uninstall handlers act only on registry and marketplace plugins, not on plugins listed in `astro.config.mjs` (`emdash` `api-*.mjs`, `handleRegistryUninstall` and `handleMarketplaceUninstall`). Nothing has been published under either slug, so no real site is affected.
+Proposal: change these in the spec:
+- line 1, the title: "Coffer: Monero payments for EmDash, design spec" or similar (Wyatt's wording)
+- line 55, the diagram: "Coffer plugin"
+- line 149, `"slug": "coffer"`; line 154, `"name": "Coffer"`. The admin page label and widget title ("Monero payments") and the widget id `xmr-status` stay, being part of the admin trust contract.
+- line 345, the pool top-up label: "a label such as `coffer`" (the bridge now uses `coffer`; nothing reads the label back)
+- line 356 and line 588: `/_emdash/api/plugins/coffer/bridge/sync`
+- lines 501, 507, 512, 526 and 537: "xmr-pay" becomes "Coffer"
+Kept as they are (Wyatt, 2026-10-05):
+- The wallet-host side is still **xmr-bridge**: the binary, the service user, `/var/lib/xmr-bridge`, `/etc/xmr-bridge`, the unit, the update guard, and the signed prefix `"xmr-bridge-release-v1\n"`. `install.sh` now says "xmr-bridge installer:" and uses `xmr-bridge.XXXXXX` temp folders.
+- The repo, its folder `~/xmr-pay`, and the dev-box paths (`~/xmr-pay-dev-data`, `~/xmr-pay-devkeys`, `~/.config/xmr-pay-dev`).
+Left for Wyatt:
+- The unit's `Description=xmr-pay wallet host (xmr-bridge)` (`bridge/internal/installer/unit.go:10`) is unchanged, because the unit was out of scope. It's the one place the admin still sees the old name (`systemctl status`).
+- The proof of concept (`docs/poc/monero-payments-poc.html`, `poc-simulation.js`) is a snapshot of the published page and still says xmr-pay, including its `SYNC_PATH`.
+- Whether `coffer` is free as a registry slug under your publisher and as an npm name (phase 06 and phase 09).
+Effect on the admin budget: none.
+Effect on the trust contract: capabilities, allowed hosts, route names, storage collections and indexes are unchanged. The route URLs and the plugin's identity change, which is a fresh install with a fresh consent, not an update.

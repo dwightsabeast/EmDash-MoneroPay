@@ -1,6 +1,6 @@
 # bridge/sync test vectors
 
-`sync-signature.json` is shared by both sides of `POST /_emdash/api/plugins/xmr-pay/bridge/sync`: the plugin's tests read it now (`plugin/tests/sync/vectors.test.ts`), and the Go bridge's tests read it in phase 03, so the two can't drift. Regenerate it with `node contract/test-vectors/make-sync-signature.mjs` (Node 22+, no dependencies); never edit it by hand.
+`sync-signature.json` is shared by both sides of `POST /_emdash/api/plugins/coffer/bridge/sync`: the plugin's tests read it now (`plugin/tests/sync/vectors.test.ts`), and the Go bridge's tests read it in phase 03, so the two can't drift. Regenerate it with `node contract/test-vectors/make-sync-signature.mjs` (Node 22+, no dependencies); never edit it by hand.
 
 Keys are the published RFC 8032 section 7.1 test keys: TEST 1 plays the paired bridge, TEST 2 a wrong key. Ed25519 signatures are deterministic, so a correct signer reproduces every `signature` exactly.
 

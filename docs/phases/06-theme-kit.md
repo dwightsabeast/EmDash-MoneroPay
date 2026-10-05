@@ -6,7 +6,7 @@
 
 ## For Wyatt, before the session
 
-- [ ] Choose the npm package name (for example an unscoped `xmr-pay-astro`, or a scope you own). Publishing it needs an npm account; until then the dev site installs it from the repo folder.
+- [ ] Choose the npm package name (for example an unscoped `coffer-astro`, or a scope you own). Publishing it needs an npm account; until then the dev site installs it from the repo folder.
 - [ ] Expect to choose a QR encoder to vendor. The theme has no runtime npm packages (`CLAUDE.md`, "Dependency tiers"), so if the page needs one, it's copied in as reviewed source with its license, and you review it like our own code.
 
 **Start the session:**

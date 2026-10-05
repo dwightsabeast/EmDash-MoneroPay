@@ -1,6 +1,6 @@
-# xmr-pay
+# Coffer
 
-xmr-pay is a sandboxed [EmDash](https://docs.emdashcms.com) plugin for taking Monero (XMR) payments and tips on an EmDash site. Each invoice gets its own subaddress and is settled only after enough confirmations. A small Go service, the bridge, runs next to Monero's official `monero-wallet-rpc` on a separate wallet host and pushes signed snapshots of incoming payments to the plugin. A one-command Linux installer sets the wallet host up.
+Coffer is a sandboxed [EmDash](https://docs.emdashcms.com) plugin for taking Monero (XMR) payments and tips on an EmDash site. Each invoice gets its own subaddress and is settled only after enough confirmations. A small Go service, the bridge, runs next to Monero's official `monero-wallet-rpc` on a separate wallet host and pushes signed snapshots of incoming payments to the plugin. A one-command Linux installer sets the wallet host up.
 
 ## Status
 
