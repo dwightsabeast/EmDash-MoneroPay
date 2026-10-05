@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/moneroaddr"
@@ -68,8 +69,78 @@ var codeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 
 var defaultPorts = map[string]string{"mainnet": "18081", "stagenet": "38081", "testnet": "28081"}
 
-// Install sets up the wallet host. It checks everything it can before changing anything, and can be run again.
+// installLogPath is where the installer keeps what it said (never what the admin typed), for support and triage.
+const installLogPath = dataDir + "/log/install.log"
+
+// Install sets up the wallet host. It checks everything it can before changing anything, and can be run again. Once
+// it has started changing the machine, it appends what it said to /var/lib/xmr-bridge/log/install.log, also when a
+// later step fails; an early refusal leaves nothing behind.
 func Install(ctx context.Context, o Options, sys System, tty Prompter, st Steps) error {
+	rec := &recorder{Prompter: tty, started: time.Now().UTC()}
+	changing := false
+	err := install(ctx, o, sys, rec, st, &changing)
+	if !changing {
+		return err
+	}
+	if err != nil {
+		rec.lines = append(rec.lines, "stopped: "+err.Error())
+	}
+	if werr := rec.write(o.Paths.at(installLogPath), o.Site); werr != nil {
+		tty.Say("(couldn't write %s: %v)", installLogPath, werr)
+	} else if err != nil {
+		err = fmt.Errorf("%w (the installer's log: %s)", err, installLogPath)
+	}
+	return err
+}
+
+// recorder keeps what the installer says and asks; answers are never recorded.
+type recorder struct {
+	Prompter
+	started time.Time
+	lines   []string
+}
+
+func (r *recorder) Say(format string, a ...any) {
+	r.lines = append(r.lines, fmt.Sprintf(format, a...))
+	r.Prompter.Say(format, a...)
+}
+
+func (r *recorder) Ask(prompt string) (string, error) {
+	a, err := r.Prompter.Ask(prompt)
+	r.lines = append(r.lines, prompt+answered(err))
+	return a, err
+}
+
+func (r *recorder) AskSecret(prompt string) (secret.String, error) {
+	a, err := r.Prompter.AskSecret(prompt)
+	r.lines = append(r.lines, prompt+answered(err))
+	return a, err
+}
+
+func answered(err error) string {
+	if err != nil {
+		return "[no answer]"
+	}
+	return "[answered]"
+}
+
+func (r *recorder) write(path, site string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "=== xmr-bridge install started %s (site %s)\n", r.started.Format(time.RFC3339), site)
+	for _, l := range r.lines {
+		fmt.Fprintln(f, l)
+	}
+	return f.Chmod(0o600)
+}
+
+func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps, changing *bool) error {
 	p := o.Paths
 	if sys.Euid() != 0 {
 		return errors.New("the installer needs root: run it with sudo")
@@ -154,6 +225,7 @@ func Install(ctx context.Context, o Options, sys System, tty Prompter, st Steps)
 	}
 
 	// From here on the machine changes.
+	*changing = true
 	uid, gid, err := serviceUser(sys)
 	if err != nil {
 		return err
@@ -231,7 +303,8 @@ func Install(ctx context.Context, o Options, sys System, tty Prompter, st Steps)
 		return err
 	}
 	tty.Say("Done. The wallet host is installed and paired; the site's Monero payments page shows it as connected.")
-	tty.Say("Check it any time with: xmr-bridge status --config %s", configPath)
+	tty.Say("Check it any time with: sudo xmr-bridge status --config %s", configPath)
+	tty.Say("What the installer did is in %s.", installLogPath)
 	return nil
 }
 
