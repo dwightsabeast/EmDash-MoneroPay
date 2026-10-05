@@ -36,7 +36,7 @@ func TestReleaseBuildHasNoDevValues(t *testing.T) {
 	if bytes.Contains(release, []byte(key)) || bytes.Contains(release, []byte(url)) {
 		t.Fatal("the release build contains a dev value")
 	}
-	if bytes.Contains(release, []byte("main.devReleaseKey")) || bytes.Contains(release, []byte("main.devReleaseURL")) {
+	if bytes.Contains(release, []byte("main.devReleaseKey")) || bytes.Contains(release, []byte("main.devReleaseURL")) || bytes.Contains(release, []byte("main.devBreak")) {
 		t.Fatal("the release build has the dev variables")
 	}
 	if !bytes.Contains(dev, []byte(key)) || !bytes.Contains(dev, []byte(url)) {

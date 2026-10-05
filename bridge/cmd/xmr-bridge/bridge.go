@@ -90,10 +90,15 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 		Updates:    func() string { return r.updateText.get() },
 		Wallet:     func(ctx context.Context) (bridgeloop.Wallet, error) { return sup.WaitReady(ctx) },
 		Site:       siteClient(cfg),
-		LoadKey:    func() (ed25519.PrivateKey, error) { return syncsign.LoadKey(keyFile(cfg)) },
-		DataDir:    cfg.DataDir,
-		Log:        log,
-		Extra:      func() any { return sup.Status() },
+		LoadKey: func() (ed25519.PrivateKey, error) {
+			if devBreakMode() == "badsig" { // deliberately broken development build: the site refuses every sync
+				return syncsign.NewKey()
+			}
+			return syncsign.LoadKey(keyFile(cfg))
+		},
+		DataDir: cfg.DataDir,
+		Log:     log,
+		Extra:   func() any { return sup.Status() },
 	})
 	if err != nil {
 		return nil, err

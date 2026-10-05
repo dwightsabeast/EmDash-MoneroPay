@@ -14,6 +14,9 @@ const devBuild = false
 
 func releaseKeys() []ed25519.PublicKey { return nil }
 
+// devBreakMode is always "" in release builds (see release_dev.go).
+func devBreakMode() string { return "" }
+
 func releaseBase() string { return "https://REPLACE-RELEASE-HOST.invalid/xmr-bridge/latest" }
 
 const (

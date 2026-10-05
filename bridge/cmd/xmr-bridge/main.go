@@ -97,6 +97,10 @@ func cmdRun(ctx context.Context, args []string, stderr io.Writer) int {
 	signal.Notify(notified, syscall.SIGUSR1)
 	defer signal.Stop(notified)
 	log.Info("starting", "version", version, "network", string(cfg.Network), "site", cfg.Site, "node", cfg.Node)
+	if devBreakMode() == "crash" {
+		log.Error("deliberately broken development build (devBreak=crash): exiting")
+		return 1
+	}
 	b, err := startBridge(ctx, cfg, log)
 	if err != nil {
 		log.Error("cannot start", "err", err)

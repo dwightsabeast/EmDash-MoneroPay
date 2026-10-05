@@ -20,7 +20,13 @@ const devBuild = true
 var (
 	devReleaseKey string
 	devReleaseURL string
+	// devBreak builds a deliberately broken version for the live rollback tests: "crash" (run exits at once; the
+	// guard rolls it back) or "badsig" (syncs signed with a throwaway key; the site refuses them, and the 10-minute
+	// rule rolls it back). Empty in every normal dev build.
+	devBreak string
 )
+
+func devBreakMode() string { return devBreak }
 
 func releaseKeys() []ed25519.PublicKey {
 	k, err := base64.StdEncoding.DecodeString(devReleaseKey)
