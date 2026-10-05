@@ -640,3 +640,67 @@ Next step: session 3g, signed self-update.
 - `--release-url` on stagenet only.
 - Downgrade refused, a 48-hour staged delay, rollback on a failed health check.
 - The daily check for new Monero wallet-rpc releases (3b-2's verifier).
+
+## 2026-10-04 · Phase 03 · Session 3g (paused): handoff
+
+**Finished** (built, tested, committed locally; not pushed): commits `bfa1f94`, `2d62ff5`, `4754c7b`.
+- **Install log:** `/var/lib/xmr-bridge/log/install.log`, written once the installer starts changing the machine. It holds the installer's messages, with answers shown as `[answered]`, never the answers or the code.
+- **Signed self-update:** `release.json` signed with Ed25519 over `"xmr-bridge-release-v1\n"` plus its bytes, checked against pinned keys.
+  - Newer versions only; a refused version, and anything older, is skipped until a newer one appears.
+  - Waits 48 h after the signed date.
+  - Size, SHA-256 and a `version` run are checked before any swap.
+  - The previous binary is kept as `.prev`.
+  - Applied with wallet-rpc stopped, then exit 75 for systemd to restart the service.
+- **Rollback:**
+  - The guard (`update-guard.sh`, `ExecStartPre`, run as `xmr-bridge`) restores the previous binary on the 4th start without a proper start, then refuses the version.
+  - The 10-minute rule rolls back only when the wallet never opened, or when the site answered and refused while nothing was accepted. An unreachable site never counts against the update.
+- **wallet-rpc updates:** 48 h after first seen; the wallet files are backed up before the swap. Rollback after 3 failures or 5 minutes, restoring both binary and wallet, and refusing the version.
+- **Admin copy:** `/usr/local/bin/xmr-bridge` is now a root-owned copy (hash recorded; uninstall removes only that file), so root never runs a file the service can write.
+  - `status`, `pair` and `uninstall` refuse a newer state format, telling you to re-run the installer.
+  - `pair` run as root hands the key to `xmr-bridge`.
+- **The unit:** `StartLimitIntervalSec=600` and `StartLimitBurst=20` in `[Unit]`; `ExecStartPre` without a prefix, `RestartForceExitStatus=75` and `RestartSec=10` in `[Service]`; `User=` and `Group=xmr-bridge`. `systemd-analyze security --offline`: 1.5.
+- **Dev builds** (`-tags devrelease`):
+  - The dev public key and release address are set at build time.
+  - Updates happen only when the open wallet's address is on stagenet.
+  - Short delays.
+  - Break modes: `crash` and `badsig`.
+- **The content test:** a release build contains no dev key, no dev address and no `devBreak` (with a control on the dev build).
+- **Scripts:**
+  - `dev-release-key.sh` and `sign-dev-release.sh` (both run by Wyatt)
+  - `build-dev-release.sh` (`--version`, `--break`, unsigned `release.json`)
+  - `check-dev-signature.sh` (Claude: public key only)
+- **Tests:** `cd bridge && go test ./...` passes, with and without `-tags devrelease`; `gofmt` and `vet` clean. 17 of 17 mutation checks caught. An `openssl -rawin` signature verifies in `VerifyManifest` (checked with a throwaway key, since deleted).
+
+**Left, in order:**
+1. **Wyatt makes the dev key**, on the dev box as `dev`, not with sudo:
+   ```sh
+   sh ~/xmr-pay/scripts/dev-release-key.sh 2>&1 | tee /home/dev/xmr-pay-dev-data/3g-key-output.txt; ls -l /home/dev/xmr-pay-dev-data/3g-key-output.txt
+   ```
+2. **Claude:**
+   - reads `3g-key-output.txt` and `~/xmr-pay-dev-data/dev-release.pub`
+   - backs up `data.db`
+   - builds V1 with `scripts/build-dev-release.sh`
+   - starts the dev site (fresh plugin build) and the release server: `tmux new -d -s release 'cd ~/xmr-pay-dev-data/dev-release && python3 -m http.server 8099 --bind 127.0.0.1'`
+3. **Wyatt's sudo reinstall** with a new code from Connect wallet host; only the installer runs with sudo, and the output path is absolute:
+   ```sh
+   curl -fsSL http://127.0.0.1:8099/install.sh | sh -s -- --site http://localhost:4321 --pair <CODE> --allow-same-machine 2>&1 | tee /home/dev/xmr-pay-dev-data/3g-reinstall-output.txt; ls -l /home/dev/xmr-pay-dev-data/3g-reinstall-output.txt
+   ```
+   This migrates the 3f layout (the symlink becomes the root-owned copy, the guard is installed, the unit gets its new lines).
+4. **V2, good:** Claude builds `--version <newer>`; Wyatt runs `sh ~/xmr-pay/scripts/sign-dev-release.sh`; Claude checks with `scripts/check-dev-signature.sh`, then watches the service update itself (2-minute delay, checks every minute) and commit after a sync.
+5. **V3, crash:** `--break crash`; Wyatt signs. Expected: the guard rolls back on the 4th start, V3 is refused, and the next check skips it.
+6. **V4, bad signature:** `--break badsig`; Wyatt signs. Expected: the site answers `BAD_SIGNATURE`, and 10 minutes later V4 is rolled back and refused.
+7. Then: the 3g progress entry, the push (with Wyatt's approval), and CI on the new commits.
+
+**Open or unverified:**
+- **No 3g behaviour has run on the real system yet:** updates, both rollbacks, the guard under `ProtectSystem=strict` as the service user, the new unit lines under real systemd, the admin copy and the install log.
+- **The installed service is the 3f build** (`0.0.0-dev.89635ac`): old layout (the symlink), no guard, the old unit, no update code. It is still active and paired, backing off while the dev site is stopped. Step 3 replaces it.
+- **The harness refuses any Bash command that touches `~/xmr-pay-devkeys/`** (the new Read deny applies to shell commands too). Every key operation is Wyatt's.
+- **`.claude/settings.json` has Wyatt's two deny rules, uncommitted;** his to commit.
+- **wallet-rpc updates can't be tested live:** there is no newer Monero release than 0.18.5.1. They're covered by unit tests only.
+- **CI hasn't run on `bfa1f94`, `2d62ff5`, `4754c7b`** (not pushed), including the race step on the new code.
+- The dev database still holds the 3f-2 pairing: the bridge key and 50 real stagenet subaddresses of the shop wallet.
+- From earlier sessions:
+  - fold spec changes 6, 7 and 9–13 into the live spec
+  - delete the release-age excludes on or after 2026-10-08
+  - the mainnet second-node list
+  - the 3f-2 transcripts were never captured
