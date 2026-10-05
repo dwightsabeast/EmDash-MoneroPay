@@ -485,3 +485,44 @@ Open issues:
 
 Next step: session 3e, the remote-node cross-check. Compare the block hash at each payment height with a second node before reporting confirmations; hold at 0 and turn a check red on a mismatch.
 - Open questions for Wyatt: which second nodes by default (open question 12), and whether the cross-check applies only when the configured node is remote.
+
+## 2026-10-04 · Phase 03 · Session 3e: remote-node cross-check
+
+Done:
+- Pushed `6a756ba..5423a71` with Wyatt's approval. Plan approved (all five): spec change 13 accepted, commit `37c68fb`.
+  - The method: the second node's whole block at the payment height must have the configured node's hash and contain the txid. The second node learns heights only.
+  - Only when the node isn't the shop's own.
+  - A built-in list of second nodes, no setting.
+  - A mismatch holds the transfer at 0 (red); no second node answering is amber, with confirmations as reported.
+  - An optional `checks` field in the sync body, shown on the admin page in phase 04.
+- **Second-node research** (open question 12):
+  - Stagenet candidates from monero.fail and xmr.ditatompel.com. Six answer `get_info` (stagenet) and `get_block` at height 2221449 with the local node's hash: `stagenet.xmr.kernal.eu:38089` (https, and the only one with https), `stagenet.xmr-tw.org:38081`, `node.sethforprivacy.com:38089`, `node.monerodevs.org:38089`, `node2.monerodevs.org:38089`, `xmr-lux.boldsuck.org:38081`.
+  - Mainnet: candidates listed only, not probed (no mainnet use in development). Added to "Still to decide" in `docs/decisions.md`.
+- **Code**, commit `3009559`:
+  - `noderpc`: `get_block_header_by_height` and `get_block` on a shared JSON-RPC helper.
+  - `internal/crosscheck`: the check, the cache per txid@height (a reorg is checked again), the smaller confirmation count, the second node held to 0 while it's behind, own-node detection (names resolved), the built-in lists.
+  - The loop applies it before building snapshots; the sync body carries `checks`; `status.json` and `xmr-bridge status` show "Node check" (a mismatch is unhealthy); `run` enables it only for a remote node.
+
+Tests:
+- `cd bridge && go test ./...`: all pass, live tests skipped by default. `gofmt` and `vet` clean.
+- **Mutation checks, 10 of 10 caught:** block hash not compared, txid not looked for, the second node's count ignored, its network ignored, no cache, cache ignoring the height, the second node behind not held, private LAN treated as remote, the loop ignoring checked confirmations, status calling a mismatch healthy.
+- **Live** (`~/xmr-pay-dev-data/3e-live-crosscheck.txt`), the local stagenet node against the built-in public nodes:
+  - the spike payment checks out (883 confirmations on both)
+  - a made-up txid is a mismatch
+  - a proxy rewriting the local node's block hash (a dishonest node) is caught as a mismatch
+  - 1.1 s
+- The plugin ignores the new top-level `checks` field: its test "accepts a well-formed body and ignores unknown fields" covers a top-level unknown key.
+
+Not covered:
+- the cross-check inside a full run with a remote configured node; 3h or phase 05's remote-node run, which uses a public node as the configured node
+- mainnet second nodes (to decide)
+- the admin page showing `checks` (phase 04)
+
+Open issues:
+- **For Wyatt:** the mainnet second-node list, before release (phase 09).
+- Wyatt folds spec changes 6, 7 and 9–13 into the live spec.
+- Delete the excludes on or after 2026-10-08.
+- Commits `37c68fb` through this entry are local.
+- Plaintext second nodes: five of the six stagenet nodes are http only. A network attacker between the wallet host and that node could answer for it, but would also have to fake the configured node's view to cause harm. https entries are preferred when the list is chosen for mainnet.
+
+Next step: session 3f, `installer/install.sh` and the systemd unit (Wyatt runs it with `sudo`; the same-machine check; prompts read from `/dev/tty`; the cautious path `xmr-bridge install`).
