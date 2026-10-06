@@ -795,3 +795,61 @@ Open issues:
 - Carried over: spec changes 6, 7 and 9–13 to fold in; delete the release-age excludes on or after 2026-10-08; the mainnet second-node list.
 
 Next step: session 3h as planned (stagenet end to end with the dev site, Wyatt sending payments). Open the admin page first, which schedules the cron. Back up `data.db` with `VACUUM INTO`.
+
+## 2026-10-06 · Phase 03 · Session 3h: stagenet end to end with the dev site
+
+Done (real stagenet payments from Wyatt's buyer wallet through the installed bridge into the dev site; Speed Standard, 2 confirmations; evidence files `~/xmr-pay-dev-data/3h-*`, the watch log `3h-watch.txt`):
+- **Tooling** (`b290c9a`, `4014a2b`): `scripts/dev-invoices.mjs` (checkouts, pay scripts Wyatt runs, a status watcher, the `drain-pool` dev shortcut Wyatt approved), `walletrpc.RescanBlockchain`, `TestLiveLookahead`.
+- **Results, each as the spec says:**
+  | Scenario | Result |
+  |---|---|
+  | No payment | 4 invoices: `pendingExpiry` at the deadline, `expired` at the next sync (19:30:20 to 19:30:35) |
+  | Happy | Full payment at once: `confirming` (skipping `seen`), then `settled` at 2 confirmations |
+  | Two-part | 60% then 40%, both in the window: `seen`, `confirming`, `settled` |
+  | Underpaid | 90%: `seen`, then review `underpaid` at expiry. A first two-part attempt whose second part couldn't come in time did the same |
+  | Late | Paid after expiry, within 24 h: `expired` to review `late` |
+  | E: bridge stopped across expiry | Both invoices `pendingExpiry` while the bridge was silent. Started about 2 h after the deadline: the paid one (mined at 2222909, `expiresHeight` 2222924) settled, the unpaid one expired |
+  | K: wallet-rpc killed | Restarted by the bridge's supervisor 1 s later (systemd restarts 0); syncs continued |
+  | S: site down 5 min | The bridge backed off and resumed within about 3 min of the site's return; a payment made during the outage was reported then |
+  | R: key deleted | `status` said "not paired" with the fix; `pair` with a new code; syncs resumed |
+  | L1: gap | Index 261, 252 past the last paid index: reported and settled |
+  | L2: shop app stand-in | Not seen as restored, not seen after creating addresses, seen after a rescan (spec change 9 evidence) |
+  | L3: reinstall | Found a gap: a settled high-index invoice falsely went to review `reversed`, and the catch-up was a 303-sync loop. **Spec change 15, proposed** |
+- **Docs:** spec change 9's evidence, spec change 15, and a setup-friction row (Claude's `pkill -x` mistake).
+
+Tests:
+- `node --test scripts/dev-invoices.test.mjs`: 5 pass; two mutation checks caught.
+- Bridge: `go test ./...` passes with and without `-tags devrelease`; gofmt and vet clean. `TestLiveLookahead` passed live on its second run; the first failed on the 5 s client timeout during the rescan, now tolerated.
+- Live: the table above.
+
+Not covered:
+- Tips; a reorg or double-spend on stagenet (plugin scenario tests only); overpayment; the per-client rate limit.
+- **The admin page wasn't opened**, so its bridge-key display (part of phase 03's "done when") isn't confirmed this session, and the `housekeeping` cron row still doesn't exist.
+- Whether raising a wallet app's lookahead before restoring finds the far payment (spec change 9's open question for Wyatt).
+
+Notes for later phases:
+- Phase 04 admin page: an underpaid or review invoice shows `confirmations: 0` because the count is that of the payment that crosses the threshold (`totals()`). Label it, or show the deepest transfer.
+- Phase 04: the site has no way to undo a false `reversed` except an admin decision (spec change 15 prevents the cause).
+
+State left:
+- The wallet host service runs `0.0.202610051631-dev.5fbda8c`, reinstalled in L3 with restore height 2222850, paired, synced.
+- The dev site, watcher and release server are stopped; ports free; no tmux sessions.
+- The dev database (backup before the session: `baseline/data.db.before-3h`, `VACUUM INTO`):
+  - 16 invoices (settled, expired and review)
+  - `far` in review `reversed`, a consequence of the reinstall gap
+  - pool rows 1–312, with 261 drained rows claimed without invoices
+  
+  Clean up with `dev-e2e.mjs --cleanup-only` when no longer needed.
+
+Open issues:
+- **For Wyatt:**
+  - spec change 15 (accept, change or reject)
+  - spec change 14 (fold in)
+  - spec change 9's lookahead question
+  - open the admin page once to confirm the bridge key and schedule the cron
+- Commits `b290c9a`, `4014a2b` and this session's docs commit are not pushed.
+- Carried over: spec changes 6, 7 and 9–13 to fold in; delete the release-age excludes on or after 2026-10-08; the mainnet second-node list.
+
+Phase 03 status: its "done when" is met (install.sh sets up the service, pairing succeeds, a stagenet payment settles, the restart and outage tests pass), apart from the admin-page check above. Spec change 15 is a real gap in the reinstall path; if Wyatt accepts it, the next session (3i) implements it and reruns L3.
+
+Next step: Wyatt decides spec change 15 and opens the admin page. Then either session 3i (spec change 15) or phase 04.

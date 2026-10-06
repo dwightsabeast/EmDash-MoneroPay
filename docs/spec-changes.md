@@ -130,6 +130,15 @@ Proposal:
 Effect on the admin budget: no new setting or install step. The fix for the warning (raising the app's lookahead, once, when it shows) is an occasional manual task and touches "no routine upkeep"; Wyatt decides whether that is acceptable or the feature must change.
 Effect on the trust contract: none (no capability, host, route, storage or admin declaration changes).
 Wyatt's decision (2026-10-04): accepted (phase 03's stagenet test, the phase 04 warning from a constant threshold, phase 05's wallet-app check). Still open: how an admin raises the wallet app's lookahead, and whether that manual step is acceptable at all. This doesn't block phase 03. Its stagenet test supplies the evidence (what works, in which wallet apps), and Wyatt decides before the phase 04 warning text is written. Tracked under "Still to decide" in `docs/decisions.md`. Wyatt updates the live spec and `docs/spec.md`.
+Evidence from phase 03 session 3h (stagenet, 2026-10-06; files `~/xmr-pay-dev-data/3h-*`):
+- **Gap:** the bridge's own pool top-up was driven past index 310 (`dev-invoices.mjs drain-pool`, five rounds). A checkout got index 261, 252 past the last paid index (9). Wyatt paid it. The bridge reported it, and it settled at 2 confirmations (02:40:14 UTC). The bridge's wallet sees it because it created that address itself.
+- **Shop app stand-in** (`TestLiveLookahead`, `3h-L2-output.txt`): a second view-only wallet-rpc, restored from the same keys with default settings.
+  1. As restored: the payment to index 261 is **not seen**.
+  2. After `create_address` up to 261 and two auto-refreshes: **still not seen**. Creating the address doesn't find a payment in blocks already scanned.
+  3. After `rescan_blockchain`: **seen**, 1784471529 atomic at height 2222980, 8 s from a recent restore height.
+  
+  So the fix for a wallet app is both steps, addresses up to the index and then a rescan. (Raising the lookahead before restoring should work too; that's not tested here, and there's no lookahead option in wallet-rpc.)
+- **Reinstall:** see spec change 15. A reinstalled bridge does **not** recreate addresses before it reconciles. One consequence was observed: a settled invoice falsely moved to review `reversed`.
 
 ## 10. The comparison checks compare a defined verdict, and our verifier may be stricter by named policy  (status: accepted, 2026-10-04)
 Found in: phase 03 session 3b-1, `bridge/oracle/oracle_test.go` against `gpgv` 2.4.7 (`~/xmr-pay-dev-data/3b1-oracle-gpgv.txt`)
@@ -236,3 +245,24 @@ Left for Wyatt:
 - Whether `coffer` is free as a registry slug under your publisher and as an npm name (phase 06 and phase 09).
 Effect on the admin budget: none.
 Effect on the trust contract: capabilities, allowed hosts, route names, storage collections and indexes are unchanged. The route URLs and the plugin's identity change, which is a fresh install with a fresh consent, not an update.
+
+## 15. A reinstalled bridge must catch its wallet up to the site's pool before it reports  (status: proposed, 2026-10-06)
+Found in: phase 03 session 3h, step L3 (stagenet, dev box). Evidence files: `~/xmr-pay-dev-data/3h-L3-*.txt` and `3h-watch.txt`.
+Spec says: spec change 9: "a reinstalled bridge (a fresh wallet from keys) must recreate addresses up to the highest pool index before it reconciles". Bridge service, Reconcile on start. The bridge has no code for this; the sync response doesn't tell it the pool's highest index.
+Evidence. The bridge was uninstalled with `--delete-data` and reinstalled from keys (restore height 2222850, before every payment of the session). The site kept its pool: 311 indexes, free 262–311. The fresh wallet knew indexes up to about 10, from the payments it found while scanning.
+1. **A false "reversed".** The first sync after the reinstall (02:53:35 UTC, 7 s after the wallet opened) reported watched index 261 as empty, because the fresh wallet has no address 261. The plugin moved the settled invoice `far` to review `reversed` with received 0, and raised the admin alert. Its payment is on the chain, and the invoice stays in review. An open invoice paid before a reinstall would instead look unpaid and expire.
+2. **An accidental, lazy catch-up.** While the pool was full, the bridge created nothing. Once a checkout claimed one row, the site asked for 1 address. The fresh wallet's `create_address` returned a low index the site already had (about 11; inferred from 303 creations ending at 312, since the journal logs counts, not indexes), so it was silently skipped (`plugin/src/sync/handle.ts:109`). A pending address makes the bridge sync again at once, so it looped: **303 syncs in 31 s** (02:56:13–02:56:44), one address each, until index 312. It's harmless at this size, but it's a burst of signed requests that grows with the pool's history, and it only starts after the next checkout.
+3. **What did work.** `far2` (index 262), paid after that catch-up, was seen in the mempool and settled (03:03:24). A payment *mined* to an index before the fresh wallet creates it would be missed for good, because blocks already scanned aren't rescanned (spec change 9, stand-in step 2).
+4. **A side note for any rescan:** the bridge's wallet-rpc client times out after 5 s (`supervise.go:285`), and `rescan_blockchain` answers only when it's finished. wallet-rpc carries on regardless (`TestLiveLookahead`).
+Proposal (smallest that fixes 1–3):
+- **Plugin:** the `bridge/sync` response gains `poolTop`, the highest `addrIndex` the site holds (pool and invoices). An optional field: older bridges ignore it.
+- **Bridge, at start and whenever `poolTop` is above the wallet's highest index, before sending any snapshot:**
+  - create addresses up to `poolTop`, without sending them (the site has them already)
+  - then `rescan_blockchain` once, with its own long timeout
+  - then reconcile as now
+  
+  While catching up it sends no snapshots, so nothing can look reversed or unpaid. `status` shows "catching up the wallet (n of m addresses)".
+- **Bridge, top-ups:** start numbering from the wallet's next index only once that index is above `poolTop`. That removes the duplicate loop.
+- **Tests:** unit tests with fakes (fresh wallet, pool above it, no snapshots before catch-up, one rescan, no duplicate addresses), then this L3 run again on stagenet.
+Effect on the admin budget: none. No setting or step; a reinstall just takes the time of one rescan.
+Effect on the trust contract: none. It adds a response field on an existing route; no capability, host, route or storage change.
