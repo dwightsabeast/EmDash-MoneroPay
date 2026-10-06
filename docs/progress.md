@@ -853,3 +853,54 @@ Open issues:
 Phase 03 status: its "done when" is met (install.sh sets up the service, pairing succeeds, a stagenet payment settles, the restart and outage tests pass), apart from the admin-page check above. Spec change 15 is a real gap in the reinstall path; if Wyatt accepts it, the next session (3i) implements it and reruns L3.
 
 Next step: Wyatt decides spec change 15 and opens the admin page. Then either session 3i (spec change 15) or phase 04.
+
+## 2026-10-06 · Phase 03 · End of day: handoff (break for the night)
+
+Pushed with Wyatt's approval: `2f0bdf1..9768d84` (the Coffer rename) and `b290c9a..c5d23c0` (3h), CI green on both (`c5d23c0`: run 37407668991). This handoff commit is local.
+
+Everything found or changed in this session (2026-10-05 and 06), with where it's recorded:
+1. **The plugin is Coffer, slug `coffer`.** The wallet host keeps the xmr-bridge name, and the repo and dev-box paths keep xmr-pay. Recorded in `decisions.md` and spec change 14 (proposed: spec text to fold in, the unit's `Description` and the PoC left for Wyatt).
+2. **EmDash facts found on the way** (spec change 14 and the rename entry):
+   - a new slug is a new plugin
+   - EmDash's uninstall handles only registry and marketplace plugins, so a plugin listed in `astro.config.mjs` has its data removed by hand
+   - plugin indexes are created on EmDash's periodic sweep, not at load
+   - such a plugin schedules its cron only on the first admin page load (already in the spec)
+3. **Payment rules confirmed on stagenet** (3h entry): no-payment expiry on evidence, happy, two-part, underpaid, late, bridge stopped across expiry (settled on `expiresHeight`), wallet-rpc killed, site down, key deleted and re-paired, far-index payment.
+4. **Spec change 9 evidence:** a wallet restored from keys with default settings misses a payment 252 addresses past the last paid one; creating the address alone doesn't find it; a rescan does.
+5. **Spec change 15 (proposed):** a reinstalled bridge doesn't catch its wallet up to the pool.
+   - It caused a false review `reversed` on a settled invoice (`far`, index 261, still in review in the dev database).
+   - It caused a 303-sync loop of duplicate addresses.
+   - It risks missing payments mined to addresses the fresh wallet doesn't know yet.
+   - The bridge's 5 s wallet-rpc client timeout matters for any rescan.
+6. **New code and tooling:**
+   - `scripts/dev-invoices.mjs` and its tests, `walletrpc.RescanBlockchain`, `TestLiveLookahead`
+   - CLAUDE.md commands for both, and for database backups
+   - `decisions.md`: the pay-script and pool-drain dev shortcuts
+7. **For phase 04's admin page** (3h entry, "Notes for later phases"):
+   - Underpaid and review invoices show `confirmations: 0` by design; label it.
+   - A false `reversed` can only be cleared by an admin decision.
+8. **Setup friction, 4 rows:**
+   - a handed-over script that was never written (Claude)
+   - a `cp` backup without the WAL (Claude)
+   - `pkill -x` with a long process name (Claude)
+   - the buyer wallet's funds and the 10-block lock pacing the payments
+   
+   Also, in the rename entry: the `tee` transcript did land this time (absolute path, checked with `ls -l`) and holds only `install.sh`'s lines, as 3g found. The 3f/3g missing files stay unexplained.
+9. **Not done:**
+   - Wyatt hasn't opened the admin page, so the bridge-key display (phase 03's last "done when" item) isn't confirmed and the `housekeeping` cron isn't scheduled.
+   - Not covered on stagenet: tips, reorgs, double-spends, overpayment, the per-client rate limit.
+
+State left for the break:
+- The bridge service is installed and paired (L3 reinstall, restore height 2222850). It keeps running, backing off quietly while the dev site is stopped.
+- The dev site, watcher and release server are stopped; no tmux sessions.
+- The dev database holds the 3h invoices; the backup from before the session is `baseline/data.db.before-3h`.
+- `~/xmr-pay-dev-data/3h-*` holds the evidence and the used pay scripts. They contain stagenet addresses only, no keys.
+
+Reminders:
+- Delete the release-age excludes on or after **2026-10-08**.
+- Spec changes 6, 7 and 9–14 to fold into the live spec; the mainnet second-node list.
+
+Next step, in order:
+1. Wyatt decides spec change 15 (`docs/spec-changes.md`, last entry).
+2. Wyatt opens the admin page once through the tunnel (`ssh -N -L 4321:localhost:4321 xmr-dev`, with the dev site started) to confirm the bridge key; that also schedules the cron. Phase 03 is then done.
+3. If spec change 15 is accepted: session 3i. Tests first (fresh wallet behind the pool: no snapshots before catch-up, one rescan, no duplicate addresses), then the plugin's `poolTop`, then the bridge, then L3 again on stagenet. Otherwise phase 04.
