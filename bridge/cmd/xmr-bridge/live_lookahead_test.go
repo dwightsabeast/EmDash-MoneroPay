@@ -135,13 +135,24 @@ func TestLiveLookahead(t *testing.T) {
 	time.Sleep(60 * time.Second) // at least two of wallet-rpc's 20 s auto-refreshes
 	seen("2. after creating subaddresses up to the index, no rescan")
 
+	// rescan_blockchain answers only when the rescan is done, which outlasts the bridge client's 5 s request timeout;
+	// wallet-rpc carries on regardless, so a timeout here is expected. Then poll until the wallet answers again.
 	begin := time.Now()
 	if err := c.RescanBlockchain(ctx); err != nil {
-		t.Fatal(err)
+		t.Logf("3. rescan_blockchain: %v (expected: the client gives up before the rescan finishes)", err)
 	}
-	t.Logf("3. rescan_blockchain took %v", time.Since(begin).Round(time.Second))
-	synced("3. after rescan_blockchain")
-	if !seen("3. after rescan_blockchain") {
-		t.Fatalf("even after a rescan the payment to index %d isn't seen: wrong index, or not paid yet", far)
+	for {
+		ts, err := c.GetTransfers(ctx, []uint32{uint32(far)})
+		if err == nil && len(ts) > 0 {
+			t.Logf("3. after rescan_blockchain (%v): payment to index %d seen: true", time.Since(begin).Round(time.Second), far)
+			for _, tr := range ts {
+				t.Logf("3. index %d received %s atomic at height %d", tr.Index, tr.Amount, tr.Height)
+			}
+			return
+		}
+		if time.Since(begin) > 20*time.Minute {
+			t.Fatalf("even 20 minutes after a rescan the payment to index %d isn't seen (last error %v)", far, err)
+		}
+		time.Sleep(10 * time.Second)
 	}
 }
