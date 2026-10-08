@@ -57,6 +57,9 @@ export class CtxSyncStore implements SyncStore {
 	setPairing(state: PairingState) {
 		return this.ctx.kv.set(KV.pairing, state);
 	}
+	getBridgeState() {
+		return this.ctx.kv.get<BridgeState>(KV.bridge);
+	}
 	setBridgeState(state: BridgeState) {
 		return this.ctx.kv.set(KV.bridge, state);
 	}

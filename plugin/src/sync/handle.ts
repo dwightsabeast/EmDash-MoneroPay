@@ -30,6 +30,7 @@ export interface SyncStore {
 	setPublicKey(publicKey: string): Promise<void>;
 	getPairing(): Promise<PairingState | null>;
 	setPairing(state: PairingState): Promise<void>;
+	getBridgeState(): Promise<BridgeState | null>;
 	setBridgeState(state: BridgeState): Promise<void>;
 	/** True if the pool already has this subaddress index (free or claimed). */
 	poolHas(index: number): Promise<boolean>;
@@ -107,8 +108,10 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 		parsed = body.value;
 	}
 
-	// 4. Apply: bridge state, pool top-up, snapshots.
-	await store.setBridgeState({ height: parsed.height, lastSyncAt: now, version: parsed.v, outdated: parsed.outdated });
+	// 4. Apply: bridge state, pool top-up, snapshots. The chain height never goes down (spec change 16): a fresh
+	// wallet's first sync reports the height it has scanned to, which can be far below the chain's.
+	const height = Math.max((await store.getBridgeState())?.height ?? 0, parsed.height);
+	await store.setBridgeState({ height, lastSyncAt: now, version: parsed.v, outdated: parsed.outdated });
 	for (const a of parsed.addresses) {
 		if (!(await store.poolHas(a.index))) await store.poolAdd({ addrIndex: a.index, address: a.address });
 	}
@@ -116,7 +119,7 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 	for (const snap of parsed.snapshots) {
 		const inv = await store.invoiceForIndex(snap.index);
 		if (!inv) continue;
-		const merged = mergeSnapshot(inv, snap.transfers, { seq: parsed.seq, now, chainHeight: parsed.height });
+		const merged = mergeSnapshot(inv, snap.transfers, { seq: parsed.seq, now, chainHeight: height });
 		if (!merged.applied) continue;
 		await store.saveInvoice(merged.invoice);
 		for (const event of merged.events) events.push({ invoiceId: inv.id, event });

@@ -132,6 +132,32 @@ describe("ordinary syncs", () => {
 		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 500, version: 1, outdated: false });
 	});
 
+	it("the stored height never goes down (spec change 16): a fresh wallet's low first height keeps the stored one", async () => {
+		const store = pairedStore();
+		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });
+		await send(store, syncBody({ seq: T0 + 1, height: 579_994 }), { now: T0 + 1000 });
+		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 1000, version: 1, outdated: false });
+		await send(store, syncBody({ seq: T0 + 2, height: H0 + 9 }), { now: T0 + 2000 });
+		expect(store.bridge?.height).toBe(H0 + 9);
+	});
+
+	it("snapshots are judged at the stored height when the reported one is lower: no false reorg after a fresh wallet's first sync", async () => {
+		const store = pairedStore();
+		await send(store, syncBody({ addresses: [{ index: 1, address: ADDR(1) }] }));
+		const inv = newInvoice({ id: "inv_r", token: "tok", kind: "product", fiatMinor: 1200n, currency: "USD", rate: { minor: 15000n, source: "t" }, speed: "standard", subaddress: "", addrIndex: 0, now: T0, chainHeight: H0 });
+		store.claim(1, inv);
+		const amount = inv.expectedAtomic as string;
+		const snap = (confirmations: number, height: number) => [{ index: 1, transfers: [{ txid: TXID(1), amount, confirmations, height, timestamp: 1_790_000_100, doubleSpendSeen: false, unlockTime: "0" }] }];
+		await send(store, syncBody({ seq: T0 + 10_000, height: H0 + 2, snapshots: snap(2, H0 + 1) }), { now: T0 + 10_000 });
+		expect(store.invoices.get("inv_r")?.status).toBe("settled");
+		// A fresh wallet's first sync: tiny height, the transfer back in the pool. Re-confirming starts at the stored height.
+		await send(store, syncBody({ seq: T0 + 20_000, height: 579_994, snapshots: snap(0, 0) }), { now: T0 + 20_000 });
+		expect(store.invoices.get("inv_r")).toMatchObject({ status: "settled", reconfirmingSince: H0 + 2 });
+		// Two blocks later, still unmined: well short of RECONFIRM_BLOCKS, so still settled.
+		await send(store, syncBody({ seq: T0 + 30_000, height: H0 + 4, snapshots: snap(0, 0) }), { now: T0 + 30_000 });
+		expect(store.invoices.get("inv_r")).toMatchObject({ status: "settled", reconfirmingSince: H0 + 2 });
+	});
+
 	it("tops up the pool with new indexes only, and reports the free count and target", async () => {
 		const store = pairedStore();
 		const out = await send(store, syncBody({ addresses: [1, 2, 3].map((i) => ({ index: i, address: ADDR(i) })) }));

@@ -47,6 +47,7 @@ export class MemoryStore implements SyncStore {
 	async setPublicKey(k: string) { this.publicKey = k; }
 	async getPairing() { return this.pairing; }
 	async setPairing(s: PairingState) { this.pairing = s; }
+	async getBridgeState() { return this.bridge; }
 	async setBridgeState(s: BridgeState) { this.bridge = s; }
 	async poolHas(i: number) { return this.pool.has(i); }
 	async poolAdd(row: { addrIndex: number; address: string }) { this.pool.set(row.addrIndex, { ...row, status: "free" }); }
