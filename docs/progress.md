@@ -1059,3 +1059,44 @@ Carried over for Wyatt:
 - Spec changes 6, 7 and 9–17 to fold into the live spec (14 is the rename text).
 - Spec change 9's lookahead question.
 - The mainnet second-node list.
+
+## 2026-10-08 · Phase 03 · Session 3j, part 1: spec changes 16 and 17 implemented; live run waiting for Wyatt
+
+Wyatt approved the plan with the recommended sub-choices: 16 refuses checkout while the bridge is silent, and the optional bridge-side wait is skipped. 17 is option (a), with a 720-block margin. A kept wallet with too new a height gets a warning only.
+
+Done (local commits, not pushed):
+- `b448231` Release-age excludes deleted, after 16:48 UTC as planned. `pnpm install` in `plugin/` and `spikes/xmr-spike/`: lockfile unchanged, supply-chain check passed. The 2026-10-03 reminder is marked done.
+- `ed2cfc2` (16) `bridge/sync` stores `max(stored, reported)` and judges snapshots at that height. Without it, a re-confirmation could start at a fresh wallet's tiny height and become a false `reorg` review.
+- `3562463` (16) Checkout returns `WALLET_HOST_SILENT` when the bridge never synced or last synced more than 5 minutes ago. Otherwise it uses the last sync's height, with no estimate. `SILENT_MS` moved to `core/constants.ts`.
+- `c212172` (17) The pairing response carries `restoreHeight`: the oldest watched `createdHeight` − 720, left out when nothing is watched.
+- `0d66a34` (17) Bridge:
+  - `xmr-bridge install` pairs before creating the wallet. The restore height is the flag, else the site's suggestion, else the node's height, and is written to the config.
+  - A kept wallet, or `xmr-bridge pair`, warns when its height is newer than the suggestion.
+  - A wallet failure after pairing says the code is spent.
+- Spec text to fold in, for both changes, is in `docs/spec-changes.md` (16 and 17).
+
+Tests:
+- Plugin: 128 pass (6 new), typecheck clean, bundle 27.9 KB validates.
+- Bridge: gofmt, vet and `go test ./...` pass (new tests in syncclient, pairing, installer and `cmd/xmr-bridge`). `-race` runs in CI only (no cgo here).
+- Live so far: with the dev site started and the bridge's last sync about 21 h old, checkout returned `WALLET_HOST_SILENT` (23:28 UTC). After the bridge's next sync, the stored height was 2225081, the node's height.
+
+State:
+- Dev site running in tmux `site`, with a fresh plugin build.
+- Dev release `0.0.202610082327-dev.0d66a34` built and served (tmux `release`, 127.0.0.1:8099).
+- Installed bridge: still `1a1ec84`, paired, syncing.
+- Database backup: `baseline/data.db.before-3j`.
+
+Next step, the live run (L4), with Wyatt:
+1. Wyatt checks the buyer wallet's unlocked balance (`3j-balance-output.txt`).
+2. New invoice `far5`, a pay script, the watcher.
+3. Wyatt: `sudo xmr-bridge uninstall --delete-data`, pays `far5`, and it gets mined.
+4. Claude issues a code (`dev-e2e.mjs --issue-code`).
+5. Wyatt reinstalls **without** `--restore-height`.
+6. Expect:
+   - the installer prints the suggested height
+   - the config holds it
+   - the rescan finds `far5`, which settles
+   - no false `reversed`
+   - no `reorg`
+
+Not done here: phase 03's file (line 56) still lists pairing after the wallet in the installer's steps. Fold it in with the spec text.
