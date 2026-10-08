@@ -266,3 +266,28 @@ Proposal (smallest that fixes 1–3):
 - **Tests:** unit tests with fakes (fresh wallet, pool above it, no snapshots before catch-up, one rescan, no duplicate addresses), then this L3 run again on stagenet.
 Effect on the admin budget: none. No setting or step; a reinstall just takes the time of one rescan.
 Effect on the trust contract: none. It adds a response field on an existing route; no capability, host, route or storage change.
+
+## 16. The height the site relies on can be far off: a fresh wallet's first sync, and checkout's estimate after a silence  (status: proposed, 2026-10-08)
+Found in: phase 03 session 3i (stagenet, dev box). Evidence: `~/xmr-pay-dev-data/3i-status-output.txt` (journal), `3h-watch.txt`, the `far3` invoice in the dev database.
+Spec says: `bridge/sync` carries the wallet's `height`, which the plugin stores as the chain height (`state:bridge`). Checkout sets `createdHeight` from it, and `expiresHeight` = that + 15 + 3 blocks. A payment reported after the deadline counts if it was mined at or below `expiresHeight` (Lifecycle, "On time or late").
+Evidence:
+1. **A fresh wallet reports a tiny height.** After the reinstall, the bridge logged `wallet open height=579994` (the chain was at 2224442). Its first sync, the learning one, sends that height, and the site stored it for about 12 s until the catch-up and the next sync. 3h's first sync also came 7 s after the wallet opened. Any first install does the same while the wallet is still refreshing.
+2. **Checkout's estimate after a silence was 35 blocks low.** With the bridge silent for about 1.5 days, checkout estimated the height as the last sync's plus 2 minutes a block (`checkout.ts:142`). It gave `createdHeight` 2224369 against a real 2224404. So `far3`'s `expiresHeight` (2224387) was below the chain the moment it was made.
+
+Effect: an invoice created in either state gets an `expiresHeight` that is too low, by about 1.6 million blocks in case 1. A payment to it that the plugin doesn't see before `expiresAt` (a bridge outage) can then never count as on time by its block height. It would go to review `late` although it was paid in time. Nothing in 3i was affected: `far3` was never paid, and no checkout fell in case 1's window.
+Proposal (smallest):
+- **Plugin:** the stored height never goes down (`max(stored, reported)`). That covers case 1, since the site already holds the real height from before. A first install has no stored height and no invoices yet.
+- **Plugin, checkout:** if the last sync is older than the silent-bridge threshold (5 minutes, spec change 2), refuse checkout with a domain error such as `WALLET_HOST_SILENT` instead of estimating. Or, the gentler option: keep the estimate but count `expiresHeight` as unknown, so only the time-based on-time rules apply. Wyatt to choose. Refusing is simpler and is what the admin alert already implies.
+- **Bridge (optional):** don't send a sync until wallet-rpc's height is within a few blocks of the node's. It needs a node call the bridge already makes for the cross-check.
+
+Effect on the admin budget: none. Trust contract: none (a new domain error code, if chosen).
+
+## 17. A reinstall's restore height  (status: proposed, 2026-10-08)
+Found in: phase 03 session 3i.
+Spec says: the installer creates the wallet "with a restore height of today (no full-chain scan)" (Admin setup, step 3). `xmr-bridge install --restore-height` defaults to today.
+Evidence: spec change 15's catch-up rescans from the wallet's restore height. In 3i, `far4` was paid and mined while the bridge was uninstalled. The rescan found it only because the reinstall passed `--restore-height 2222850`. With the default it would have been missed, and the invoice would have expired unpaid.
+Proposal: when the site already holds invoices, the restore height must be at or below the oldest watched invoice's `createdHeight`. Either:
+- **(a)** the `bridge/sync` pairing response returns a suggested restore height (the minimum `createdHeight` of watched invoices, minus a margin), and the installer uses it when no `--restore-height` was given, before creating the wallet. That reorders the install a little, because pairing would come before the wallet's creation.
+- **(b)** the bridge compares, on its first sync, the oldest watched invoice's height (sent in the response) with its restore height. If the restore height is too new, it recreates the wallet from keys with the lower height (it needs the view key again, read from the existing wallet or asked for again).
+
+(a) is simpler and keeps the view key handling as it is. Effect on the admin budget: none for (a) (no prompt or setting). Trust contract: a response field.

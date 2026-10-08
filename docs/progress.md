@@ -961,3 +961,53 @@ Next step (when Wyatt's wallet is topped up), the L3 rerun:
    - nothing goes to review `reversed`
    - the "Catching up" status, then normal
    - no burst of syncs
+
+## 2026-10-08 · Phase 03 · Session 3i, part 2: the L3 rerun on stagenet (spec change 15, live)
+
+Evidence: `~/xmr-pay-dev-data/3h-watch.txt` (from "--- 3i run resumed"), `3i-before-reinstall.txt`, `3i-uninstall-output.txt`, `3i-install-output.txt`, `3i-status-output.txt` (status and journal).
+
+Run (Speed Standard, 2 confirmations; times UTC):
+
+| Step | Result |
+|---|---|
+| `far3b`, index 264, paid by Wyatt | `confirming` 01:50:37, `settled` 01:52:23 |
+| Uninstall, `--delete-data` (old bridge `5fbda8c`) | Service, data and user removed |
+| `far4`, index 265, created 01:53:53, paid with no bridge installed | Mined at 2224419 (`expiresHeight` 2224436); `pendingExpiry` at 02:23:55, correctly, with no evidence yet |
+| Reinstall, dev release `0.0.202610080123-dev.1a1ec84`, `--restore-height 2222850`, a fresh pairing code | Started 02:32:54 |
+| Catch-up | 02:32:57 wallet open (height 579994), target 314; 02:32:58 addresses created, rescan; 02:33:09 caught up (11 s); 02:33:10 one top-up address (index 315) |
+| `far4` | `pendingExpiry` → **`settled`** 02:33:15, 1786639510 atomic, 23 confirmations: **found by the rescan** |
+| `far3b` | Stayed **`settled`** (reported with its transfer, 26 confirmations) |
+| False `reversed` | **None** (only `far`, index 261, from 3h remains) |
+| Duplicate-address loop | **None**: 315 pool rows, top 315; one `created pool addresses` line after the catch-up (3h: 303) |
+| `xmr-bridge status` | Paired, last sync 10 s, 50 of 50, watching 1 |
+
+All of spec change 15's expectations held. Its "status shows catching up" wasn't seen live, because the catch-up took 12 s; it's covered by `TestStatusCatchUp`.
+
+The first reinstall attempt didn't reach the dev box (setup-friction row). `far3` (index 263) expired unpaid while the buyer wallet was refunded.
+
+New spec-change proposals (for Wyatt):
+- **16:** the site's height can be far off. A fresh wallet's first sync reports height 579994. Checkout's estimate after 1.5 days of silence was 35 blocks low. Either gives invoices a too-low `expiresHeight`. Proposed: a stored height that never goes down; refuse checkout (or ignore the height rule) when the bridge is silent.
+- **17:** a reinstall's restore height. The default (today) would have missed `far4` despite the rescan. Proposed: the pairing response suggests a restore height from the oldest watched invoice.
+
+State left:
+- Bridge `0.0.202610080123-dev.1a1ec84` installed and paired; it backs off while the site is stopped.
+- Dev site, watcher and release server stopped; ports free; no tmux sessions.
+- Dev database: 3h's invoices plus `far3` (expired), `far3b` and `far4` (settled); pool rows 1–315. Backup from before 3i: `baseline/data.db.before-3i`.
+- `~/work/monero-v0.18.5.1`: a sparse clone of Monero's wallet source (reference only).
+
+Phase 03 status: done. Every "done when" item is met, and spec change 15 is implemented and passed on stagenet.
+
+Open issues:
+- **For Wyatt:**
+  - spec changes 16 and 17
+  - spec changes 6, 7, 9–15 to fold into the live spec (15 is accepted)
+  - spec change 9's lookahead question
+  - the mainnet second-node list
+- Commits from `398c61c` to this entry are not pushed. CI's race-detector step covers the new bridge code; there's no `gcc` here.
+- **Today (2026-10-08):** delete the release-age excludes and their reminder (CLAUDE.md, dependency tiers).
+
+Next step:
+1. Wyatt approves the push and watches CI.
+2. The release-age excludes are deleted (due today).
+3. Wyatt decides spec changes 16 and 17.
+4. Phase 04 (admin page), which also picks up 3h's notes: label `confirmations: 0` on review invoices; an admin path to clear a false `reversed`.
