@@ -19,6 +19,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/shopkeys"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/supervise"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/wallet"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
 // TestLiveShopWallet creates the view-only stagenet shop wallet with the real wallet-rpc and runs the bridge's
@@ -154,6 +155,47 @@ func TestLiveShopWallet(t *testing.T) {
 		t.Fatal("the spike's payment to subaddress 1 was not found")
 	}
 	t.Logf("%d incoming transfer(s) to indexes 0 and 1; the spike's payment found: %v", len(transfers), found)
+
+	// 2b. The wallet-rpc calls behind spec change 15's catch-up, as the bridge makes them (the supervisor's client,
+	// with its 5 s timeout): the out-of-bounds probe, create_address with count, and a rescan that outlasts 5 s.
+	if has, err := c.HasSubaddress(ctx, 1_000_000); err != nil || has {
+		t.Fatalf("probe of index 1000000 in a fresh wallet: %v, %v", has, err)
+	}
+	one, err := c.CreateAddresses(ctx, "coffer", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := one[0].Index
+	hasNext, err1 := c.HasSubaddress(ctx, next)
+	hasAfter, err2 := c.HasSubaddress(ctx, next+1)
+	if err1 != nil || err2 != nil || !hasNext || hasAfter {
+		t.Fatalf("probe around the new index %d: %v %v, %v %v", next, hasNext, err1, hasAfter, err2)
+	}
+	t.Logf("a fresh wallet's next subaddress index was %d; get_address answers present for it and out of bounds (-15) above it", next)
+	for _, n := range []int{100, walletrpc.MaxCreate} {
+		start := time.Now()
+		as, err := c.CreateAddresses(ctx, "coffer", n)
+		if err != nil {
+			t.Fatalf("create_address count %d: %v", n, err)
+		}
+		if as[0].Index != next+1 || as[n-1].Index != next+uint32(n) {
+			t.Fatalf("create_address count %d: indexes %d to %d after %d", n, as[0].Index, as[n-1].Index, next)
+		}
+		next = as[n-1].Index
+		t.Logf("create_address count %d: indexes %d to %d, consecutive, in %v (the client's timeout is 5 s)", n, as[0].Index, next, time.Since(start).Round(time.Millisecond))
+	}
+	start := time.Now()
+	if err := c.RescanBlockchain(ctx); err != nil {
+		t.Fatalf("rescan_blockchain after %v: %v", time.Since(start).Round(time.Second), err)
+	}
+	t.Logf("rescan_blockchain answered after %v", time.Since(start).Round(time.Second))
+	if transfers, err = c.GetTransfers(ctx, []uint32{1}); err != nil {
+		t.Fatal(err)
+	}
+	if restore <= 2221449 && len(transfers) == 0 {
+		t.Fatal("after the rescan the spike's payment to subaddress 1 is gone")
+	}
+	t.Logf("after the rescan: %d incoming transfer(s) to index 1", len(transfers))
 
 	// 3. kill -9: the supervisor restarts wallet-rpc and Init reopens the wallet.
 	first := r.sup.Status().PID
