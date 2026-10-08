@@ -4,7 +4,7 @@
  */
 import type { PluginContext } from "emdash/plugin";
 
-import { PRESETS, type Speed } from "./core/constants";
+import { PRESETS, SILENT_MS, type Speed } from "./core/constants";
 import { ensureCron } from "./housekeeping";
 import { CURRENCIES, isCurrency } from "./rates";
 import { KV, SETTING, pool } from "./store";
@@ -14,7 +14,6 @@ import { POOL_TARGET } from "./sync/protocol";
 
 /** The release host arrives in phase 09. ".invalid" never resolves, so a copied command fails instead of running. */
 export const INSTALL_URL = "https://REPLACE-RELEASE-HOST.invalid/install.sh";
-export const SILENT_MS = 5 * 60_000;
 export const PAGE = "/payments";
 export const WIDGET = "widget:xmr-status";
 

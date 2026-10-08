@@ -23,6 +23,10 @@ export const FINAL_DEPTH = 10;
 /** A settled payment knocked out by a reorg must be mined again within this many blocks, or it goes to review. */
 export const RECONFIRM_BLOCKS = 5;
 
+/** The wallet host counts as silent when its last sync is older than this (spec change 2): the admin alert shows and
+ * checkout refuses (spec change 16). */
+export const SILENT_MS = 5 * 60_000;
+
 /** Tips settle at or above this many atomic units (0.0001 XMR). */
 export const DUST_ATOMIC = 100_000_000n;
 

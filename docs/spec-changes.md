@@ -281,6 +281,7 @@ Proposal (smallest):
 - **Bridge (optional):** don't send a sync until wallet-rpc's height is within a few blocks of the node's. It needs a node call the bridge already makes for the cross-check.
 
 Effect on the admin budget: none. Trust contract: none (a new domain error code, if chosen).
+Implemented in session 3j (2026-10-08), with the bridge part skipped (Wyatt): `bridge/sync` stores `max(stored, reported)` and judges snapshots at that height; checkout returns `WALLET_HOST_SILENT` when the bridge never synced or its last sync is more than 5 minutes old, checked after the product lookup and before the price request, and otherwise uses the last sync's height with no estimate. Spec text to fold in, API contracts, checkout errors: `{ "error": { "code": "PRODUCT_NOT_FOUND | RATE_UNAVAILABLE | NO_ADDRESS_AVAILABLE | TOO_MANY_OPEN | WALLET_HOST_SILENT" } }`, with: "`WALLET_HOST_SILENT`: the wallet host hasn't synced for over 5 minutes (the admin page shows the same alert), so the site can't be sure of the chain height an invoice's deadline is set from."
 
 ## 17. A reinstall's restore height  (status: accepted, 2026-10-08; option (a), recommended, open to Wyatt's override before implementation)
 Found in: phase 03 session 3i.

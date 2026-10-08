@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
-import { MAX_OPEN_TOTAL, MAX_PER_CLIENT } from "../../src/checkout";
+import { MAX_OPEN_TOTAL, MAX_PER_CLIENT, checkoutHeight } from "../../src/checkout";
+import { SILENT_MS } from "../../src/core/constants";
 import { type Invoice, newInvoice } from "../../src/core/invoice";
 import { PUBLIC_KEYS, bytesOf, signedHeaders } from "../sync/helpers";
 
@@ -20,8 +21,11 @@ const krakenBody = (pair: string, price: string) => JSON.stringify({ error: [], 
 const ADDR = (i: number) => `7${String(i).padStart(94, "B")}`;
 const H0 = 3_000_000;
 
-async function setup(opts: { pool?: number; products?: boolean } = {}) {
+async function setup(opts: { pool?: number; products?: boolean; lastSyncAgo?: number | null } = {}) {
 	host = await createPluginRuntimeTestHost();
+	// A wallet host that synced recently, unless a test says otherwise (null: never synced).
+	const ago = opts.lastSyncAgo === undefined ? 30_000 : opts.lastSyncAgo;
+	if (ago !== null) await host.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - ago, version: 1, outdated: false });
 	if (opts.products !== false) {
 		await host.fixtures.collection({ slug: "products", label: "Products", fields: [{ slug: "title", label: "Title", type: "string" }, { slug: "price", label: "Price", type: "number" }] } as never);
 		for (const [slug, price, status] of [["handbook", 12, "published"], ["ebook", 19.99, "published"], ["draft-item", 5, "draft"], ["free", 0, "published"], ["odd", 19.999, "published"]] as const) {
@@ -115,6 +119,25 @@ describe("checkout", () => {
 		expect(await checkout({ kind: "product", product: "handbook" })).toEqual({ error: { code: "NO_ADDRESS_AVAILABLE" } });
 	});
 
+	it("WALLET_HOST_SILENT when the bridge never synced or last synced over 5 minutes ago: no price request, nothing claimed (spec change 16)", async () => {
+		for (const lastSyncAgo of [null, 6 * 60_000]) {
+			const h = await setup({ lastSyncAgo });
+			expect(await checkout({ kind: "product", product: "handbook" })).toEqual({ error: { code: "WALLET_HOST_SILENT" } });
+			expect(h.http.requests()).toEqual([]);
+			expect(await h.inspect.storage.list("invoices")).toEqual([]);
+			expect(await h.inspect.storage.get("pool", "1")).toMatchObject({ status: "free" });
+			await h.dispose();
+			host = undefined;
+		}
+	});
+
+	it("the invoice's createdHeight is the last sync's height, never an estimate", async () => {
+		const h = await setup({ lastSyncAgo: 4 * 60_000 });
+		await h.http.respond(KRAKEN("USD"), new Response(krakenBody("USD", "150")));
+		await checkout({ kind: "product", product: "handbook" });
+		expect((await h.inspect.storage.list<Invoice>("invoices"))[0].data).toMatchObject({ createdHeight: H0, expiresHeight: H0 + 18 });
+	});
+
 	it("INVALID_REQUEST for anything but a well-formed product checkout", async () => {
 		await setup();
 		for (const body of [null, [], {}, { kind: "tip" }, { kind: "order", product: "handbook" }, { kind: "product" }, { kind: "product", product: "a/b" },
@@ -157,6 +180,17 @@ describe("checkout", () => {
 		const buckets = (await h.inspect.kv.get<Record<string, number[]>>("state:buckets")) ?? {};
 		expect(Object.keys(buckets)).toHaveLength(2);
 		expect(JSON.stringify(buckets)).not.toContain("203.0.113"); // hashed, never raw IPs
+	});
+});
+
+describe("checkoutHeight", () => {
+	const bridge = { height: H0, lastSyncAt: 1_790_000_000_000, version: 1, outdated: false };
+	it("the stored height while the last sync is at most 5 minutes old, null after that or without a sync", () => {
+		expect(SILENT_MS).toBe(5 * 60_000);
+		expect(checkoutHeight(bridge, bridge.lastSyncAt)).toBe(H0);
+		expect(checkoutHeight(bridge, bridge.lastSyncAt + SILENT_MS)).toBe(H0);
+		expect(checkoutHeight(bridge, bridge.lastSyncAt + SILENT_MS + 1)).toBeNull();
+		expect(checkoutHeight(null, bridge.lastSyncAt)).toBeNull();
 	});
 });
 

@@ -4,14 +4,14 @@
  */
 import type { PluginContext } from "emdash/plugin";
 
-import { type Speed, PRESETS } from "./core/constants";
+import { type Speed, PRESETS, SILENT_MS } from "./core/constants";
 import { type Invoice, newInvoice } from "./core/invoice";
 import { atomicToXmr, priceToMinor } from "./core/money";
 import { type Currency, getRate, isCurrency } from "./rates";
 import { KV, SETTING, invoices, pool } from "./store";
 import type { BridgeState } from "./sync/handle";
 
-export type CheckoutErrorCode = "INVALID_REQUEST" | "PRODUCT_NOT_FOUND" | "RATE_UNAVAILABLE" | "NO_ADDRESS_AVAILABLE" | "TOO_MANY_OPEN";
+export type CheckoutErrorCode = "INVALID_REQUEST" | "PRODUCT_NOT_FOUND" | "RATE_UNAVAILABLE" | "NO_ADDRESS_AVAILABLE" | "TOO_MANY_OPEN" | "WALLET_HOST_SILENT";
 export type CheckoutResponse =
 	| { token: string; address: string; amountAtomic: string; amountXmr: string; uri: string; expiresAt: string; status: "new" }
 	| { error: { code: CheckoutErrorCode } };
@@ -23,7 +23,15 @@ export const MAX_PER_CLIENT = 5;
 const BUCKET_WINDOW_MS = 30 * 60_000;
 const MAX_BUCKETS = 500;
 const CLAIM_ATTEMPTS = 10;
-const BLOCK_MS = 120_000;
+
+/**
+ * The chain height an invoice is made at: the last sync's, while the wallet host is not silent. null otherwise, and
+ * checkout refuses: an estimate after a silence was 35 blocks low in 3i, and an expiresHeight that is too low can turn
+ * a payment made in time into a late one (spec change 16).
+ */
+export function checkoutHeight(bridge: BridgeState | null, now: number): number | null {
+	return bridge && now - bridge.lastSyncAt <= SILENT_MS ? bridge.height : null;
+}
 
 const fail = (code: CheckoutErrorCode): CheckoutResponse => ({ error: { code } });
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -130,6 +138,9 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 	const fiatMinor = entry && entry.status === "published" ? priceToMinor(entry.data.price) : null;
 	if (!entry || fiatMinor === null) return fail("PRODUCT_NOT_FOUND");
 
+	const chainHeight = checkoutHeight(await ctx.kv.get<BridgeState>(KV.bridge), now);
+	if (chainHeight === null) return fail("WALLET_HOST_SILENT");
+
 	const currencySetting = await ctx.settings.get<string>(SETTING.currency);
 	const currency: Currency = isCurrency(currencySetting) ? currencySetting : "USD";
 	const speedSetting = await ctx.settings.get<string>(SETTING.speed);
@@ -137,9 +148,6 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 	const rate = await getRate(ctx, currency, now);
 	if (!rate) return fail("RATE_UNAVAILABLE");
 
-	// Chain height now: the last sync's height plus the blocks since (if the bridge has been quiet).
-	const bridge = await ctx.kv.get<BridgeState>(KV.bridge);
-	const chainHeight = bridge ? bridge.height + Math.max(0, Math.floor((now - bridge.lastSyncAt) / BLOCK_MS)) : 0;
 	const title = typeof entry.data.title === "string" ? entry.data.title.slice(0, 100) : "Order";
 
 	const inv = await claimAndStore(ctx, (row) =>
