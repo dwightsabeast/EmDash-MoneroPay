@@ -27,6 +27,10 @@ export const RECONFIRM_BLOCKS = 5;
  * checkout refuses (spec change 16). */
 export const SILENT_MS = 5 * 60_000;
 
+/** A reinstall's suggested restore height is this far below the oldest watched invoice's createdHeight (about a day),
+ * because createdHeight runs high when blocks come slower than every 2 minutes (spec change 17). */
+export const RESTORE_MARGIN_BLOCKS = 720;
+
 /** Tips settle at or above this many atomic units (0.0001 XMR). */
 export const DUST_ATOMIC = 100_000_000n;
 

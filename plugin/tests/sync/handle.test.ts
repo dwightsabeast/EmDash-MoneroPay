@@ -1,7 +1,8 @@
 // handleSync end to end against an in-memory store: pairing, pool top-up, snapshots, seq replays, the watch list.
 import { describe, expect, it } from "vitest";
 
-import { newInvoice } from "../../src/core/invoice";
+import { RESTORE_MARGIN_BLOCKS } from "../../src/core/constants";
+import { type Invoice, newInvoice } from "../../src/core/invoice";
 import { handleSync } from "../../src/sync/handle";
 import { PAIRING_TTL_MS, newPairingCode } from "../../src/sync/pairing";
 import { PAIR_MAX_BYTES } from "../../src/sync/protocol";
@@ -99,6 +100,30 @@ describe("pairing", () => {
 		expect(bytesOf(body).length).toBeGreaterThan(PAIR_MAX_BYTES);
 		expect(errorCode(await send(store, body))).toBe("NOT_PAIRED");
 		expect(store.pairing?.used).toBe(false);
+	});
+
+	it("the pairing response suggests a restore height: the oldest watched invoice's createdHeight minus a margin (spec change 17)", async () => {
+		expect(RESTORE_MARGIN_BLOCKS).toBe(720);
+		const inv = (id: string, index: number, chainHeight: number, now = T0): Invoice =>
+			({ ...newInvoice({ id, token: "tok", kind: "product", fiatMinor: 1200n, currency: "USD", rate: { minor: 15000n, source: "t" }, speed: "standard", subaddress: ADDR(index), addrIndex: index, now, chainHeight }) });
+		const paired = async (invoices: Invoice[]) => {
+			const store = new MemoryStore();
+			const { code, state } = await newPairingCode(T0);
+			store.pairing = state;
+			for (const i of invoices) store.invoices.set(i.id, i);
+			const out = await send(store, syncBody({ pair: { code, publicKey: PUBLIC_KEYS.test1 } }));
+			return { store, response: out.response };
+		};
+		// Nothing watched: no suggestion, so the installer uses today.
+		expect((await paired([])).response).not.toHaveProperty("restoreHeight");
+		// Two open invoices and one expired three days ago (no longer watched): the older open one counts.
+		const old = { ...inv("inv_old", 3, H0 - 5000, T0 - 3 * 86_400_000), status: "expired" as const };
+		const { store, response } = await paired([inv("inv_a", 1, H0 + 100), inv("inv_b", 2, H0 + 50), old]);
+		expect(response).toMatchObject({ ok: true, restoreHeight: H0 + 50 - RESTORE_MARGIN_BLOCKS });
+		// Ordinary syncs never carry it.
+		expect((await send(store, syncBody({ seq: T0 + 1 }), { now: T0 + 1000 })).response).not.toHaveProperty("restoreHeight");
+		// Never below 0.
+		expect((await paired([inv("inv_low", 1, 100)])).response).toMatchObject({ restoreHeight: 0 });
 	});
 
 	it("a new pairing replaces the old key", async () => {

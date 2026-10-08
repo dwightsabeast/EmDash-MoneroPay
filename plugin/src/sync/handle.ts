@@ -2,6 +2,7 @@
  * bridge/sync, step by step in the spec's order, against a storage interface (session 2d wires it to ctx.storage and
  * ctx.kv and declares the route). Returns the response body and the lifecycle events for the caller to record.
  */
+import { RESTORE_MARGIN_BLOCKS } from "../core/constants";
 import type { Invoice, InvoiceEvent } from "../core/invoice";
 import { isWatched } from "../core/watch";
 import { mergeSnapshot } from "./merge";
@@ -52,6 +53,9 @@ export interface SyncSuccess {
 	/** Spec change 15: a bridge whose wallet lacks this index catches up (creates addresses, rescans) before it reports. */
 	poolTop: number;
 	watch: number[];
+	/** Spec change 17, on the response that completes a pairing only: scan from here when creating a wallet, so a
+	 * reinstall finds payments to invoices made before it. Absent when nothing is watched. */
+	restoreHeight?: number;
 }
 export type SyncResponse = SyncSuccess | { error: { code: SyncErrorCode } };
 
@@ -125,8 +129,12 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 		for (const event of merged.events) events.push({ invoiceId: inv.id, event });
 	}
 
-	// 5. Response: pool status, the pool's highest index and the watch list.
-	const watch = (await store.watchCandidates(now)).filter((inv) => isWatched(inv, now)).map((inv) => inv.addrIndex);
-	const response: SyncSuccess = { ok: true, poolFree: await store.poolFreeCount(), poolTarget: POOL_TARGET, poolTop: await store.poolTop(), watch: [...new Set(watch)].sort((a, b) => a - b) };
+	// 5. Response: pool status, the pool's highest index and the watch list; on pairing, a suggested restore height.
+	const watched = (await store.watchCandidates(now)).filter((inv) => isWatched(inv, now));
+	const watch = [...new Set(watched.map((inv) => inv.addrIndex))].sort((a, b) => a - b);
+	const response: SyncSuccess = { ok: true, poolFree: await store.poolFreeCount(), poolTarget: POOL_TARGET, poolTop: await store.poolTop(), watch };
+	if (paired && watched.length > 0) {
+		response.restoreHeight = Math.max(0, Math.min(...watched.map((inv) => inv.createdHeight)) - RESTORE_MARGIN_BLOCKS);
+	}
 	return { response, events, ...(paired ? { paired } : {}) };
 }
