@@ -51,6 +51,7 @@ export class MemoryStore implements SyncStore {
 	async poolHas(i: number) { return this.pool.has(i); }
 	async poolAdd(row: { addrIndex: number; address: string }) { this.pool.set(row.addrIndex, { ...row, status: "free" }); }
 	async poolFreeCount() { return [...this.pool.values()].filter((r) => r.status === "free").length; }
+	async poolTop() { return Math.max(0, ...this.pool.keys()); }
 	async invoiceForIndex(i: number) {
 		const row = this.pool.get(i);
 		return row?.invoiceId ? (this.invoices.get(row.invoiceId) ?? null) : null;

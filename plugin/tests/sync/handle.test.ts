@@ -141,6 +141,15 @@ describe("ordinary syncs", () => {
 		expect(store.pool.get(3)?.address).toBe(ADDR(3)); // an existing index is never overwritten
 	});
 
+	it("reports poolTop, the highest index the site holds: 0 when empty, claimed rows and this request's addresses included", async () => {
+		const store = pairedStore();
+		expect((await send(store, syncBody())).response).toMatchObject({ ok: true, poolTop: 0 });
+		const out = await send(store, syncBody({ seq: T0 + 1, addresses: [9, 12].map((i) => ({ index: i, address: ADDR(i) })) }), { now: T0 + 1000 });
+		expect(out.response).toMatchObject({ poolTop: 12 });
+		store.pool.set(261, { addrIndex: 261, address: ADDR(261), status: "claimed", invoiceId: "inv_far" });
+		expect((await send(store, syncBody({ seq: T0 + 2 }), { now: T0 + 2000 })).response).toMatchObject({ poolTop: 261 });
+	});
+
 	it("applies a snapshot to the invoice on that subaddress, ignores unknown indexes, and returns the watch list", async () => {
 		const store = pairedStore();
 		await send(store, syncBody({ addresses: [1, 2].map((i) => ({ index: i, address: ADDR(i) })) }));

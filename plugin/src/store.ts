@@ -70,6 +70,10 @@ export class CtxSyncStore implements SyncStore {
 	poolFreeCount() {
 		return pool(this.ctx).count({ status: "free" });
 	}
+	async poolTop() {
+		const top = await pool(this.ctx).query({ orderBy: { addrIndex: "desc" }, limit: 1 });
+		return top.items[0]?.data.addrIndex ?? 0;
+	}
 	async invoiceForIndex(index: number) {
 		const row = await pool(this.ctx).get(String(index));
 		return row?.invoiceId ? invoices(this.ctx).get(row.invoiceId) : null;

@@ -35,6 +35,8 @@ export interface SyncStore {
 	poolHas(index: number): Promise<boolean>;
 	poolAdd(row: { addrIndex: number; address: string }): Promise<void>;
 	poolFreeCount(): Promise<number>;
+	/** The highest subaddress index in the pool (free or claimed), 0 when empty. Every invoice's index is a pool row. */
+	poolTop(): Promise<number>;
 	/** The invoice that claimed this subaddress index, if any. */
 	invoiceForIndex(index: number): Promise<Invoice | null>;
 	saveInvoice(inv: Invoice): Promise<void>;
@@ -46,6 +48,8 @@ export interface SyncSuccess {
 	ok: true;
 	poolFree: number;
 	poolTarget: number;
+	/** Spec change 15: a bridge whose wallet lacks this index catches up (creates addresses, rescans) before it reports. */
+	poolTop: number;
 	watch: number[];
 }
 export type SyncResponse = SyncSuccess | { error: { code: SyncErrorCode } };
@@ -118,8 +122,8 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 		for (const event of merged.events) events.push({ invoiceId: inv.id, event });
 	}
 
-	// 5. Response: pool status and the watch list.
+	// 5. Response: pool status, the pool's highest index and the watch list.
 	const watch = (await store.watchCandidates(now)).filter((inv) => isWatched(inv, now)).map((inv) => inv.addrIndex);
-	const response: SyncSuccess = { ok: true, poolFree: await store.poolFreeCount(), poolTarget: POOL_TARGET, watch: [...new Set(watch)].sort((a, b) => a - b) };
+	const response: SyncSuccess = { ok: true, poolFree: await store.poolFreeCount(), poolTarget: POOL_TARGET, poolTop: await store.poolTop(), watch: [...new Set(watch)].sort((a, b) => a - b) };
 	return { response, events, ...(paired ? { paired } : {}) };
 }

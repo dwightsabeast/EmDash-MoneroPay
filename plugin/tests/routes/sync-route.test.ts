@@ -59,6 +59,14 @@ describe("bridge/sync route", () => {
 		expect(await h.inspect.kv.get("state:bridge")).toMatchObject({ height: H0, version: 1, outdated: false });
 	});
 
+	it("reports poolTop from storage: numeric order, claimed rows included", async () => {
+		const h = await paired();
+		expect((await sync({})).json).toMatchObject({ data: { ok: true, poolTop: 0 } });
+		await claimedInvoice(h, 100);
+		const r = await sync({ addresses: [9, 12].map((i) => ({ index: i, address: ADDR(i) })) });
+		expect(r.json).toMatchObject({ data: { ok: true, poolFree: 2, poolTop: 100 } }); // "9" > "100" as text
+	});
+
 	it("never resets a claimed pool row when the bridge re-sends its address", async () => {
 		const h = await paired();
 		await claimedInvoice(h, 4);
