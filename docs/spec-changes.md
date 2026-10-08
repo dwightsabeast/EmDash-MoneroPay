@@ -267,7 +267,7 @@ Proposal (smallest that fixes 1–3):
 Effect on the admin budget: none. No setting or step; a reinstall just takes the time of one rescan.
 Effect on the trust contract: none. It adds a response field on an existing route; no capability, host, route or storage change.
 
-## 16. The height the site relies on can be far off: a fresh wallet's first sync, and checkout's estimate after a silence  (status: proposed, 2026-10-08)
+## 16. The height the site relies on can be far off: a fresh wallet's first sync, and checkout's estimate after a silence  (status: accepted, 2026-10-08; sub-choice recorded as the recommended one, refuse checkout while the bridge is silent, open to Wyatt's override before implementation)
 Found in: phase 03 session 3i (stagenet, dev box). Evidence: `~/xmr-pay-dev-data/3i-status-output.txt` (journal), `3h-watch.txt`, the `far3` invoice in the dev database.
 Spec says: `bridge/sync` carries the wallet's `height`, which the plugin stores as the chain height (`state:bridge`). Checkout sets `createdHeight` from it, and `expiresHeight` = that + 15 + 3 blocks. A payment reported after the deadline counts if it was mined at or below `expiresHeight` (Lifecycle, "On time or late").
 Evidence:
@@ -282,7 +282,7 @@ Proposal (smallest):
 
 Effect on the admin budget: none. Trust contract: none (a new domain error code, if chosen).
 
-## 17. A reinstall's restore height  (status: proposed, 2026-10-08)
+## 17. A reinstall's restore height  (status: accepted, 2026-10-08; option (a), recommended, open to Wyatt's override before implementation)
 Found in: phase 03 session 3i.
 Spec says: the installer creates the wallet "with a restore height of today (no full-chain scan)" (Admin setup, step 3). `xmr-bridge install --restore-height` defaults to today.
 Evidence: spec change 15's catch-up rescans from the wallet's restore height. In 3i, `far4` was paid and mined while the bridge was uninstalled. The rescan found it only because the reinstall passed `--restore-height 2222850`. With the default it would have been missed, and the invoice would have expired unpaid.

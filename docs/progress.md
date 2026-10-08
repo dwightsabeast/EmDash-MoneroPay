@@ -1011,3 +1011,10 @@ Next step:
 2. The release-age excludes are deleted (due today).
 3. Wyatt decides spec changes 16 and 17.
 4. Phase 04 (admin page), which also picks up 3h's notes: label `confirmations: 0` on review invoices; an admin path to clear a false `reversed`.
+
+## 2026-10-08 · Phase 03 · Wrap-up: spec changes 16 and 17 accepted, push, release-age excludes deferred to 16:48 UTC
+
+- **Spec changes 16 and 17 accepted by Wyatt.** Recorded with the recommended sub-choices: for 16, checkout refuses while the bridge is silent; for 17, option (a). Wyatt may override either before implementation. `decisions.md` rows added.
+- **Release-age excludes not deleted yet.** The newest excluded package, `emdash@1.1.0`, was published 2026-10-01T16:47:35Z (`npm view … time`); `plugin-cli`, `admin` and others came minutes earlier, and four were published on 2026-09-27. So the 7-day rule passes for all of them only at **2026-10-08T16:48Z**. Deleting earlier would make the strict `pnpm install` refuse them.
+- **Still due, after 16:48 UTC today:** delete the whole `minimumReleaseAgeExclude` block and its comment from `plugin/pnpm-workspace.yaml` and `spikes/xmr-spike/pnpm-workspace.yaml`, run `pnpm install` in each (one at a time), confirm both succeed with `pnpm-lock.yaml` unchanged, then commit, and remove the reminders.
+- Next step after that: phase 04 (admin page), planned with spec changes 16 and 17. They touch the plugin's sync, checkout and the pairing response, and the bridge's installer; Wyatt to say whether they go into phase 04 or a session 3j first.
