@@ -25,27 +25,29 @@ var codeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 // ErrBadCode: the code isn't the 22-character form the admin page shows.
 var ErrBadCode = errors.New("that isn't a pairing code: copy the 22-character code from the site's Connect wallet host button")
 
-// Pair pairs with code and saves the new key to keyFile. height is the chain height to report (0 if unknown).
-func Pair(ctx context.Context, site Sender, code, keyFile string, height uint64, now time.Time) error {
+// Pair pairs with code and saves the new key to keyFile. height is the chain height to report (0 if unknown). It
+// returns the site's suggested restore height for a new wallet, 0 when the site watches no invoices (spec change 17).
+func Pair(ctx context.Context, site Sender, code, keyFile string, height uint64, now time.Time) (uint64, error) {
 	if !codeRE.MatchString(code) {
-		return ErrBadCode
+		return 0, ErrBadCode
 	}
 	k, err := syncsign.NewKey()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	body := syncclient.Body{V: syncclient.ProtocolV, Seq: now.UnixMilli(), Height: height,
 		Pair: &syncclient.Pair{Code: code, PublicKey: syncsign.PublicKeyText(k)}}
-	if _, err := site.Send(ctx, k, body); err != nil {
+	resp, err := site.Send(ctx, k, body)
+	if err != nil {
 		var se *syncclient.Error
 		if errors.As(err, &se) && (se.Code == "BAD_SIGNATURE" || se.Code == "NOT_PAIRED" || se.Code == "PAIRING_REJECTED") {
 			// A spent or expired code: the site no longer reads the body before the signature, so it can't say more.
-			return &syncclient.Error{Code: se.Code, Status: se.Status, Hint: "the pairing code is used or expired, or mistyped. Press Connect wallet host again for a new code (valid 15 minutes)"}
+			return 0, &syncclient.Error{Code: se.Code, Status: se.Status, Hint: "the pairing code is used or expired, or mistyped. Press Connect wallet host again for a new code (valid 15 minutes)"}
 		}
-		return err
+		return 0, err
 	}
 	if err := syncsign.SaveKey(keyFile, k); err != nil {
-		return fmt.Errorf("paired, but the key couldn't be saved (pair again): %w", err)
+		return 0, fmt.Errorf("paired, but the key couldn't be saved (pair again): %w", err)
 	}
-	return nil
+	return resp.RestoreHeight, nil
 }

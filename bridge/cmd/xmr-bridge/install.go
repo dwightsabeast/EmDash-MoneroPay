@@ -72,7 +72,7 @@ func installSteps(log *slog.Logger) installer.Steps {
 		SameMachine:      installer.NewDetector().Signals,
 		InstallWalletRPC: func(ctx context.Context, binDir string) error { return installWalletRPC(ctx, binDir, log) },
 		CreateWallet:     createWallet,
-		Pair: func(ctx context.Context, cfg config.Config, code string) error {
+		Pair: func(ctx context.Context, cfg config.Config, code string) (uint64, error) {
 			var height uint64
 			if info, err := noderpc.GetInfo(ctx, cfg.Node, nil); err == nil {
 				height = info.Height

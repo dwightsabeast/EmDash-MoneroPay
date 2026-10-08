@@ -2,6 +2,7 @@ package installer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,8 @@ func TestInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config.Config{Site: "https://shop.example", Network: config.Stagenet, Address: stagenetAddr, Node: "http://127.0.0.1:38081", DataDir: p.DataDir(), AutoUpdate: true}
+	// The restore height is written down: with no flag and nothing suggested by the site, the node's height (today).
+	want := config.Config{Site: "https://shop.example", Network: config.Stagenet, Address: stagenetAddr, Node: "http://127.0.0.1:38081", DataDir: p.DataDir(), RestoreHeight: 2222000, AutoUpdate: true}
 	if cfg != want {
 		t.Fatalf("config\n got %+v\nwant %+v", cfg, want)
 	}
@@ -65,7 +67,8 @@ func TestInstall(t *testing.T) {
 	if !sys.has("useradd xmr-bridge /var/lib/xmr-bridge") {
 		t.Fatalf("calls %v", sys.calls)
 	}
-	if strings.Join(st.order, ",") != "wallet-rpc,wallet,pair" {
+	// Pairing comes before the wallet, so the site's suggested restore height can be used (spec change 17).
+	if strings.Join(st.order, ",") != "wallet-rpc,pair,wallet" {
 		t.Fatalf("order %v", st.order)
 	}
 	if st.walletCred == nil || st.walletCred.Uid != 991 || st.walletCred.Gid != 991 || st.walletCred.NoSetGroups {
@@ -254,6 +257,78 @@ func TestRunAgain(t *testing.T) {
 	st3 := &fakeSteps{nodes: map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1}}}
 	if err := Install(context.Background(), opts, sys, tty3, st3.steps(sys)); err == nil || !strings.Contains(err.Error(), "uninstall") {
 		t.Fatalf("another address: %v", err)
+	}
+}
+
+func TestRestoreHeight(t *testing.T) {
+	// Spec change 17: the site's suggestion when no --restore-height is given; the flag otherwise, with a warning if
+	// it is newer than the site's oldest watched invoice.
+	for _, c := range []struct {
+		name          string
+		flag, suggest uint64
+		want          uint64
+		warn          bool
+	}{
+		{"suggested", 0, 2221280, 2221280, false},
+		{"none suggested: today", 0, 0, 2222000, false},
+		{"flag below the suggestion", 2220000, 2221280, 2220000, false},
+		{"flag above the suggestion", 2221900, 2221280, 2221900, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			opts, sys, tty, st := harness(t)
+			opts.RestoreHeight, st.suggest = c.flag, c.suggest
+			if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+				t.Fatalf("%v\n%s", err, tty.said.String())
+			}
+			cfg, err := config.Load(opts.Paths.Config())
+			if err != nil || cfg.RestoreHeight != c.want || st.walletCfg.RestoreHeight != c.want {
+				t.Fatalf("restore height: config %d, wallet %d, want %d (%v)", cfg.RestoreHeight, st.walletCfg.RestoreHeight, c.want, err)
+			}
+			if sys.chowned[opts.Paths.Config()] != [2]int{991, 991} {
+				t.Fatal("config not handed to the service account")
+			}
+			if warned := strings.Contains(tty.said.String(), "uninstall --delete-data"); warned != c.warn {
+				t.Fatalf("warning %v, want %v:\n%s", warned, c.warn, tty.said.String())
+			}
+		})
+	}
+}
+
+func TestRestoreHeightKeptWallet(t *testing.T) {
+	// A kept wallet keeps its restore height; when the site's oldest watched invoice is older, the installer says how
+	// to start over, and changes nothing else.
+	opts, sys, tty, st := harness(t)
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		suggest uint64
+		warn    bool
+	}{{2223000, false}, {2221280, true}} {
+		tty2 := &fakeTTY{answers: []string{stagenetAddr}, secrets: []string{viewKey}}
+		st2 := &fakeSteps{nodes: stagenetNode(), suggest: c.suggest}
+		if err := Install(context.Background(), opts, sys, tty2, st2.steps(sys)); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(st2.order, ",") != "pair" {
+			t.Fatalf("steps %v", st2.order)
+		}
+		if cfg, _ := config.Load(opts.Paths.Config()); cfg.RestoreHeight != 2222000 {
+			t.Fatalf("the kept wallet's restore height changed: %d", cfg.RestoreHeight)
+		}
+		if warned := strings.Contains(tty2.said.String(), "uninstall --delete-data"); warned != c.warn {
+			t.Fatalf("suggest %d: warning %v, want %v:\n%s", c.suggest, warned, c.warn, tty2.said.String())
+		}
+	}
+}
+
+func TestWalletFailsAfterPairing(t *testing.T) {
+	// The code is spent by then: the error says to get a new one before running the installer again.
+	opts, sys, tty, st := harness(t)
+	st.walletErr = errors.New("wallet-rpc refused")
+	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
+	if err == nil || !strings.Contains(err.Error(), "wallet-rpc refused") || !strings.Contains(err.Error(), "Connect wallet host") {
+		t.Fatalf("got %v", err)
 	}
 }
 

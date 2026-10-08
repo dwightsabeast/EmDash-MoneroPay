@@ -92,6 +92,9 @@ type Response struct {
 	// PoolTop is the highest subaddress index the site holds, 0 when the site doesn't say (spec change 15).
 	PoolTop uint32
 	Watch   []uint32
+	// RestoreHeight is the site's suggested restore height for a new wallet, on a pairing response only (spec change
+	// 17); 0 when the site doesn't say. A suggestion of 0 reads as 1, so it can never be taken for "today".
+	RestoreHeight uint64
 }
 
 // Error is a refusal by the site (Code is the plugin's or EmDash's code, or HTTP_<status>) with the fix.
@@ -222,11 +225,12 @@ func parse(status int, data []byte) (Response, error) {
 		return Response{}, bad
 	}
 	var d struct {
-		OK         bool  `json:"ok"`
-		PoolFree   *int  `json:"poolFree"`
-		PoolTarget *int  `json:"poolTarget"`
-		PoolTop    int64 `json:"poolTop"`
-		Watch      []int `json:"watch"`
+		OK         bool   `json:"ok"`
+		PoolFree   *int   `json:"poolFree"`
+		PoolTarget *int   `json:"poolTarget"`
+		PoolTop    int64  `json:"poolTop"`
+		Watch      []int  `json:"watch"`
+		Restore    *int64 `json:"restoreHeight"`
 		Error      *struct {
 			Code string `json:"code"`
 		} `json:"error"`
@@ -237,10 +241,13 @@ func parse(status int, data []byte) (Response, error) {
 	if d.Error != nil {
 		return Response{}, &Error{Code: d.Error.Code, Status: status, Hint: hint(d.Error.Code)}
 	}
-	if !d.OK || d.PoolFree == nil || d.PoolTarget == nil || *d.PoolFree < 0 || *d.PoolTarget < 0 || d.PoolTop < 0 || d.PoolTop > 1<<32-1 || d.Watch == nil {
+	if !d.OK || d.PoolFree == nil || d.PoolTarget == nil || *d.PoolFree < 0 || *d.PoolTarget < 0 || d.PoolTop < 0 || d.PoolTop > 1<<32-1 || d.Watch == nil || (d.Restore != nil && *d.Restore < 0) {
 		return Response{}, bad
 	}
 	r := Response{PoolFree: *d.PoolFree, PoolTarget: *d.PoolTarget, PoolTop: uint32(d.PoolTop), Watch: make([]uint32, 0, len(d.Watch))}
+	if d.Restore != nil {
+		r.RestoreHeight = max(uint64(*d.Restore), 1)
+	}
 	for _, w := range d.Watch {
 		if w < 1 || w > 1<<31 {
 			return Response{}, bad

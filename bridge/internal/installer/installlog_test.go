@@ -49,8 +49,8 @@ func TestInstallLog(t *testing.T) {
 func TestInstallLogRecordsAFailure(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	steps := st.steps(sys)
-	steps.Pair = func(context.Context, config.Config, string) error {
-		return errors.New("the site answered PAIRING_REJECTED")
+	steps.Pair = func(context.Context, config.Config, string) (uint64, error) {
+		return 0, errors.New("the site answered PAIRING_REJECTED")
 	}
 	if err := Install(context.Background(), opts, sys, tty, steps); err == nil {
 		t.Fatal("no error")

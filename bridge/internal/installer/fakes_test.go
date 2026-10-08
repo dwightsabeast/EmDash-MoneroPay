@@ -125,6 +125,8 @@ type fakeSteps struct {
 	walletCred *syscall.Credential
 	walletKey  string
 	pairCode   string
+	suggest    uint64 // the restore height the site suggests on pairing (0: none)
+	walletErr  error
 }
 
 func (s *fakeSteps) steps(sys *fakeSystem) Steps {
@@ -144,13 +146,16 @@ func (s *fakeSteps) steps(sys *fakeSystem) Steps {
 		CreateWallet: func(_ context.Context, cfg config.Config, view secret.String, cred *syscall.Credential) error {
 			s.order = append(s.order, "wallet")
 			s.walletCfg, s.walletCred, s.walletKey = cfg, cred, view.Reveal()
+			if s.walletErr != nil {
+				return s.walletErr
+			}
 			os.MkdirAll(filepath.Join(cfg.DataDir, "wallet"), 0o700)
 			return os.WriteFile(filepath.Join(cfg.DataDir, "wallet", "shop.keys"), []byte("x"), 0o600)
 		},
-		Pair: func(_ context.Context, cfg config.Config, c string) error {
+		Pair: func(_ context.Context, cfg config.Config, c string) (uint64, error) {
 			s.order = append(s.order, "pair")
 			s.pairCode = c
-			return os.WriteFile(filepath.Join(cfg.DataDir, "bridge.key"), []byte("k"), 0o600)
+			return s.suggest, os.WriteFile(filepath.Join(cfg.DataDir, "bridge.key"), []byte("k"), 0o600)
 		},
 	}
 }

@@ -25,6 +25,11 @@ const testCode = "AbCdEfGhIjKlMnOpQrSt_-"
 
 // pairingSite accepts testCode once, verifying the request with the key it carries, as the plugin does.
 func pairingSite(t *testing.T) (*httptest.Server, *string) {
+	return pairingSiteReplying(t, `{"success":true,"data":{"ok":true,"poolFree":0,"poolTarget":50,"watch":[]}}`)
+}
+
+// pairingSiteReplying is pairingSite with the given reply to the accepted pairing.
+func pairingSiteReplying(t *testing.T, okReply string) (*httptest.Server, *string) {
 	var paired string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -38,7 +43,7 @@ func pairingSite(t *testing.T) (*httptest.Server, *string) {
 			sig, _ := base64.StdEncoding.DecodeString(r.Header.Get("x-xmr-sig"))
 			if ed25519.Verify(pub, syncsign.Message(r.Header.Get("x-xmr-ts"), body), sig) {
 				paired = b.Pair.PublicKey
-				reply = `{"success":true,"data":{"ok":true,"poolFree":0,"poolTarget":50,"watch":[]}}`
+				reply = okReply
 			}
 		}
 		io.WriteString(w, reply)
@@ -78,6 +83,26 @@ func TestPairCommand(t *testing.T) {
 	}
 	if code, _, _ := run(context.Background(), "pair", "--config", p); code != 2 {
 		t.Fatal("pair without --code accepted")
+	}
+}
+
+func TestPairCommandRestoreHeightWarning(t *testing.T) {
+	// Spec change 17: re-pairing a wallet that scans from after the site's oldest watched invoice says how to start
+	// over. A wallet whose restore height wasn't written down (0) gets no warning.
+	for _, c := range []struct {
+		restore uint64
+		warn    bool
+	}{{2222000, true}, {2221000, false}, {0, false}} {
+		srv, _ := pairingSiteReplying(t, `{"success":true,"data":{"ok":true,"poolFree":0,"poolTarget":50,"watch":[7],"restoreHeight":2221280}}`)
+		p, cfg := writeConfig(t, srv.URL)
+		cfg.RestoreHeight = c.restore
+		if err := config.Save(p, cfg); err != nil {
+			t.Fatal(err)
+		}
+		code, out, errOut := run(context.Background(), "pair", "--config", p, "--code", testCode)
+		if code != 0 || strings.Contains(out, "uninstall --delete-data") != c.warn {
+			t.Fatalf("restore %d: %d %q %q", c.restore, code, out, errOut)
+		}
 	}
 }
 

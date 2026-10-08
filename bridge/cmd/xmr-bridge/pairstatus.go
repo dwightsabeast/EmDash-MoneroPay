@@ -68,7 +68,8 @@ func cmdPair(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		height = info.Height
 	}
 	cancel()
-	if err := pairing.Pair(ctx, siteClient(cfg), *code, keyFile(cfg), height, time.Now()); err != nil {
+	suggested, err := pairing.Pair(ctx, siteClient(cfg), *code, keyFile(cfg), height, time.Now())
+	if err != nil {
 		fmt.Fprintf(stderr, "xmr-bridge: pairing failed: %v\n", err)
 		return 1
 	}
@@ -79,6 +80,9 @@ func cmdPair(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	fmt.Fprintf(stdout, "Paired with %s. The site's Monero payments page now shows the wallet host as connected.\n", cfg.Site)
+	if w := installer.RestoreHeightWarning(cfg.RestoreHeight, suggested); w != "" {
+		fmt.Fprintln(stdout, w)
+	}
 	return 0
 }
 

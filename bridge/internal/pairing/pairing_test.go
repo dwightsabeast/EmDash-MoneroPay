@@ -25,7 +25,7 @@ func (s *site) Send(_ context.Context, k ed25519.PrivateKey, b syncclient.Body) 
 	if s.fail != nil {
 		return syncclient.Response{}, s.fail
 	}
-	return syncclient.Response{PoolFree: 0, PoolTarget: 50, Watch: []uint32{}}, nil
+	return syncclient.Response{PoolFree: 0, PoolTarget: 50, Watch: []uint32{}, RestoreHeight: 2221280}, nil
 }
 
 const code = "AbCdEfGhIjKlMnOpQrSt_-"
@@ -34,8 +34,12 @@ func TestPair(t *testing.T) {
 	s := &site{}
 	keyFile := filepath.Join(t.TempDir(), "bridge.key")
 	now := time.Unix(1790000000, 0)
-	if err := Pair(context.Background(), s, code, keyFile, 2222000, now); err != nil {
+	suggested, err := Pair(context.Background(), s, code, keyFile, 2222000, now)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if suggested != 2221280 {
+		t.Fatalf("the site's suggested restore height wasn't returned: %d", suggested)
 	}
 	if s.got.Pair == nil || s.got.Pair.Code != code || s.got.Pair.PublicKey != syncsign.PublicKeyText(s.key) {
 		t.Fatalf("pair field %+v", s.got.Pair)
@@ -54,7 +58,7 @@ func TestFailedPairingKeepsTheOldKey(t *testing.T) {
 	old, _ := syncsign.NewKey()
 	syncsign.SaveKey(keyFile, old)
 	s := &site{fail: &syncclient.Error{Code: "PAIRING_REJECTED"}}
-	err := Pair(context.Background(), s, code, keyFile, 1, time.Now())
+	_, err := Pair(context.Background(), s, code, keyFile, 1, time.Now())
 	var e *syncclient.Error
 	if !errors.As(err, &e) || e.Code != "PAIRING_REJECTED" {
 		t.Fatalf("got %v", err)
@@ -70,7 +74,7 @@ func TestFailedPairingKeepsTheOldKey(t *testing.T) {
 func TestBadCodeNotSent(t *testing.T) {
 	s := &site{}
 	for _, c := range []string{"", "short", strings.Repeat("A", 23), strings.Repeat("A", 21) + "!", strings.Repeat("A", 21) + " "} {
-		if err := Pair(context.Background(), s, c, filepath.Join(t.TempDir(), "k"), 1, time.Now()); err == nil {
+		if _, err := Pair(context.Background(), s, c, filepath.Join(t.TempDir(), "k"), 1, time.Now()); err == nil {
 			t.Errorf("%q accepted", c)
 		}
 	}
@@ -87,7 +91,7 @@ func TestBadCodeNotSent(t *testing.T) {
 func TestSpentCodeMessage(t *testing.T) {
 	for _, code := range []string{"BAD_SIGNATURE", "NOT_PAIRED", "PAIRING_REJECTED"} {
 		s := &site{fail: &syncclient.Error{Code: code}}
-		err := Pair(context.Background(), s, "AbCdEfGhIjKlMnOpQrSt_-", filepath.Join(t.TempDir(), "k"), 1, time.Now())
+		_, err := Pair(context.Background(), s, "AbCdEfGhIjKlMnOpQrSt_-", filepath.Join(t.TempDir(), "k"), 1, time.Now())
 		var e *syncclient.Error
 		if !errors.As(err, &e) || e.Code != code || !strings.Contains(err.Error(), "used or expired") || !strings.Contains(err.Error(), "Connect wallet host") {
 			t.Errorf("%s: %v", code, err)

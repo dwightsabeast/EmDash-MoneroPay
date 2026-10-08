@@ -63,6 +63,23 @@ func TestPoolTop(t *testing.T) {
 	}
 }
 
+func TestRestoreHeight(t *testing.T) {
+	// Spec change 17: only on a pairing response; absent reads as 0 (no suggestion). A suggestion of 0 reads as 1, so it
+	// can never be taken for "today".
+	for reply, want := range map[string]uint64{
+		okReply: 0,
+		`{"success":true,"data":{"ok":true,"poolFree":41,"poolTarget":50,"watch":[],"restoreHeight":2221280}}`: 2221280,
+		`{"success":true,"data":{"ok":true,"poolFree":41,"poolTarget":50,"watch":[],"restoreHeight":0}}`:       1,
+	} {
+		srv, _ := site(t, 200, reply)
+		k, _ := syncsign.NewKey()
+		resp, err := client(srv).Send(context.Background(), k, Body{V: 1, Seq: 1})
+		if err != nil || resp.RestoreHeight != want {
+			t.Fatalf("%s: RestoreHeight %d, %v", reply, resp.RestoreHeight, err)
+		}
+	}
+}
+
 func TestSend(t *testing.T) {
 	srv, s := site(t, 200, okReply)
 	k, _ := syncsign.NewKey()
@@ -125,20 +142,21 @@ func TestErrors(t *testing.T) {
 		code   string
 		hint   string
 	}{
-		"domain error":      {200, `{"success":true,"data":{"error":{"code":"NOT_PAIRED"}}}`, "NOT_PAIRED", "pair"},
-		"bad signature":     {200, `{"success":true,"data":{"error":{"code":"BAD_SIGNATURE"}}}`, "BAD_SIGNATURE", "pair"},
-		"stale timestamp":   {200, `{"success":true,"data":{"error":{"code":"STALE_TIMESTAMP"}}}`, "STALE_TIMESTAMP", "clock"},
-		"too large":         {413, `{"success":false,"error":{"code":"INVALID_PLUGIN_REQUEST"}}`, "INVALID_PLUGIN_REQUEST", "large"},
-		"401 bearer":        {401, `{"success":false,"error":{"code":"INVALID_TOKEN"}}`, "INVALID_TOKEN", "Authorization"},
-		"403 csrf":          {403, `{"success":false,"error":{"code":"CSRF_REJECTED"}}`, "CSRF_REJECTED", "Origin"},
-		"403 access page":   {403, `<html>Forbidden</html>`, "HTTP_403", "/_emdash/api/plugins/coffer/*"},
-		"login redirect":    {0, "redirect:https://login.example/", "HTTP_302", "login"},
-		"server error":      {502, `bad gateway`, "HTTP_502", ""},
-		"not a sync answer": {200, `{"success":true,"data":{"ok":true,"poolFree":-1,"poolTarget":50,"watch":[]}}`, "BAD_RESPONSE", ""},
-		"watch index 0":     {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"watch":[0]}}`, "BAD_RESPONSE", ""},
-		"negative poolTop":  {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":-1,"watch":[]}}`, "BAD_RESPONSE", ""},
-		"huge poolTop":      {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":4294967296,"watch":[]}}`, "BAD_RESPONSE", ""},
-		"html":              {200, `<html>`, "BAD_RESPONSE", "coffer plugin"},
+		"domain error":           {200, `{"success":true,"data":{"error":{"code":"NOT_PAIRED"}}}`, "NOT_PAIRED", "pair"},
+		"bad signature":          {200, `{"success":true,"data":{"error":{"code":"BAD_SIGNATURE"}}}`, "BAD_SIGNATURE", "pair"},
+		"stale timestamp":        {200, `{"success":true,"data":{"error":{"code":"STALE_TIMESTAMP"}}}`, "STALE_TIMESTAMP", "clock"},
+		"too large":              {413, `{"success":false,"error":{"code":"INVALID_PLUGIN_REQUEST"}}`, "INVALID_PLUGIN_REQUEST", "large"},
+		"401 bearer":             {401, `{"success":false,"error":{"code":"INVALID_TOKEN"}}`, "INVALID_TOKEN", "Authorization"},
+		"403 csrf":               {403, `{"success":false,"error":{"code":"CSRF_REJECTED"}}`, "CSRF_REJECTED", "Origin"},
+		"403 access page":        {403, `<html>Forbidden</html>`, "HTTP_403", "/_emdash/api/plugins/coffer/*"},
+		"login redirect":         {0, "redirect:https://login.example/", "HTTP_302", "login"},
+		"server error":           {502, `bad gateway`, "HTTP_502", ""},
+		"not a sync answer":      {200, `{"success":true,"data":{"ok":true,"poolFree":-1,"poolTarget":50,"watch":[]}}`, "BAD_RESPONSE", ""},
+		"watch index 0":          {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"watch":[0]}}`, "BAD_RESPONSE", ""},
+		"negative poolTop":       {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":-1,"watch":[]}}`, "BAD_RESPONSE", ""},
+		"negative restoreHeight": {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"restoreHeight":-1,"watch":[]}}`, "BAD_RESPONSE", ""},
+		"huge poolTop":           {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":4294967296,"watch":[]}}`, "BAD_RESPONSE", ""},
+		"html":                   {200, `<html>`, "BAD_RESPONSE", "coffer plugin"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -51,7 +51,8 @@ type Steps struct {
 	SameMachine      func(ctx context.Context, site string) []string
 	InstallWalletRPC func(ctx context.Context, binDir string) error
 	CreateWallet     func(ctx context.Context, cfg config.Config, view secret.String, cred *syscall.Credential) error
-	Pair             func(ctx context.Context, cfg config.Config, code string) error
+	// Pair pairs with the site and returns its suggested restore height for a new wallet (0: none).
+	Pair func(ctx context.Context, cfg config.Config, code string) (uint64, error)
 }
 
 // Options are the install command's arguments.
@@ -210,7 +211,8 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	}
 
 	// Run again: the same address keeps its wallet; another address is refused.
-	if prev, err := config.Load(p.Config()); err == nil && prev.Address != addr {
+	prev, prevErr := config.Load(p.Config())
+	if prevErr == nil && prev.Address != addr {
 		return errors.New("this machine already hosts a wallet for another address. Run xmr-bridge uninstall --delete-data first (it deletes the old view-only wallet)")
 	}
 	if err := checkAdminCopy(p); err != nil {
@@ -221,8 +223,18 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	if err != nil {
 		return err
 	}
+	// A kept wallet keeps its restore height (0 if it wasn't written down); a new one's is chosen after pairing.
+	_, walletErr := os.Stat(filepath.Join(p.DataDir(), "wallet", "shop.keys"))
+	keepWallet := walletErr == nil
+	restore := o.RestoreHeight
+	if keepWallet {
+		restore = 0
+		if prevErr == nil {
+			restore = prev.RestoreHeight
+		}
+	}
 	cfg := config.Config{Site: o.Site, Network: config.Network(network), Address: addr, Node: node, DataDir: p.DataDir(),
-		RestoreHeight: o.RestoreHeight, AutoUpdate: !o.NoAutoUpdate, AllowSameMachine: o.AllowSameMachine}
+		RestoreHeight: restore, AutoUpdate: !o.NoAutoUpdate, AllowSameMachine: o.AllowSameMachine}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -283,18 +295,46 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	if err := sys.Chown(p.DataDir(), uid, gid); err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(p.DataDir(), "wallet", "shop.keys")); err != nil {
+	// Pairing comes before the wallet: the site suggests where a new wallet must start scanning to see payments to
+	// the invoices it already watches (spec change 17).
+	tty.Say("Pairing with %s…", o.Site)
+	suggested, err := st.Pair(ctx, cfg, o.Code)
+	if err != nil {
+		return err
+	}
+	if keepWallet {
+		tty.Say("Keeping the existing view-only wallet for this address.")
+		if w := RestoreHeightWarning(cfg.RestoreHeight, suggested); w != "" {
+			tty.Say("%s", w)
+		}
+	} else {
+		switch {
+		case cfg.RestoreHeight != 0:
+			if w := RestoreHeightWarning(cfg.RestoreHeight, suggested); w != "" {
+				tty.Say("%s", w)
+			}
+		case suggested != 0:
+			cfg.RestoreHeight = suggested
+			tty.Say("The site has open invoices from about block %d on: the new wallet scans from there.", suggested)
+		default:
+			info, err := st.NodeInfo(ctx, cfg.Node)
+			if err != nil {
+				return fmt.Errorf("reading the Monero node's height: %w", err)
+			}
+			cfg.RestoreHeight = info.Height
+		}
+		// Written down, so a later run or re-pairing can tell whether this wallet sees the site's invoices.
+		if err := config.Save(p.Config(), cfg); err != nil {
+			return err
+		}
+		if err := sys.Chown(p.Config(), uid, gid); err != nil {
+			return err
+		}
 		tty.Say("Creating the view-only wallet (no spend key)…")
 		cred := &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}
 		if err := st.CreateWallet(ctx, cfg, view, cred); err != nil {
-			return err
+			return fmt.Errorf("%w. The pairing code is used now: press Connect wallet host on the site for a new one before running the installer again", err)
 		}
-	} else {
-		tty.Say("Keeping the existing view-only wallet for this address.")
-	}
-	tty.Say("Pairing with %s…", o.Site)
-	if err := st.Pair(ctx, cfg, o.Code); err != nil {
-		return err
 	}
 	if err := sys.Chown(p.DataDir(), uid, gid); err != nil {
 		return err
@@ -323,6 +363,16 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	tty.Say("Check it any time with: sudo xmr-bridge status --config %s", configPath)
 	tty.Say("What the installer did is in %s.", installLogPath)
 	return nil
+}
+
+// RestoreHeightWarning is what to tell the admin when a wallet that scans from walletHeight is paired with a site whose
+// oldest watched invoice needs scanning from suggested: payments made before walletHeight would be missed. Empty when
+// there's nothing to say, including when walletHeight wasn't written down (0).
+func RestoreHeightWarning(walletHeight, suggested uint64) string {
+	if walletHeight == 0 || suggested == 0 || walletHeight <= suggested {
+		return ""
+	}
+	return fmt.Sprintf("Note: this wallet scans from block %d, but the site has open invoices from about block %d. A payment to one of them made before block %d would be missed. If one doesn't show up, run sudo xmr-bridge uninstall --delete-data and install again without --restore-height.", walletHeight, suggested, walletHeight)
 }
 
 // errFatal ends a prompt loop at once (the terminal went away).
