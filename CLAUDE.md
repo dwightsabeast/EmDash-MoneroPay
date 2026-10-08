@@ -205,6 +205,7 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Real stagenet invoices on the dev site | With the dev site running: `node scripts/dev-invoices.mjs new <name>`, `pay-script <step> <name>=<fraction or rest> …` (writes `~/xmr-pay-dev-data/3h-pay-<step>.sh` for Wyatt to run against his buyer wallet), `list`, `watch` (in tmux; appends to `3h-watch.txt`), `drain-pool --below <index>` (dev shortcut). Tests: `node --test scripts/dev-invoices.test.mjs` |
 | Bridge: shop-wallet stand-in (lookahead), live | `cd bridge && XMR_BRIDGE_LIVE_BIN_DIR=$HOME/xmr-pay-dev-data/3b2-live-download XMR_BRIDGE_LIVE_DATA=$HOME/xmr-pay-dev-data XMR_BRIDGE_LIVE_LOOKAHEAD_INDEX=<paid index> ../scripts/with-shop-env.sh go test -count=1 -run TestLiveLookahead -v ./cmd/xmr-bridge/` |
 | Back up the dev database | Use SQLite's `VACUUM INTO '<file>'` (read-only connection), never `cp data.db` alone: the site keeps recent writes in `data.db-wal` |
+| CI status for a pushed commit | `python3 -I scripts/ci-status.py $(git rev-parse HEAD)` (public API; there's no `gh` on this box) |
 | CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check, and the bridge's gofmt, vet, tests, race-detector tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
 
 Fill in or correct this table as phases add commands.

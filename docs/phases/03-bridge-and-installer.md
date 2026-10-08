@@ -34,6 +34,8 @@ Phase 03, bridge and installer. Read docs/phases/03-bridge-and-installer.md, doc
 | 3f | `installer/install.sh` and the systemd unit |
 | 3g | Signed self-update with a test key, staged rollout delay, rollback if the new binary fails its health check |
 | 3h | End-to-end on stagenet with the dev site |
+| 3i | Spec change 15: a reinstalled bridge catches its wallet up to the site's pool (`poolTop`, create, one rescan); L3 rerun on stagenet (added 2026-10-07) |
+| 3j | Spec changes 16 (the site's chain height: never lowered; checkout refuses while the bridge is silent) and 17 (the pairing response suggests a reinstall's restore height) (added 2026-10-08) |
 
 **Running it without root.** Most of this phase runs the bridge in the foreground as the `dev` user (`xmr-bridge run --config <file under ~/xmr-pay-dev-data/>`), launched through `scripts/with-shop-env.sh` so the view key comes from the environment. Only the installer and the systemd unit need root; for those, give Wyatt the exact commands.
 

@@ -1018,3 +1018,42 @@ Next step:
 - **Release-age excludes not deleted yet.** The newest excluded package, `emdash@1.1.0`, was published 2026-10-01T16:47:35Z (`npm view … time`); `plugin-cli`, `admin` and others came minutes earlier, and four were published on 2026-09-27. So the 7-day rule passes for all of them only at **2026-10-08T16:48Z**. Deleting earlier would make the strict `pnpm install` refuse them.
 - **Still due, after 16:48 UTC today:** delete the whole `minimumReleaseAgeExclude` block and its comment from `plugin/pnpm-workspace.yaml` and `spikes/xmr-spike/pnpm-workspace.yaml`, run `pnpm install` in each (one at a time), confirm both succeed with `pnpm-lock.yaml` unchanged, then commit, and remove the reminders.
 - Next step after that: phase 04 (admin page), planned with spec changes 16 and 17. They touch the plugin's sync, checkout and the pairing response, and the bridge's installer; Wyatt to say whether they go into phase 04 or a session 3j first.
+
+## 2026-10-08 · Phase 03 · End of night: handoff (Wyatt chose session 3j before phase 04)
+
+Pushed with Wyatt's approval: `c5d23c0..60e22a8`. CI run 37719242461 passed, both jobs, the race-detector step included (the first race run of the spec change 15 code). This handoff commit is local.
+
+Added tonight:
+- `scripts/ci-status.py`: CI status from GitHub's public API, because there's no `gh` here. CLAUDE.md has a row for it.
+- Phase 03's session table now has 3i and 3j.
+- A setup-friction row: a time-based reminder needs the exact UTC moment.
+
+State left:
+- The bridge `0.0.202610080123-dev.1a1ec84` is installed and paired, backing off while the site is stopped.
+- The dev site, watcher and release server are stopped; no tmux sessions.
+- The dev database has 3i's invoices; backup `baseline/data.db.before-3i`.
+
+Next steps, in order:
+1. **After 2026-10-08T16:48Z only:** delete the release-age excludes.
+   - Delete the whole `minimumReleaseAgeExclude` block and its comment in `plugin/pnpm-workspace.yaml`, then in `spikes/xmr-spike/pnpm-workspace.yaml`.
+   - Run `pnpm install` in each, one at a time (memory).
+   - Confirm both succeed and `pnpm-lock.yaml` is unchanged.
+   - Run the plugin tests, commit (the lockfile note in the message: "no lockfile change"), and remove the reminders here.
+   
+   Before that time, skip this step and come back to it at the end of the session.
+2. **Session 3j: spec changes 16 and 17**, plan first.
+   - At the start, confirm the sub-choices with Wyatt: for 16, refuse checkout while the bridge is silent, against ignoring the height rule; for 17, option (a).
+   - Likely scope, to check against the code in the plan:
+     - plugin `handle.ts`: the stored height never goes down
+     - `checkout.ts`: a domain error while the last sync is older than 5 minutes (spec change 2's threshold), replacing the estimate at `checkout.ts:142`
+     - the pairing response: a suggested restore height, the oldest watched invoice's `createdHeight` minus a margin (or none when nothing is watched)
+     - bridge installer: use the suggestion when `--restore-height` isn't given. This means pairing before the wallet is created; check `bridge/cmd/xmr-bridge/install.go` and `internal/installer` for the order.
+     - optionally, the bridge doesn't sync until its wallet is within a few blocks of the node
+   - Tests first.
+   - Live: a reinstall without `--restore-height` that still finds a payment mined while uninstalled. That needs Wyatt (sudo, a payment), so check his buyer wallet's unlocked balance first.
+3. Phase 04 (admin page), with 3h's notes: label `confirmations: 0` on review invoices, and an admin way to clear a false `reversed`.
+
+Carried over for Wyatt:
+- Spec changes 6, 7 and 9–17 to fold into the live spec (14 is the rename text).
+- Spec change 9's lookahead question.
+- The mainnet second-node list.
