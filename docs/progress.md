@@ -1152,3 +1152,9 @@ Open issues:
   - `WALLET_HOST_SILENT` needs a buyer-facing message in the theme (phase 06).
 
 Next step: Wyatt approves the push and CI. Then phase 04 (admin page), with 3h's notes: label `confirmations: 0` on review invoices, and an admin way to clear a false `reversed`.
+
+## 2026-10-08 · Phase 03 · Session 3j: pushed, CI green
+
+Pushed with Wyatt's approval: `60e22a8..f0a52da`. CI run 37861316946 passed both jobs (`bridge`, `plugin`). The race-detector step passed too: the first race run of the spec change 16 and 17 code. This entry is local.
+
+Next step: phase 04 (admin page), with 3h's notes: label `confirmations: 0` on review invoices, and an admin way to clear a false `reversed`. Spec changes 6, 7 and 9–17 are still for Wyatt to fold into the live spec.
