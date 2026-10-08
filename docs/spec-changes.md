@@ -246,7 +246,7 @@ Left for Wyatt:
 Effect on the admin budget: none.
 Effect on the trust contract: capabilities, allowed hosts, route names, storage collections and indexes are unchanged. The route URLs and the plugin's identity change, which is a fresh install with a fresh consent, not an update.
 
-## 15. A reinstalled bridge must catch its wallet up to the site's pool before it reports  (status: proposed, 2026-10-06)
+## 15. A reinstalled bridge must catch its wallet up to the site's pool before it reports  (status: accepted, 2026-10-07)
 Found in: phase 03 session 3h, step L3 (stagenet, dev box). Evidence files: `~/xmr-pay-dev-data/3h-L3-*.txt` and `3h-watch.txt`.
 Spec says: spec change 9: "a reinstalled bridge (a fresh wallet from keys) must recreate addresses up to the highest pool index before it reconciles". Bridge service, Reconcile on start. The bridge has no code for this; the sync response doesn't tell it the pool's highest index.
 Evidence. The bridge was uninstalled with `--delete-data` and reinstalled from keys (restore height 2222850, before every payment of the session). The site kept its pool: 311 indexes, free 262–311. The fresh wallet knew indexes up to about 10, from the payments it found while scanning.
