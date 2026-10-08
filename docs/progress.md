@@ -27,6 +27,8 @@ Next step: Phase 01, `docs/phases/01-spike.md`.
 
 ## 2026-10-03 · Phase 01 · Reminder: delete the release-age excludes on 2026-10-08
 
+**Done 2026-10-08, 23:10 UTC (session 3j):** both blocks deleted (`plugin/`, `spikes/xmr-spike/`); `pnpm install` in each passed the supply-chain check with `pnpm-lock.yaml` unchanged; plugin tests 122/122.
+
 Done: `spikes/xmr-spike/` installed with `minimumReleaseAge: 10080` (7 days) and 12 exact-version `minimumReleaseAgeExclude` entries for the EmDash 1.1.0 release (published 2026-10-01), approved by Wyatt: `emdash@1.1.0`, `@emdash-cms/blocks@1.1.0`, `plugin-types@0.5.0`, `plugin-test@0.2.7`, `plugin-cli@0.13.2`, `cloudflare@1.1.0`, `admin@1.1.0`, `auth@1.1.0`, `gutenberg-to-portable-text@1.1.0`, `registry-client@0.7.0`, `registry-lexicons@0.7.0`, `registry-verification@0.3.3`. Nine match `~/sites/xmr-dev-site/package-lock.json` exactly; `plugin-test`, `plugin-cli` and `cloudflare` aren't in the site and were accepted on provenance (same release commit `913cb1bb9b7f` of `emdash-cms/emdash` as the site's `emdash@1.1.0`). All 12 carry verified registry signatures and SLSA v1 provenance from `emdash-cms/emdash` `.github/workflows/release.yml`; `npm audit signatures` in the dev site: 698 verified signatures, 253 verified attestations, none invalid or missing.
 Tests: `pnpm install` (clean) and the scaffold's `pnpm test` (1 passed).
 Open issues: none for this item.
