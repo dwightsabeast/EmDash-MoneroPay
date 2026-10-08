@@ -187,3 +187,32 @@ func (c *Client) CreateAddress(ctx context.Context, label string) (NewAddress, e
 	err := c.call(ctx, "create_address", map[string]any{"account_index": 0, "label": label}, &r)
 	return NewAddress{Index: r.Index, Address: r.Address}, err
 }
+
+// MaxCreate is the most subaddresses CreateAddresses makes in one call (wallet-rpc itself allows 65536).
+const MaxCreate = 1000
+
+// CreateAddresses creates the next n subaddresses in account 0 with the given label, in one call. The result must be
+// n consecutive indexes with an address each.
+func (c *Client) CreateAddresses(ctx context.Context, label string, n int) ([]NewAddress, error) {
+	if n < 1 || n > MaxCreate {
+		return nil, fmt.Errorf("walletrpc: create_address: count %d outside 1 to %d", n, MaxCreate)
+	}
+	var r struct {
+		Addresses []string `json:"addresses"`
+		Indices   []uint32 `json:"address_indices"`
+	}
+	if err := c.call(ctx, "create_address", map[string]any{"account_index": 0, "label": label, "count": n}, &r); err != nil {
+		return nil, err
+	}
+	if len(r.Addresses) != n || len(r.Indices) != n {
+		return nil, fmt.Errorf("walletrpc: create_address: asked for %d addresses, got %d indexes and %d addresses", n, len(r.Indices), len(r.Addresses))
+	}
+	out := make([]NewAddress, n)
+	for i := range out {
+		if r.Addresses[i] == "" || (i > 0 && r.Indices[i] != r.Indices[i-1]+1) {
+			return nil, errors.New("walletrpc: create_address: the new addresses aren't consecutive or one is empty")
+		}
+		out[i] = NewAddress{Index: r.Indices[i], Address: r.Addresses[i]}
+	}
+	return out, nil
+}

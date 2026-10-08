@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -189,5 +190,85 @@ func TestRescanBlockchain(t *testing.T) {
 	}
 	if got := f.calls[len(f.calls)-1].Method; got != "rescan_blockchain" {
 		t.Fatalf("called %s", got)
+	}
+}
+
+func TestRescanBlockchainOutlastsTheClientTimeout(t *testing.T) {
+	// rescan_blockchain answers only when the rescan is done, which takes far longer than a routine call's timeout.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Write([]byte(`{"jsonrpc":"2.0","id":"0","result":{}}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "u", secret.New("p"), &http.Client{Timeout: 50 * time.Millisecond})
+	if _, err := c.GetHeight(context.Background()); err == nil {
+		t.Fatal("routine calls should keep their timeout")
+	}
+	if err := c.RescanBlockchain(context.Background()); err != nil {
+		t.Fatalf("rescan: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := c.RescanBlockchain(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the context still bounds a rescan, got %v", err)
+	}
+}
+
+func TestHasSubaddress(t *testing.T) {
+	f, srv := newFake(t)
+	c := client(f, srv)
+	f.results["get_address"] = `{"address":"x","addresses":[{"address":"y","address_index":7,"label":"","used":false}]}`
+	if ok, err := c.HasSubaddress(context.Background(), 7); err != nil || !ok {
+		t.Fatalf("present: %v, %v", ok, err)
+	}
+	var params map[string]any
+	json.Unmarshal(f.calls[len(f.calls)-1].Params, &params)
+	if params["account_index"] != float64(0) || fmt.Sprint(params["address_index"]) != "[7]" {
+		t.Fatalf("get_address params = %v", params)
+	}
+	// wallet-rpc 0.18.5.1: WALLET_RPC_ERROR_CODE_ADDRESS_INDEX_OUT_OF_BOUNDS.
+	f.results["get_address"] = `!{"jsonrpc":"2.0","id":"0","error":{"code":-15,"message":"address index is out of bound"}}`
+	if ok, err := c.HasSubaddress(context.Background(), 900); err != nil || ok {
+		t.Fatalf("absent: %v, %v", ok, err)
+	}
+	f.results["get_address"] = `!{"jsonrpc":"2.0","id":"0","error":{"code":-13,"message":"No wallet file"}}`
+	if _, err := c.HasSubaddress(context.Background(), 7); err == nil {
+		t.Fatal("other errors must not read as absent")
+	}
+	f.results["get_address"] = `{"address":"x","addresses":[{"address":"y","address_index":8}]}`
+	if _, err := c.HasSubaddress(context.Background(), 7); err == nil {
+		t.Fatal("a different index must not read as present")
+	}
+}
+
+func TestCreateAddresses(t *testing.T) {
+	f, srv := newFake(t)
+	c := client(f, srv)
+	a := func(i int) string { return fmt.Sprintf("7%094d", i) }
+	f.results["create_address"] = fmt.Sprintf(`{"address":%q,"address_index":12,"address_indices":[12,13,14],"addresses":[%q,%q,%q]}`, a(12), a(12), a(13), a(14))
+	got, err := c.CreateAddresses(context.Background(), "coffer", 3)
+	if err != nil || len(got) != 3 || got[0] != (NewAddress{12, a(12)}) || got[2] != (NewAddress{14, a(14)}) {
+		t.Fatalf("CreateAddresses = %+v, %v", got, err)
+	}
+	var params map[string]any
+	json.Unmarshal(f.calls[len(f.calls)-1].Params, &params)
+	if params["account_index"] != float64(0) || params["label"] != "coffer" || params["count"] != float64(3) {
+		t.Fatalf("create_address params = %v", params)
+	}
+	for name, res := range map[string]string{
+		"fewer than asked": fmt.Sprintf(`{"address_indices":[12,13],"addresses":[%q,%q]}`, a(12), a(13)),
+		"lengths differ":   fmt.Sprintf(`{"address_indices":[12,13,14],"addresses":[%q,%q]}`, a(12), a(13)),
+		"empty address":    fmt.Sprintf(`{"address_indices":[12,13,14],"addresses":[%q,"",%q]}`, a(12), a(14)),
+		"not consecutive":  fmt.Sprintf(`{"address_indices":[12,14,15],"addresses":[%q,%q,%q]}`, a(12), a(14), a(15)),
+	} {
+		f.results["create_address"] = res
+		if _, err := c.CreateAddresses(context.Background(), "coffer", 3); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	for _, n := range []int{0, -1, MaxCreate + 1} {
+		if _, err := c.CreateAddresses(context.Background(), "coffer", n); err == nil {
+			t.Errorf("count %d accepted", n)
+		}
 	}
 }
