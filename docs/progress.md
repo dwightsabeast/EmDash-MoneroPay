@@ -1100,3 +1100,55 @@ Next step, the live run (L4), with Wyatt:
    - no `reorg`
 
 Not done here: phase 03's file (line 56) still lists pairing after the wallet in the installer's steps. Fold it in with the spec text.
+
+## 2026-10-08 · Phase 03 · Session 3j, part 2: the L4 run on stagenet (spec changes 16 and 17, live)
+
+Evidence: `~/xmr-pay-dev-data/3h-watch.txt` (from "--- 3j run (far5)"), `3j-balance-output.txt`, `3j-uninstall-output.txt`, `3j-pay-output.txt`, `3j-install-output.txt`, `3j-checks-output.txt` (install-log lines, status, journal).
+
+Run (Speed Standard, 2 confirmations; times UTC; the journal shows local time, UTC−6):
+
+| Step | Result |
+|---|---|
+| Checkout with the bridge's last sync about 21 h old (site just started) | `WALLET_HOST_SILENT` (23:28:05) |
+| The bridge's next sync | Stored height 2225081, the node's height |
+| Buyer wallet | 0.1417 sXMR unlocked |
+| `far5`, index 266, created 23:35:35 | `createdHeight` 2225085, `expiresHeight` 2225103 (real height, no estimate) |
+| Uninstall, `--delete-data` (bridge `1a1ec84`) | Service, data, config and user removed |
+| `far5` paid with no bridge installed | Tx `0c01590c…4919`, mined at 2225085 by 23:38:42 |
+| Reinstall, dev release `0.0.202610082327-dev.0d66a34`, a fresh code, **no `--restore-height`** | The installer paired first, then printed "The site has open invoices from about block 2223649 on: the new wallet scans from there." That's `far3`'s `createdHeight` 2224369 − 720 (`far3` is watched until 01:37 UTC) |
+| Catch-up | Wallet open 23:41:21 (height 579994), target 316, rescan; caught up at 23:41:32 (11 s) |
+| `far5` | **`settled`** 23:41:45, 1849933403 atomic, 3 confirmations: **found by the rescan**. The old default ("today") would have been about 2225088, after the payment's block |
+| Stored height after the fresh wallet's first sync | 2225088 = the node's; not lowered |
+| New review invoices | **None** (only 3h's `far` reversed and three deliberate underpaid/late ones remain) |
+| Pool | 316 rows, top 316: one top-up after the catch-up, no duplicate loop |
+| `xmr-bridge status` | Paired, last sync 7 s, 50 of 50, watching 2 |
+
+Not seen directly:
+- The config's `restoreHeight` value: the grep pattern missed it (setup-friction row). The installer's message and the settlement show the suggestion was used, and `TestRestoreHeight` checks the written value.
+- The "kept wallet" warning and `xmr-bridge pair`'s warning: unit tests only.
+
+Noise, not new:
+- The bridge logs `selfupdate: release.json.sig: HTTP 404` every minute while the unsigned dev release is served, and `connection refused` once it's stopped. Same as earlier sessions.
+
+Docs:
+- A setup-friction row: installer messages go to `/dev/tty`, so `tee` misses them; use the install log.
+- Phase 03's installer steps now list pairing before the wallet.
+
+State left:
+- Bridge `0.0.202610082327-dev.0d66a34` installed and paired. It backs off while the site is stopped.
+- Dev site, watcher and release server stopped; ports 4321, 4322 and 8099 free; no tmux sessions.
+- Dev database: 3i's invoices plus `far5` (settled). Backup from before 3j: `baseline/data.db.before-3j`.
+
+Session 3j: done. Spec changes 16 and 17 are implemented, unit-tested and passed on stagenet.
+
+Open issues:
+- **For Wyatt:**
+  - approve a push of `b448231`..this entry and watch CI (the race-detector step covers the new bridge code; there's no cgo here)
+  - spec changes 6, 7 and 9–17 to fold into the live spec (16 and 17 have spec text ready in `spec-changes.md`)
+  - spec change 9's lookahead question
+  - the mainnet second-node list
+- **Later:**
+  - a stored height that never goes down would keep a higher stagenet height if a site moved to mainnet. It's a non-issue unless switching networks is ever supported; note it for phase 09's docs.
+  - `WALLET_HOST_SILENT` needs a buyer-facing message in the theme (phase 06).
+
+Next step: Wyatt approves the push and CI. Then phase 04 (admin page), with 3h's notes: label `confirmations: 0` on review invoices, and an admin way to clear a false `reversed`.
