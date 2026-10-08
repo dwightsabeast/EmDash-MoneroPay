@@ -904,3 +904,60 @@ Next step, in order:
 1. Wyatt decides spec change 15 (`docs/spec-changes.md`, last entry).
 2. Wyatt opens the admin page once through the tunnel (`ssh -N -L 4321:localhost:4321 xmr-dev`, with the dev site started) to confirm the bridge key; that also schedules the cron. Phase 03 is then done.
 3. If spec change 15 is accepted: session 3i. Tests first (fresh wallet behind the pool: no snapshots before catch-up, one rescan, no duplicate addresses), then the plugin's `poolTop`, then the bridge, then L3 again on stagenet. Otherwise phase 04.
+
+## 2026-10-07 · Phase 03 · Session 3i: spec change 15 (catch-up after a reinstall), part 1
+
+Wyatt accepted spec change 15 today and asked for it next.
+
+Done:
+- **Docs** (`398c61c`): spec change 15 marked accepted; `decisions.md` entry.
+- **Plugin** (`8acdffa`): the `bridge/sync` response carries `poolTop`, the pool's highest `addrIndex` (pool rows are never deleted and every invoice's index is a pool row). An optional field; no trust-contract change.
+- **walletrpc** (`4f04c11`):
+  - `HasSubaddress` (`get_address`; −15 means absent)
+  - `CreateAddresses` (`create_address` with `count`, at most 1000 per call, consecutive indexes checked)
+  - `RescanBlockchain` now runs on an untimed copy of the client (ctx bounds it)
+  
+  Behaviour read from wallet-rpc v0.18.5.1's source (`~/work/monero-v0.18.5.1`, sparse clone).
+- **Bridge loop** (`f631de5`):
+  - When the site's `poolTop` is above what the wallet is known to have, the bridge probes the wallet. If the index is missing, it creates addresses up to `poolTop` in batches of 100 (not sent), rescans once (capped at 24 h), then reconciles.
+  - Marker `run/catchup.json` redoes an interrupted catch-up, rescan included, before any snapshot.
+  - A top-up address at or below `poolTop` is never sent; it starts a catch-up.
+  - `xmr-bridge status` shows a "Catching up" line and doesn't report a stale sync while it runs.
+- **Live** (`1a1ec84`, `TestLiveShopWallet`, stagenet, real wallet-rpc 0.18.5.1): a fresh wallet's next index was 10; −15 above it; `count` 100 in 198 ms and 1000 in 2.2 s, consecutive; `rescan_blockchain` answered after 8 s through the supervisor's 5 s client. Evidence: `~/xmr-pay-dev-data/3i-live-shopwallet.txt`.
+- **Phase 03's last "done when" item: met.** Wyatt opened the admin page through the tunnel: Paired, last sync "less than a minute ago", 50 of 50 free. The `housekeeping` cron row exists (hourly, created 2026-10-08 01:19:16 UTC).
+
+Tests:
+- Plugin: 122 pass (2 new), typecheck, validate and bundle check (27.6 KB) clean. Mutation check: ascending order caught.
+- Bridge: gofmt, vet, `go test ./...` with and without `-tags devrelease` pass.
+- New tests: syncclient `TestPoolTop` and two refusal cases; walletrpc rescan-timeout, `HasSubaddress`, `CreateAddresses`; bridgeloop L3 model (pool to 312, paid index 261, wallet at 10), redo after a failed rescan and restart, the top-up guard, an older site without `poolTop`, no probe per top-up; `TestStatusCatchUp`.
+- Mutations caught: no top-up guard, no redo at start, no rescan. Static build OK.
+- Race detector: CI only (no `gcc` here).
+
+Not covered yet: the L3 rerun on stagenet (below).
+
+Paused: Wyatt's buyer wallet had too little sXMR for `far3` (index 263, created 01:07 UTC). It expired unpaid at 01:37 and will show `expired` at the next sync.
+
+Findings for later (not acted on):
+- **Stale height estimate at checkout:** after about 1.5 days of a silent bridge, checkout's estimate (`checkout.ts:142`, last sync + 2 min per block) was 35 blocks low, so `far3`'s `expiresHeight` (2224387) was already below the chain (2224404). Payments still count as on time if seen before `expiresAt`. But a payment reported late after a long outage is judged against a too-low `expiresHeight`. For Wyatt / phase 04.
+- **Reinstall restore height:** `xmr-bridge install` defaults `--restore-height` to today. A reinstall with the default can't find payments mined before it, even with spec change 15's rescan. The rescan only scans from the restore height. For Wyatt: possibly the installer should suggest a height at or below the oldest open invoice's `createdHeight`. Spec-changes proposal to write if he wants it.
+
+State left:
+- Dev site, watcher and release server stopped; ports free.
+- Installed bridge is still the old `0.0.202610051631-dev.5fbda8c`, paired.
+- New dev release `0.0.202610080123-dev.1a1ec84` is built in `~/xmr-pay-dev-data/dev-release/` (unsigned `release.json`; install needs only the SHA-256s).
+- Database backup `baseline/data.db.before-3i`.
+
+Next step (when Wyatt's wallet is topped up), the L3 rerun:
+1. Start the site and the watcher.
+2. New invoice `far3b`; Wyatt pays it; it settles.
+3. New invoice `far4`. Serve the release.
+4. Wyatt:
+   - `sudo xmr-bridge uninstall --delete-data`
+   - pay `far4` and wait for it to be mined
+   - reinstall with `--restore-height 2222850` and a code from `dev-e2e.mjs --issue-code`
+5. Expect:
+   - `far3b` stays settled
+   - `far4` is found by the rescan and settles
+   - nothing goes to review `reversed`
+   - the "Catching up" status, then normal
+   - no burst of syncs
