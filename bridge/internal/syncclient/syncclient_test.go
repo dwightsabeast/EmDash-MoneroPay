@@ -48,6 +48,21 @@ func client(srv *httptest.Server) *Client {
 
 const okReply = `{"success":true,"data":{"ok":true,"poolFree":41,"poolTarget":50,"watch":[12,17]}}`
 
+func TestPoolTop(t *testing.T) {
+	// Spec change 15: an optional field; a site without it (an older plugin) reads as 0, which never starts a catch-up.
+	for reply, want := range map[string]uint32{
+		okReply: 0,
+		`{"success":true,"data":{"ok":true,"poolFree":41,"poolTarget":50,"poolTop":312,"watch":[]}}`: 312,
+	} {
+		srv, _ := site(t, 200, reply)
+		k, _ := syncsign.NewKey()
+		resp, err := client(srv).Send(context.Background(), k, Body{V: 1, Seq: 1})
+		if err != nil || resp.PoolTop != want {
+			t.Fatalf("%s: PoolTop %d, %v", reply, resp.PoolTop, err)
+		}
+	}
+}
+
 func TestSend(t *testing.T) {
 	srv, s := site(t, 200, okReply)
 	k, _ := syncsign.NewKey()
@@ -121,6 +136,8 @@ func TestErrors(t *testing.T) {
 		"server error":      {502, `bad gateway`, "HTTP_502", ""},
 		"not a sync answer": {200, `{"success":true,"data":{"ok":true,"poolFree":-1,"poolTarget":50,"watch":[]}}`, "BAD_RESPONSE", ""},
 		"watch index 0":     {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"watch":[0]}}`, "BAD_RESPONSE", ""},
+		"negative poolTop":  {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":-1,"watch":[]}}`, "BAD_RESPONSE", ""},
+		"huge poolTop":      {200, `{"success":true,"data":{"ok":true,"poolFree":1,"poolTarget":50,"poolTop":4294967296,"watch":[]}}`, "BAD_RESPONSE", ""},
 		"html":              {200, `<html>`, "BAD_RESPONSE", "coffer plugin"},
 	}
 	for name, c := range cases {

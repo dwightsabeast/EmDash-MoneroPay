@@ -2,7 +2,9 @@
 // at once when wallet-rpc reports a transaction, it reads the watched subaddresses' incoming transfers and posts a
 // signed snapshot to the site; it tops up the site's address pool; and after a start it reconciles (the first sync
 // learns the watch list, the next reports every watched index). It keeps no state between starts except subaddresses
-// created but not yet acknowledged by the site (run/pending.json), so a restart never leaves them unused.
+// created but not yet acknowledged by the site (run/pending.json), so a restart never leaves them unused, and an
+// unfinished catch-up (run/catchup.json, spec change 15): a wallet restored from keys lacks the subaddresses the site
+// already holds, so before it reports anything it creates them up to the site's poolTop and rescans once.
 package bridgeloop
 
 import (
@@ -31,6 +33,8 @@ const (
 	maxTransfers  = 32
 	addressLabel  = "coffer"
 	walletTimeout = 30 * time.Second
+	createBatch   = 100            // subaddresses per create_address call while catching up
+	rescanLimit   = 24 * time.Hour // a rescan from the restore height; ctx (shutdown) ends it sooner
 )
 
 // Wallet is what the loop needs from wallet-rpc (*walletrpc.Client).
@@ -38,6 +42,9 @@ type Wallet interface {
 	GetHeight(ctx context.Context) (uint64, error)
 	GetTransfers(ctx context.Context, indexes []uint32) ([]walletrpc.Transfer, error)
 	CreateAddress(ctx context.Context, label string) (walletrpc.NewAddress, error)
+	CreateAddresses(ctx context.Context, label string, n int) ([]walletrpc.NewAddress, error)
+	HasSubaddress(ctx context.Context, index uint32) (bool, error)
+	RescanBlockchain(ctx context.Context) error
 }
 
 // CrossChecker confirms mined transfers against a second node (*crosscheck.Checker); nil when the node is the
@@ -93,6 +100,15 @@ type Status struct {
 	Unreachable int    `json:"unreachable"`
 	Updates     string `json:"updates,omitempty"`
 	WalletRPC   any    `json:"walletRpc,omitempty"`
+	// CatchUp is set while the wallet is being caught up to the site's pool (spec change 15).
+	CatchUp *CatchUp `json:"catchUp,omitempty"`
+}
+
+// CatchUp is the progress of a catch-up: subaddresses created up to Target, then one rescan.
+type CatchUp struct {
+	Target     uint32 `json:"target"`
+	Addresses  uint32 `json:"addresses"` // the wallet's highest subaddress index so far (0 until the first one)
+	Rescanning bool   `json:"rescanning"`
 }
 
 // Loop is one bridge's sync loop.
@@ -107,6 +123,11 @@ type Loop struct {
 	lastSeq int64
 	soon    bool
 	st      Status
+	// Spec change 15: the highest index the wallet is known to have, the site's last poolTop, and the target of an
+	// unfinished catch-up (0 when none).
+	known   uint32
+	poolTop uint32
+	catchup uint32
 }
 
 // New loads any pending addresses from a previous run.
@@ -147,11 +168,28 @@ func New(o Options) (*Loop, error) {
 	case !errors.Is(err, os.ErrNotExist):
 		return nil, err
 	}
+	data, err = os.ReadFile(l.catchUpFile())
+	switch {
+	case err == nil:
+		var m struct {
+			Target uint32 `json:"target"`
+		}
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("bridgeloop: %s: %w", l.catchUpFile(), err)
+		}
+		if m.Target > 0 {
+			l.catchup = m.Target
+			l.st.CatchUp = &CatchUp{Target: m.Target}
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, err
+	}
 	return l, nil
 }
 
 func (l *Loop) runDir() string      { return filepath.Join(l.o.DataDir, "run") }
 func (l *Loop) pendingFile() string { return filepath.Join(l.runDir(), "pending.json") }
+func (l *Loop) catchUpFile() string { return filepath.Join(l.runDir(), "catchup.json") }
 
 // Notify asks for a sync now (wallet-rpc saw a transaction). It never blocks.
 func (l *Loop) Notify() {
@@ -173,7 +211,12 @@ func (l *Loop) Soon() bool {
 func (l *Loop) Status() Status {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.st
+	st := l.st
+	if st.CatchUp != nil {
+		c := *st.CatchUp
+		st.CatchUp = &c
+	}
+	return st
 }
 
 // Run syncs until ctx ends.
@@ -271,6 +314,14 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("wallet: %w", err)
 	}
+	l.mu.Lock()
+	target := l.catchup
+	l.mu.Unlock()
+	if target > 0 { // unfinished (a failed rescan, or a restart): redo it before any snapshot
+		if err := l.catchUp(ctx, w, target); err != nil {
+			return err
+		}
+	}
 
 	l.mu.Lock()
 	learning := l.watch == nil
@@ -335,6 +386,25 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 		}
 	}
 	l.st.WalletHeight, l.st.PoolFree, l.st.PoolTarget, l.st.Watching, l.st.Warnings = height, resp.PoolFree, resp.PoolTarget, len(resp.Watch), warnings
+	l.poolTop = resp.PoolTop
+
+	// The site holds an index the wallet may lack (a reinstall from keys): catch up before anything is reported or
+	// topped up. Probed only when the pool outgrows what the wallet is known to have.
+	if top := resp.PoolTop; top > l.known {
+		l.mu.Unlock()
+		has, err := w.HasSubaddress(ctx, top)
+		if err == nil && !has {
+			err = l.catchUp(ctx, w, top)
+		}
+		l.mu.Lock()
+		if err != nil {
+			return fmt.Errorf("wallet: %w", err)
+		}
+		if !has {
+			return nil // caught up; the next sync reconciles and tops up
+		}
+		l.known = top
+	}
 
 	// Top up: the site's free addresses plus those already on their way must reach the target.
 	need := resp.PoolTarget - resp.PoolFree - len(l.pending)
@@ -343,15 +413,114 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 		l.mu.Unlock()
 		created, cerr := l.create(ctx, w, need)
 		l.mu.Lock()
-		l.pending = append(l.pending, created...)
+		// An index the site already has means the wallet is behind after all: never send it (the duplicate loop of
+		// 3h's L3), catch up on the next sync instead.
+		behind := false
+		for _, a := range created {
+			if a.Index <= l.poolTop {
+				behind = true
+				continue
+			}
+			l.known = max(l.known, a.Index)
+			l.pending = append(l.pending, a)
+		}
 		if len(created) > 0 {
 			l.savePending()
+		}
+		if behind && l.catchup == 0 {
+			l.o.Log.Warn("the wallet returned an address the site already has; catching it up", "poolTop", l.poolTop)
+			l.catchup = l.poolTop
+			l.st.CatchUp = &CatchUp{Target: l.poolTop}
+			l.saveCatchUp()
 		}
 		if cerr != nil {
 			l.o.Log.Warn("creating pool addresses", "err", cerr)
 		}
 	}
-	l.soon = learning || !passDone || len(l.pending) > 0
+	l.soon = learning || !passDone || len(l.pending) > 0 || l.catchup > 0
+	return nil
+}
+
+// catchUp brings a wallet restored from keys up to the site's pool (spec change 15): it creates subaddresses up to
+// target without sending them (the site has them), then rescans once so payments mined to them before they existed
+// in this wallet are found. The marker file makes an interrupted catch-up start again, rescan included.
+func (l *Loop) catchUp(ctx context.Context, w Wallet, target uint32) error {
+	l.mu.Lock()
+	l.catchup = target
+	l.st.CatchUp = &CatchUp{Target: target}
+	err := l.saveCatchUp()
+	l.mu.Unlock()
+	l.writeStatus()
+	if err != nil {
+		return err
+	}
+	l.o.Log.Info("catching the wallet up to the site's addresses", "target", target)
+
+	// One address first: its index says where the wallet stands. If that is already past the target, it is a new
+	// address for the pool (a catch-up redone after its addresses were made), so nothing is wasted.
+	first, err := w.CreateAddresses(ctx, addressLabel, 1)
+	if err != nil {
+		return fmt.Errorf("catching up the wallet: %w", err)
+	}
+	top := first[0].Index
+	var extra []syncclient.Address
+	if top > target {
+		extra = append(extra, syncclient.Address{Index: top, Address: first[0].Address})
+	}
+	for top < target {
+		l.progress(top, false)
+		as, err := w.CreateAddresses(ctx, addressLabel, int(min(target-top, createBatch)))
+		if err != nil {
+			return fmt.Errorf("catching up the wallet: %w", err)
+		}
+		if as[0].Index != top+1 {
+			return fmt.Errorf("catching up the wallet: wallet-rpc skipped from index %d to %d", top, as[0].Index)
+		}
+		top = as[len(as)-1].Index
+	}
+	l.progress(top, true)
+	l.o.Log.Info("rescanning the wallet", "addresses", top)
+	rctx, cancel := context.WithTimeout(ctx, rescanLimit)
+	err = w.RescanBlockchain(rctx)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("rescanning the wallet: %w", err)
+	}
+
+	l.mu.Lock()
+	l.catchup, l.st.CatchUp = 0, nil
+	l.known = max(l.known, top)
+	l.poolTop = max(l.poolTop, target)
+	if len(extra) > 0 {
+		l.pending = append(l.pending, extra...)
+		l.savePending()
+	}
+	l.cursor, l.soon = 0, true
+	if err := os.Remove(l.catchUpFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		l.o.Log.Error("removing the catch-up marker", "err", err)
+	}
+	l.mu.Unlock()
+	l.writeStatus()
+	l.o.Log.Info("the wallet is caught up", "addresses", top)
+	return nil
+}
+
+func (l *Loop) progress(top uint32, rescanning bool) {
+	l.mu.Lock()
+	if l.st.CatchUp != nil {
+		l.st.CatchUp.Addresses, l.st.CatchUp.Rescanning = top, rescanning
+	}
+	l.mu.Unlock()
+	l.writeStatus()
+}
+
+// saveCatchUp records the catch-up's target. Called with l.mu held.
+func (l *Loop) saveCatchUp() error {
+	data, _ := json.Marshal(map[string]uint32{"target": l.catchup})
+	if err := writeAtomic(l.catchUpFile(), data); err != nil {
+		l.o.Log.Error("saving the catch-up marker", "err", err)
+		return err
+	}
 	return nil
 }
 

@@ -29,6 +29,16 @@ type fakeWallet struct {
 	created   int
 	labels    map[string]int
 	asked     [][]uint32
+
+	// Spec change 15. With gate set, the wallet behaves like one restored from keys: a transfer is seen only if its
+	// index existed when its block was scanned, which for a test means index <= scanned; a rescan sets scanned to next.
+	gate      bool
+	scanned   uint32
+	rescans   int
+	rescanErr error
+	onRescan  func()
+	lie       bool // HasSubaddress always says yes (a wallet the probe can't be trusted on)
+	probes    int
 }
 
 func (w *fakeWallet) GetHeight(context.Context) (uint64, error) { return w.height, nil }
@@ -38,6 +48,9 @@ func (w *fakeWallet) GetTransfers(_ context.Context, idx []uint32) ([]walletrpc.
 	w.asked = append(w.asked, append([]uint32(nil), idx...))
 	var out []walletrpc.Transfer
 	for _, i := range idx {
+		if w.gate && i > w.scanned {
+			continue
+		}
 		for _, t := range w.transfers[i] {
 			t.Index = i // as wallet-rpc reports subaddr_index
 			out = append(out, t)
@@ -57,6 +70,37 @@ func (w *fakeWallet) CreateAddress(_ context.Context, label string) (walletrpc.N
 	return walletrpc.NewAddress{Index: w.next, Address: "5" + strings.Repeat(strconv.Itoa(int(w.next%10)), 94)}, nil
 }
 
+func (w *fakeWallet) HasSubaddress(_ context.Context, index uint32) (bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.probes++
+	return w.lie || index <= w.next, nil
+}
+func (w *fakeWallet) CreateAddresses(_ context.Context, label string, n int) ([]walletrpc.NewAddress, error) {
+	if n < 1 || n > walletrpc.MaxCreate {
+		return nil, fmt.Errorf("count %d", n)
+	}
+	var out []walletrpc.NewAddress
+	for i := 0; i < n; i++ {
+		a, _ := w.CreateAddress(context.Background(), label)
+		out = append(out, a)
+	}
+	return out, nil
+}
+func (w *fakeWallet) RescanBlockchain(context.Context) error {
+	if w.onRescan != nil {
+		w.onRescan()
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.rescans++
+	if w.rescanErr != nil {
+		return w.rescanErr
+	}
+	w.scanned = w.next
+	return nil
+}
+
 // fakeSite answers like the plugin: it keeps a pool and a watch list, and records every body.
 type fakeSite struct {
 	mu     sync.Mutex
@@ -66,6 +110,10 @@ type fakeSite struct {
 	bodies []syncclient.Body
 	fail   error
 	limit  int // refuse bodies with more snapshots than this (as ErrTooLarge)
+	// claimed pool rows (not free); noTop answers like an older plugin, without poolTop.
+	claimed int
+	noTop   bool
+	dupes   []uint32 // addresses sent for an index the pool already had
 }
 
 func (s *fakeSite) Send(_ context.Context, _ ed25519.PrivateKey, b syncclient.Body) (syncclient.Response, error) {
@@ -79,9 +127,19 @@ func (s *fakeSite) Send(_ context.Context, _ ed25519.PrivateKey, b syncclient.Bo
 		return syncclient.Response{}, s.fail
 	}
 	for _, a := range b.Addresses {
+		if s.pool[a.Index] {
+			s.dupes = append(s.dupes, a.Index)
+		}
 		s.pool[a.Index] = true
 	}
-	return syncclient.Response{PoolFree: len(s.pool), PoolTarget: s.target, Watch: append([]uint32(nil), s.watch...)}, nil
+	var top uint32
+	for i := range s.pool {
+		top = max(top, i)
+	}
+	if s.noTop {
+		top = 0
+	}
+	return syncclient.Response{PoolFree: len(s.pool) - s.claimed, PoolTarget: s.target, PoolTop: top, Watch: append([]uint32(nil), s.watch...)}, nil
 }
 
 func (s *fakeSite) last() syncclient.Body {
@@ -477,5 +535,175 @@ func TestSiteAnswerCounts(t *testing.T) {
 	st := l.Status()
 	if st.Synced != 1 || st.SiteRefused != 1 || st.Unreachable != 2 {
 		t.Fatalf("counts synced %d refused %d unreachable %d", st.Synced, st.SiteRefused, st.Unreachable)
+	}
+}
+
+// reinstalled sets up 3h's L3: the site's pool holds indexes 1 to 312 (262 of them claimed), and invoices on 261 (paid
+// and mined) and 262 (unpaid) are watched; the wallet is fresh from keys and knows indexes up to 10.
+func reinstalled(t *testing.T) (*Loop, *fakeWallet, *fakeSite, string) {
+	t.Helper()
+	l, w, s, dir := setup(t)
+	for i := uint32(1); i <= 312; i++ {
+		s.pool[i] = true
+	}
+	s.claimed = 262
+	s.watch = []uint32{261, 262}
+	w.next, w.scanned, w.gate = 10, 10, true
+	w.transfers[261] = []walletrpc.Transfer{tr('f', "5000", 2222909)}
+	return l, w, s, dir
+}
+
+// noEmptyReport fails if any body reported index 261 (paid on the chain) without its transfer: the false "reversed".
+func noEmptyReport(t *testing.T, s *fakeSite) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for n, b := range s.bodies {
+		for _, sn := range b.Snapshots {
+			if sn.Index == 261 && len(sn.Transfers) == 0 {
+				t.Fatalf("body %d reported paid index 261 as empty", n)
+			}
+		}
+	}
+}
+
+func TestCatchUpAfterReinstall(t *testing.T) {
+	l, w, s, dir := reinstalled(t)
+	var during Status
+	w.onRescan = func() { during = l.Status() }
+	if err := l.SyncOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if w.next != 312 || w.rescans != 1 {
+		t.Fatalf("after the first sync: wallet at %d, %d rescans; want 312 and 1", w.next, w.rescans)
+	}
+	if during.CatchUp == nil || !during.CatchUp.Rescanning || during.CatchUp.Target != 312 || during.CatchUp.Addresses != 312 {
+		t.Fatalf("status during the rescan: %+v", during.CatchUp)
+	}
+	if st := l.Status(); st.CatchUp != nil {
+		t.Fatalf("status after: %+v", st.CatchUp)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "run", "catchup.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker left behind: %v", err)
+	}
+	if !l.Soon() {
+		t.Fatal("the reconcile should follow at once")
+	}
+	if err := l.SyncOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	b := s.last()
+	if len(b.Snapshots) != 2 || b.Snapshots[0].Index != 261 || len(b.Snapshots[0].Transfers) != 1 {
+		t.Fatalf("reconcile after the catch-up: %+v", b.Snapshots)
+	}
+	noEmptyReport(t, s)
+	if len(s.dupes) != 0 {
+		t.Fatalf("addresses the site already had were sent: %v", s.dupes)
+	}
+
+	// Checkouts claim rows: top-ups now continue above the pool's top, never below it, with no burst of syncs.
+	s.claimed = 312 - 49
+	syncs := len(s.bodies)
+	for i := 0; i < 3; i++ {
+		if err := l.SyncOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(s.dupes) != 0 || !s.pool[313] || w.rescans != 1 || len(s.bodies)-syncs != 3 {
+		t.Fatalf("top-up after the catch-up: dupes %v, 313 in pool %v, rescans %d", s.dupes, s.pool[313], w.rescans)
+	}
+}
+
+func TestCatchUpIsRedoneAfterAFailedRescan(t *testing.T) {
+	l, w, s, dir := reinstalled(t)
+	w.rescanErr = errors.New("wallet-rpc went away")
+	if err := l.SyncOnce(context.Background()); err == nil {
+		t.Fatal("a failed rescan must fail the sync (and back off)")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "run", "catchup.json")); err != nil {
+		t.Fatalf("marker: %v", err)
+	}
+	if st := l.Status(); st.CatchUp == nil || st.LastError == "" {
+		t.Fatalf("status after the failure: %+v", st)
+	}
+
+	// The bridge restarts (a new Loop on the same data folder). wallet-rpc kept the created addresses, so the probe
+	// alone would say "caught up": the marker is what makes the rescan happen, before any snapshot.
+	w.rescanErr = nil
+	sent := len(s.bodies)
+	k, _ := syncsign.NewKey()
+	l2, err := New(Options{Wallet: func(context.Context) (Wallet, error) { return w, nil }, Site: s, Key: k, DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := l2.Status(); st.CatchUp == nil || st.CatchUp.Target != 312 {
+		t.Fatalf("a restarted loop should report the unfinished catch-up: %+v", st.CatchUp)
+	}
+	for i := 0; i < 3; i++ {
+		if err := l2.SyncOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 && w.rescans != 2 {
+			t.Fatalf("rescans %d; the restart should redo it before sending", w.rescans)
+		}
+	}
+	if len(s.bodies) == sent || w.rescans != 2 {
+		t.Fatalf("bodies %d, rescans %d", len(s.bodies)-sent, w.rescans)
+	}
+	noEmptyReport(t, s)
+	if _, err := os.Stat(filepath.Join(dir, "run", "catchup.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker left behind: %v", err)
+	}
+}
+
+func TestCreatedIndexAtOrBelowPoolTopIsNotSent(t *testing.T) {
+	// A wallet that answers the probe wrongly still can't cause the duplicate loop: the first top-up address at or
+	// below the pool's top starts a catch-up instead of going to the site.
+	l, w, s, _ := reinstalled(t)
+	w.lie = true
+	s.claimed = 312 - 49
+	if err := l.SyncOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := l.SyncOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(s.dupes) != 0 {
+		t.Fatalf("addresses the site already had were sent: %v", s.dupes)
+	}
+	if w.rescans != 1 || w.next < 312 {
+		t.Fatalf("rescans %d, wallet at %d", w.rescans, w.next)
+	}
+	if len(s.bodies) > 6 {
+		t.Fatalf("%d syncs: a loop", len(s.bodies))
+	}
+}
+
+func TestOlderSiteWithoutPoolTop(t *testing.T) {
+	l, w, s, _ := setup(t)
+	s.noTop = true
+	for i := 0; i < 3; i++ {
+		if err := l.SyncOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w.probes != 0 || w.rescans != 0 || len(s.pool) != 50 {
+		t.Fatalf("probes %d, rescans %d, pool %d", w.probes, w.rescans, len(s.pool))
+	}
+}
+
+func TestProbeOnlyWhenThePoolOutgrowsTheWallet(t *testing.T) {
+	// The bridge's own top-ups move the pool's top; they must not cost a probe each.
+	l, w, s, _ := setup(t)
+	for i := 0; i < 5; i++ {
+		s.claimed += 10
+		if err := l.SyncOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w.probes > 1 || w.rescans != 0 {
+		t.Fatalf("probes %d, rescans %d", w.probes, w.rescans)
 	}
 }

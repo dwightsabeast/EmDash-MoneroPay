@@ -112,6 +112,31 @@ func TestStatusCommand(t *testing.T) {
 	}
 }
 
+func TestStatusCatchUp(t *testing.T) {
+	// Spec change 15: a long rescan blocks the sync loop, so a quiet status file is expected, not a stopped bridge.
+	p, c := writeConfig(t, "https://shop.example")
+	k, _ := syncsign.NewKey()
+	syncsign.SaveKey(filepath.Join(c.DataDir, "bridge.key"), k)
+	os.MkdirAll(filepath.Join(c.DataDir, "run"), 0o700)
+	long := time.Now().Add(-40 * time.Minute)
+	for name, want := range map[string]struct {
+		st   bridgeloop.Status
+		code int
+		text string
+	}{
+		"creating":   {bridgeloop.Status{LastAttemptAt: long, CatchUp: &bridgeloop.CatchUp{Target: 312, Addresses: 110}}, 0, "Catching up: creating the site's payment addresses in this wallet (110 of 312)"},
+		"rescanning": {bridgeloop.Status{LastAttemptAt: long, CatchUp: &bridgeloop.CatchUp{Target: 312, Addresses: 312, Rescanning: true}}, 0, "Catching up: rescanning the wallet for payments to its 312 addresses"},
+		"failed":     {bridgeloop.Status{LastAttemptAt: long, LastError: "rescanning the wallet: connection reset", CatchUp: &bridgeloop.CatchUp{Target: 312}}, 1, "Problem:    rescanning the wallet: connection reset"},
+	} {
+		b, _ := json.Marshal(want.st)
+		os.WriteFile(filepath.Join(c.DataDir, "run", "status.json"), b, 0o600)
+		code, out, _ := run(context.Background(), "status", "--config", p)
+		if code != want.code || !strings.Contains(out, want.text) || (want.code == 0 && strings.Contains(out, "Problem")) {
+			t.Errorf("%s: %d %q", name, code, out)
+		}
+	}
+}
+
 func TestStatusNodeCheck(t *testing.T) {
 	p, c := writeConfig(t, "https://shop.example")
 	k, _ := syncsign.NewKey()

@@ -122,19 +122,29 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	now := time.Now()
+	// While the wallet catches up to the site's addresses (spec change 15), the sync loop waits for it: a quiet
+	// status file is expected then, not a sign of a stopped bridge.
+	catching := st.CatchUp != nil
 	if st.LastSyncAt.IsZero() {
 		fmt.Fprintln(stdout, "Last sync:  never")
-		healthy = false
+		healthy = healthy && catching
 	} else {
 		fmt.Fprintf(stdout, "Last sync:  %s ago\n", now.Sub(st.LastSyncAt).Round(time.Second))
 	}
-	if now.Sub(st.LastAttemptAt) > staleAfter {
+	if !catching && now.Sub(st.LastAttemptAt) > staleAfter {
 		healthy = false
 		fmt.Fprintf(stdout, "Problem:    the bridge hasn't tried to sync for %s. Is it running? Check with: systemctl status xmr-bridge\n", now.Sub(st.LastAttemptAt).Round(time.Second))
 	}
 	if st.LastError != "" {
 		healthy = false
 		fmt.Fprintf(stdout, "Problem:    %s\n", st.LastError)
+	}
+	switch c := st.CatchUp; {
+	case c == nil:
+	case c.Rescanning:
+		fmt.Fprintf(stdout, "Catching up: rescanning the wallet for payments to its %d addresses. Payments are reported when it finishes\n", c.Addresses)
+	default:
+		fmt.Fprintf(stdout, "Catching up: creating the site's payment addresses in this wallet (%d of %d), then one rescan\n", c.Addresses, c.Target)
 	}
 	switch nc := st.NodeCheck; nc.State {
 	case "", crosscheck.Off:
