@@ -1320,3 +1320,65 @@ Click-through (dev site, 01:52 UTC):
 Bug found while planning those changes (mine, 4d):
 - "Late" is set whenever any payment arrived after the deadline, whether or not the total reached the price (`evaluate`, `hasLate`).
 - The late item always says "Paid in full … The money is in your wallet", which is wrong for a late partial payment. Fix and recommended action: in the UI-changes plan.
+
+## 2026-10-09 · Phase 04 · Click-through UI changes built; end of night: handoff
+
+Wyatt's click-through decisions (from `~/xmr-pay-dev-data/04-ui/notes.md`, eight changes, plus answers Q1–Q4 and the paging choice) are recorded in `decisions.md`, Admin experience (`d5098dc`), and built.
+
+**Plugin (`587b32a`):**
+- **Page order:** before setup, banners, checklist, Connect wallet host, Health, invoices, Settings. After setup, banners, Health, invoices, Settings, with "Setup (complete)" and "Connect a new wallet host" as closed toggles at the end of Settings.
+- **Connect wallet host:**
+  - no confirmation dialog (EmDash 1.1.0's has no padding)
+  - a line above the button when a host is paired
+  - the Settings toggle opens by itself while a code shows (it gets a new `block_id`, `connect_code`, since the host keeps toggle state per `block_id`)
+- **"Needs a decision (N)" above "All invoices":** one banner per review invoice, red for reversed and reorg, yellow for late and underpaid, each with a closed "Details and actions" toggle.
+  - Red first: sorted in memory over up to 500 review invoices, because the reason has no index and adding one is a stop point.
+  - **12 a page,** Wyatt's choice. EmDash counts every value as a node, and a full 25-row table is about 840 of the 2,000, so 60 at once can't fit (category (c)). Paged to item 60, then "N more are in All invoices below, marked Needs decision".
+  - Worst case measured: 1,809 nodes.
+- **Review banner:** "They're under Needs a decision, below Health, …". There's no separate "Invoices" heading, because three stacked headings looked wrong; Wyatt hasn't seen this yet.
+- **Table status:** "Needs decision: <reason>".
+- **Gone-payment wording:** reversed reads "No longer reported (needed N)" and "0 XMR now" (+ what was reported). Reorg reads "Not mined again (needed N)" and "X XMR, not in a block now".
+- **"Open product" link** from `productRef`.
+- **Fixed 4d's wording:** a late payment short of the price reads "Late payment · N% received" and recommends Expire (Q2).
+- **The 4c limit test** now counts nodes as EmDash does.
+
+**Bridge (`c76efda`):**
+- Every message that sends the admin for a pairing code quotes both labels: "Connect wallet host" on the site's Monero payments page (after setup, it's "Connect a new wallet host" under Settings).
+- The wording is one constant in a new package, `internal/sitetext`. Its test checks that the plugin's `admin.ts` still has both labels.
+
+Tests:
+- Plugin: 196 pass (new `admin-layout.test.ts`; `admin-review.test.ts` rewritten), typecheck clean, bundle 47.6 KB validates.
+- Bridge: gofmt, vet and `go test ./...` pass, with and without `-tags devrelease`. `-race`: CI only.
+
+Not covered:
+- **Wyatt's live look at the reworked page:** the dev site was started at 03:07 UTC for it, then the session stopped for the night.
+- **The `compareAndSet` race:** still untested, because the test host can't interleave a sync with the write.
+
+Docs:
+- A setup-friction row: CI job logs need sign-in; use the check-run annotations.
+- Phase 04's page order.
+
+State left:
+- **Not pushed:** `56da16f..c76efda`, five commits (4d, its progress entry, the decisions, the UI changes, the bridge messages). CI last ran on `3c69299`, green.
+- The bridge `97f0e66` is installed and paired, and backs off while the site is stopped.
+- Dev site, release server and watcher stopped; ports 4321, 4322 and 8099 free; no tmux sessions.
+- **Dev database:**
+  - setup done (`state:setupDone`)
+  - the 4b test tip settled
+  - the four review invoices (#4 late, #6 and #7 underpaid, #261 reversed) untouched
+  - backups: `baseline/data.db.before-4d-clickthrough` and `baseline/data.db.before-4d-ui`
+
+Next steps, in order:
+1. **Wyatt approves the push;** Claude checks CI (`scripts/ci-status.py`).
+2. **Live look:** back up `data.db`, `cd plugin && pnpm run build`, start the dev site, wait for a sync. Wyatt clicks through the reworked page:
+   - **Needs a decision (4):** red `far` first, then three yellow.
+   - **The toggles:** Details and actions, Open product, and Settings' Setup and Connect toggles, with Connect showing the code after the button is pressed.
+   - **Resolving the dev items (optional):** Mark settled on `far` through its confirm button; the recommended action on #4.
+3. **Close phase 04** if the look passes: the progress entry, then phase 05 (setup test).
+
+Carried over for Wyatt:
+- **Spec text to fold into the live spec:** spec changes 6, 7 and 9–17, and 19's Bridge public key row. `docs/spec.md` can't be edited here (`.claude/settings.json`).
+- **Spec change 18:** A in phase 06; B's spike after phase 04, decision before phase 07.
+- **The mainnet second-node list** (before phase 09).
+- **A self-update doesn't refresh the root-owned admin copy** (`/usr/local/bin/xmr-bridge`), so new `status` output reaches existing installs only when the installer runs again. Decide before phase 09.
+- **EmDash's confirm dialog has no padding:** upstream, for Wyatt to report if he wants.
