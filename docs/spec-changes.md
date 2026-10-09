@@ -391,7 +391,7 @@ Effect on the trust contract:
 
 Recommended order (planning chat): accept A for phase 06. Run B's spike after phase 04 and decide B before phase 07. Phase 04 goes ahead as written.
 
-## 19. The "paste a key by hand" fallback has nothing to paste  (status: proposed, 2026-10-09)
+## 19. The "paste a key by hand" fallback has nothing to paste  (status: accepted, 2026-10-09, option (a))
 Found in: phase 04 session 4b, building the Settings section.
 Spec says: Configuration, "Bridge public key | filled in by pairing | … Pasting a key by hand is a fallback for advanced setups. Not a secret." Phase 04, Settings: "The bridge public key read-only, with 'paste a key by hand' as an advanced fallback."
 Evidence:
@@ -407,3 +407,7 @@ Proposal:
 
 Effect on the admin budget: none for (a); for (b), an extra advanced path (not part of setup).
 Effect on the trust contract: none for either (the key setting exists already).
+Wyatt's decision (2026-10-09): (a), drop the fallback. Also, `xmr-bridge status` prints the bridge's public key in the form the admin page shows, so the admin can check they match. Implemented in phase 04 session 4b.
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Configuration, the Bridge public key row: "| Bridge public key | filled in by pairing | none | Shown read-only; pairing is the only way to set it. `xmr-bridge status` on the wallet host prints the same key, so the two can be compared. Not a secret. |"
+- No other line of the spec mentions pasting a key. Key design decisions ("…instead of a key to copy by hand") already says pairing replaces copying a key.

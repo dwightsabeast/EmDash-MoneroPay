@@ -36,6 +36,7 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | The unpaid address gap line (2026-10-08, phase 04 plan, spec change 9): built in phase 04 with a constant threshold of 150, and as its fix the remedy phase 03 found on stagenet: in the wallet app, create receiving addresses up to the index, then rescan | Phase 03 showed both steps are needed; the wallet-app check is phase 05 |
 | Wallet height against the expected height (2026-10-08, phase 04 plan): the bridge reports a `checks.wallet` entry (its wallet's height against its node's) in the optional `checks` field; the plugin shows it | The site has no independent expected height; no contract change |
 | One recommended action per review reason (2026-10-08, phase 04 plan): late → Mark settled; underpaid → Expire (refund outside Coffer; Mark settled stays in the row menu); reorg that didn't recover → Expire; reversed → Expire, with "if your wallet app shows this payment, use Mark settled" | The money arrived for late; for the others nothing should ship until the admin checks; a false reversed (3h) stays recoverable |
+| No "paste a key by hand" fallback (2026-10-09, phase 04 session 4b, spec change 19, option (a)): pairing is the only way to set the bridge key; the admin page shows it read-only and `xmr-bridge status` prints the same text | The bridge makes its key only while pairing and never printed it, so there was nothing to paste; one way in is one path to test |
 
 ## Project and process
 

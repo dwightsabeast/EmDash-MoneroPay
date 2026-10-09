@@ -168,7 +168,11 @@ describe("settings: the bridge key", () => {
 	it("shown read-only when paired, Not paired otherwise", async () => {
 		await setup();
 		const keyField = (b: B[]) => b.find((x) => x.type === "fields" && x.block_id === "bridge_key")?.fields[0];
-		expect(keyField(await load())).toEqual({ label: "Bridge public key", value: PUBLIC_KEYS.test1 });
+		const b = await load();
+		expect(keyField(b)).toEqual({ label: "Bridge public key", value: PUBLIC_KEYS.test1 });
+		// No paste-by-hand form (spec change 19); the wallet host prints the same key.
+		expect(JSON.stringify(b)).toContain("On the wallet host, xmr-bridge status prints the same key.");
+		expect(b.some((x) => x.type === "form" && x.block_id !== "settings")).toBe(false);
 		await host?.dispose();
 		await setup({ paired: false });
 		expect(keyField(await load())).toEqual({ label: "Bridge public key", value: "Not paired" });

@@ -18,6 +18,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/pairing"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/selfupdate"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 )
 
 func keyFile(cfg config.Config) string { return filepath.Join(cfg.DataDir, "bridge.key") }
@@ -112,6 +113,13 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Site:       %s\nNetwork:    %s\n", cfg.Site, cfg.Network)
 	if _, err := os.Stat(keyFile(cfg)); err == nil {
 		fmt.Fprintln(stdout, "Paired:     yes")
+		// The public key in the admin page's form (spec change 19), so the admin can check the two match.
+		if k, err := syncsign.LoadKey(keyFile(cfg)); err == nil {
+			fmt.Fprintf(stdout, "Bridge key: %s\n", syncsign.PublicKeyText(k))
+		} else {
+			healthy = false
+			fmt.Fprintf(stdout, "Bridge key: can't be read (%v). Pair again: on the site's Monero payments page, press Connect wallet host and run the command it shows\n", err)
+		}
 	} else {
 		healthy = false
 		fmt.Fprintln(stdout, "Paired:     no: this wallet host is not paired yet. On the site's Monero payments page, press Connect wallet host and run the command it shows")

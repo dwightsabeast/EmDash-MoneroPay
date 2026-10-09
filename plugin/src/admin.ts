@@ -306,7 +306,7 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 		{ type: "divider" },
 		{ type: "header", text: "Settings" },
 		{ type: "fields", block_id: "bridge_key", fields: [{ label: "Bridge public key", value: key ?? "Not paired" }] },
-		{ type: "context", text: "Filled in by pairing. It's a public key, not a secret." },
+		{ type: "context", text: "Filled in by pairing, the only way to set it. It's a public key, not a secret. On the wallet host, xmr-bridge status prints the same key." },
 		{
 			type: "form",
 			block_id: "settings",

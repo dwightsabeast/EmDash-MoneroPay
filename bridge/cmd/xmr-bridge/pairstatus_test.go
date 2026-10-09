@@ -125,6 +125,10 @@ func TestStatusCommand(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "48 of 50") || !strings.Contains(out, "2222000") || !strings.Contains(out, "Paired:") {
 		t.Fatalf("healthy: %d %q", code, out)
 	}
+	// The public key, as the site's admin page shows it (spec change 19), so the two can be compared.
+	if !strings.Contains(out, "\nBridge key: "+syncsign.PublicKeyText(k)+"\n") {
+		t.Fatalf("no bridge key line: %q", out)
+	}
 	write(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now.Add(-10 * time.Minute), LastError: "the site can't be reached: dial tcp: connection refused"})
 	code, out, _ = run(context.Background(), "status", "--config", p)
 	if code != 1 || !strings.Contains(out, "connection refused") {
@@ -134,6 +138,13 @@ func TestStatusCommand(t *testing.T) {
 	code, out, _ = run(context.Background(), "status", "--config", p)
 	if code != 1 || !strings.Contains(out, "systemctl status xmr-bridge") {
 		t.Fatalf("not running: %d %q", code, out)
+	}
+	// A key file that can't be read: unhealthy, with the fix.
+	write(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now, WalletHeight: 2222000, PoolFree: 48, PoolTarget: 50})
+	os.WriteFile(filepath.Join(c.DataDir, "bridge.key"), []byte("garbage"), 0o600)
+	code, out, _ = run(context.Background(), "status", "--config", p)
+	if code != 1 || !strings.Contains(out, "Bridge key: can't be read") || !strings.Contains(out, "Connect wallet host") {
+		t.Fatalf("bad key: %d %q", code, out)
 	}
 }
 
