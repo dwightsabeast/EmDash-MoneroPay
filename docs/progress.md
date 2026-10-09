@@ -1269,3 +1269,34 @@ State left:
 - Database backup before the tip: `baseline/data.db.before-4b-tip`.
 
 Next step: session 4c (invoice table: paged products, row actions with stale-state checks, not-counted transfers, hundreds of invoices).
+
+## 2026-10-09 · Phase 04 · Session 4c: invoice table and row actions (code done)
+
+Pushed before the session: `feceff2..21ec032`.
+
+Done (`aed1b84`, local):
+- **Invoices table:** product invoices, newest first, 25 a page. "Load more" pages by storage cursor, and "Newest invoices" goes back. Columns:
+  - status, with the review reason and "(by admin)"
+  - fiat amount, XMR, received
+  - confirmations: the deepest counted transfer plus what's needed, so a review invoice no longer reads "0" (3h's note)
+  - created, expires
+  
+  Tips are left out until phase 07.
+- **Row menu by state:**
+  - Mark settled and Expire: final (`adminFinal`)
+  - Raise confirmations to 10: open invoices only, never lower
+  - Details and txids
+- **Stale state:** each action re-reads the invoice and refuses, changing nothing, if its state no longer allows the action. The write is a `compareAndSet` on the revision read, so a sync landing in between isn't overwritten.
+- **Details:** amounts, the payment address, buyer email, refund address and note as plain text. Each txid as copyable text, with why a transfer doesn't count (time-locked until a block or a time, or flagged as a possible double spend).
+
+Tests:
+- Plugin: 170 pass (11 new in `admin-invoices.test.ts`), typecheck clean, bundle 42.4 KB validates.
+- Mutation check: "settle allowed in every state" caught by the menu and stale-state tests.
+- The 300-invoice test takes 0.9 s here and has its own 30 s timeout. Everything else keeps vitest's 5 s.
+
+Not covered:
+- **The `compareAndSet` race itself** (a sync landing between the read and the write): the test host can't interleave the two. The stale-state checks are tested.
+- **Sorting by column:** not offered. Columns aren't sortable.
+- **After a row action, the table returns to its first page:** the menu's value doesn't carry the cursor.
+
+Next step: session 4d (review queue with one recommended action per reason, the false-`reversed` path). Then Wyatt's click-through of the whole page on the dev site.
