@@ -390,3 +390,20 @@ Effect on the trust contract:
 - **Both keep** the reason behind the "no in-plugin watcher" decision: no key of any kind on the site; the view key stays on the wallet host or nowhere. B does take on the rejected watcher's other cost, depending on public nodes, and accepts it for tips only. Only the decision's wording, "no in-plugin quick setup mode", is reopened.
 
 Recommended order (planning chat): accept A for phase 06. Run B's spike after phase 04 and decide B before phase 07. Phase 04 goes ahead as written.
+
+## 19. The "paste a key by hand" fallback has nothing to paste  (status: proposed, 2026-10-09)
+Found in: phase 04 session 4b, building the Settings section.
+Spec says: Configuration, "Bridge public key | filled in by pairing | … Pasting a key by hand is a fallback for advanced setups. Not a secret." Phase 04, Settings: "The bridge public key read-only, with 'paste a key by hand' as an advanced fallback."
+Evidence:
+- `xmr-bridge` makes its key only inside pairing (`internal/pairing.Pair`): a new key per attempt, saved only when the site accepts it.
+- No command prints the public key (`grep PublicKeyText bridge/cmd`: nothing), and no command makes a key without pairing.
+- So an admin has no key to paste. A pasted key would also leave the bridge without the private key that matches it.
+
+The fallback would only help where pairing fails but signed syncs would work. Pairing and syncs use the same route, the same signature check and the same outbound connection, so nothing found so far fits that.
+
+Proposal:
+- **(a), recommended:** drop the fallback from the spec. Pairing stays the only way to set the key, and the admin page shows the key read-only, as built in 4b.
+- **(b):** a new `xmr-bridge key --new` that makes and saves a key and prints its public half; the admin pastes it into a form on the admin page. That's one more bridge command, one more admin path to test and document, and a way to put a key on the site that no pairing code vouches for.
+
+Effect on the admin budget: none for (a); for (b), an extra advanced path (not part of setup).
+Effect on the trust contract: none for either (the key setting exists already).
