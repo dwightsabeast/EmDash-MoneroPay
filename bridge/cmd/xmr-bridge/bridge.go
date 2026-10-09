@@ -16,6 +16,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/hashsig"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/monerodl"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/supervise"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/wallet"
@@ -99,6 +100,12 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 		DataDir: cfg.DataDir,
 		Log:     log,
 		Extra:   func() any { return sup.Status() },
+		NodeHeight: func(ctx context.Context) (uint64, error) {
+			c, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			info, err := noderpc.GetInfo(c, cfg.Node, nil)
+			return info.Height, err
+		},
 	})
 	if err != nil {
 		return nil, err

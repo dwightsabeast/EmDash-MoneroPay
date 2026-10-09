@@ -35,6 +35,10 @@ const (
 	walletTimeout = 30 * time.Second
 	createBatch   = 100            // subaddresses per create_address call while catching up
 	rescanLimit   = 24 * time.Hour // a rescan from the restore height; ctx (shutdown) ends it sooner
+	// The wallet check (phase 04): behind when its node is more than walletBehind blocks ahead; the node is asked for
+	// its height at most every nodeHeightEvery.
+	walletBehind    = 5
+	nodeHeightEvery = time.Minute
 )
 
 // Wallet is what the loop needs from wallet-rpc (*walletrpc.Client).
@@ -74,6 +78,8 @@ type Options struct {
 	CrossCheck CrossChecker
 	// Updates, when set, describes the update state for the status file.
 	Updates func() string
+	// NodeHeight, when set, reads the node's chain height for the wallet check sent to the site.
+	NodeHeight func(ctx context.Context) (uint64, error)
 
 	Interval   time.Duration // default 12 s
 	Jitter     time.Duration // default 3 s
@@ -128,6 +134,10 @@ type Loop struct {
 	known   uint32
 	poolTop uint32
 	catchup uint32
+	// The wallet check's last node answer and when it was asked.
+	nodeAt     time.Time
+	nodeHeight uint64
+	nodeErr    error
 }
 
 // New loads any pending addresses from a previous run.
@@ -345,7 +355,7 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 	l.mu.Lock()
 	nc := l.st.NodeCheck
 	l.mu.Unlock()
-	checks := &syncclient.Checks{Node: &syncclient.Check{State: string(nc.State), Detail: nc.Detail}}
+	checks := &syncclient.Checks{Node: &syncclient.Check{State: string(nc.State), Detail: nc.Detail}, Wallet: l.walletCheck(ctx, height)}
 	for {
 		body := syncclient.Body{V: syncclient.ProtocolV, Seq: l.nextSeq(), Height: height, Addresses: addresses, Snapshots: snapshots[:sent], Checks: checks}
 		resp, err = l.o.Site.Send(ctx, key, body)
@@ -605,6 +615,38 @@ func less(a, b string) bool {
 		return len(a) < len(b)
 	}
 	return a < b
+}
+
+// walletCheck compares the wallet's height with its node's (asked at most every nodeHeightEvery); nil without
+// NodeHeight. The node's error stays in the log: it can hold the node's address, which the site doesn't need.
+func (l *Loop) walletCheck(ctx context.Context, wallet uint64) *syncclient.Check {
+	if l.o.NodeHeight == nil {
+		return nil
+	}
+	now := l.o.Now()
+	l.mu.Lock()
+	stale := l.nodeAt.IsZero() || now.Sub(l.nodeAt) >= nodeHeightEvery
+	l.mu.Unlock()
+	if stale {
+		h, err := l.o.NodeHeight(ctx)
+		if err != nil {
+			l.o.Log.Warn("reading the node's height", "err", err)
+		}
+		l.mu.Lock()
+		l.nodeAt, l.nodeHeight, l.nodeErr = now, h, err
+		l.mu.Unlock()
+	}
+	l.mu.Lock()
+	node, err := l.nodeHeight, l.nodeErr
+	l.mu.Unlock()
+	if err != nil {
+		return &syncclient.Check{State: "unavailable", Detail: "the wallet host's node didn't answer; on the wallet host, run xmr-bridge status"}
+	}
+	detail := fmt.Sprintf("the wallet is at block %d, its node at %d", wallet, node)
+	if node > wallet+walletBehind {
+		return &syncclient.Check{State: "behind", Detail: detail}
+	}
+	return &syncclient.Check{State: "ok", Detail: detail}
 }
 
 func (l *Loop) nextSeq() int64 {

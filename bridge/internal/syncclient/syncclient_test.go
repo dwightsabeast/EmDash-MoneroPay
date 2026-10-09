@@ -229,3 +229,11 @@ func TestChecksField(t *testing.T) {
 		t.Fatalf("body %s", s.body)
 	}
 }
+
+func TestChecksJSON(t *testing.T) {
+	// The shape the plugin parses (plugin/src/sync/protocol.ts, parseChecks).
+	b, err := json.Marshal(Checks{Node: &Check{State: "off"}, Wallet: &Check{State: "behind", Detail: "the wallet is at block 1, its node at 9"}})
+	if err != nil || string(b) != `{"node":{"state":"off"},"wallet":{"state":"behind","detail":"the wallet is at block 1, its node at 9"}}` {
+		t.Fatalf("%s %v", b, err)
+	}
+}

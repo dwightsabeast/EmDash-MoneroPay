@@ -707,3 +707,51 @@ func TestProbeOnlyWhenThePoolOutgrowsTheWallet(t *testing.T) {
 		t.Fatalf("probes %d, rescans %d", w.probes, w.rescans)
 	}
 }
+
+func TestWalletCheck(t *testing.T) {
+	// Phase 04 (Wyatt, 2026-10-08): checks.wallet compares the wallet's height with its node's, asking the node at
+	// most once a minute. Without a node to ask, no wallet check is sent.
+	l, w, s, _ := setup(t)
+	ctx := context.Background()
+	l.SyncOnce(ctx)
+	if b := s.last(); b.Checks == nil || b.Checks.Wallet != nil {
+		t.Fatalf("no NodeHeight: checks %+v", b.Checks)
+	}
+	clock := time.Unix(1790000000, 0)
+	l.o.Now = func() time.Time { return clock }
+	node, calls := uint64(2222000+walletBehind), 0
+	var nodeErr error
+	l.o.NodeHeight = func(context.Context) (uint64, error) { calls++; return node, nodeErr }
+	check := func(state, detail string) {
+		t.Helper()
+		if err := l.SyncOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		b := s.last()
+		if b.Checks == nil || b.Checks.Wallet == nil || b.Checks.Wallet.State != state || b.Checks.Wallet.Detail != detail {
+			t.Fatalf("want %s %q, got %+v", state, detail, b.Checks.Wallet)
+		}
+	}
+	check("ok", "the wallet is at block 2222000, its node at 2222005")
+	if calls != 1 {
+		t.Fatalf("node asked %d times", calls)
+	}
+	// Within the minute: the last answer is reused.
+	node = 2222000 + walletBehind + 1
+	clock = clock.Add(59 * time.Second)
+	check("ok", "the wallet is at block 2222000, its node at 2222005")
+	if calls != 1 {
+		t.Fatalf("node asked %d times within a minute", calls)
+	}
+	clock = clock.Add(2 * time.Second)
+	check("behind", "the wallet is at block 2222000, its node at 2222006")
+	// A wallet ahead of its node (the node restarting) isn't behind.
+	node, clock = 2221990, clock.Add(time.Minute)
+	check("ok", "the wallet is at block 2222000, its node at 2221990")
+	// The node's error stays in the bridge's log: it can hold the node's address, which the site has no need for.
+	nodeErr, clock = errors.New("dial tcp 192.0.2.7:18081: connection refused"), clock.Add(time.Minute)
+	check("unavailable", "the wallet host's node didn't answer; on the wallet host, run xmr-bridge status")
+	if w.height != 2222000 {
+		t.Fatal("wallet height changed")
+	}
+}
