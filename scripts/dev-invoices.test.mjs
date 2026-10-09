@@ -1,4 +1,4 @@
-// Tests for the pure parts of scripts/dev-invoices.mjs (session 3h). Run: node --test scripts/
+// Tests for the pure parts of scripts/dev-invoices.mjs (session 3h). Run: node --test scripts/*.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

@@ -4,8 +4,10 @@
 # an install.sh filled with their SHA-256s, and an unsigned release.json for Wyatt to sign
 # (scripts/sign-dev-release.sh). Stagenet testing only; real releases (https, the real key) come from CI in phase 09.
 #
-#   scripts/build-dev-release.sh [--version <x.y.z[-suffix]>] [--break crash|badsig]
+#   scripts/build-dev-release.sh [--version <x.y.z[-suffix]>] [--break crash|badsig] [--base http://<address>:<port>]
 #   serve:  tmux new -d -s release 'cd ~/xmr-pay-dev-data/dev-release && python3 -m http.server 8099 --bind 127.0.0.1'
+#   --base: where the wallet host fetches the release (default loopback). Phase 05's setup test serves it on the dev
+#   box's LAN address so a second machine can install; serve with --bind set to that address then.
 #   install (Wyatt): curl -fsSL http://127.0.0.1:8099/install.sh | sh -s -- --site <site> --pair <code> --allow-same-machine
 set -eu
 
@@ -19,10 +21,13 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--version) version=$2; shift 2 ;;
 	--break) breakmode=$2; shift 2 ;;
-	*) echo "usage: $0 [--version x.y.z] [--break crash|badsig]" >&2; exit 2 ;;
+	--base) base=$2; shift 2 ;;
+	*) echo "usage: $0 [--version x.y.z] [--break crash|badsig] [--base http://<address>:<port>]" >&2; exit 2 ;;
 	esac
 done
 case "$breakmode" in "" | crash | badsig) ;; *) echo "--break is crash or badsig" >&2; exit 2 ;; esac
+# A scheme, a host and an optional port, nothing after: it's pasted into sed, install.sh and the bridge's build flags.
+if ! printf '%s' "$base" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'; then echo "--base is http(s)://<address>[:<port>], no path or trailing slash" >&2; exit 2; fi
 [ -f "$pubfile" ] || { echo "no $pubfile: Wyatt runs scripts/dev-release-key.sh first" >&2; exit 1; }
 pub=$(tr -d '\n' <"$pubfile")
 sha=$(git -C "$repo" rev-parse --short HEAD)
