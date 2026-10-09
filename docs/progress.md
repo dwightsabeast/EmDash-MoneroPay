@@ -1194,3 +1194,16 @@ Next step: the live look.
 4. Wyatt opens `/payments` and the dashboard through the tunnel.
 
 Then 4b (setup checklist, test address, pairing notes, the bridge key setting).
+
+## 2026-10-08 · Phase 04 · Session 4a: live look (done)
+
+- **Bridge update:** dev release `0.0.202610090032-dev.97f0e66`, signed by Wyatt (`4a-sign-output.txt`). The installed bridge updated itself from `0d66a34`. Its syncs now carry `checks.wallet`: `ok`, "the wallet is at block 2225127, its node at 2225126", with `checks.node` off (own node).
+- **Wyatt's look through the tunnel:**
+  - Wallet height line, the address meter and its hint, and the amber "4 invoices need a decision" banner (3h's `far` and the three deliberate underpaid or late invoices) were all shown.
+  - No "wallet app may miss payments" line, correctly: the highest claimed and the highest paid index are both 266, so the gap is 0.
+- **No spam-limit line, correctly:** no checkout since `state:clientIp` was added.
+- **State left:**
+  - The bridge `97f0e66` is installed.
+  - Dev site and release server stopped.
+
+Next step: session 4b (setup checklist with Get a test address, pairing notes, the bridge key read-only with the paste-by-hand fallback).
