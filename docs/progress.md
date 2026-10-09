@@ -1452,3 +1452,42 @@ Carried over for Wyatt:
 - **Review advice wording:** "find it under All invoices below" may need Load more for older invoices. Revisit if the setup test or Wyatt trips on it.
 
 Next step: phase 05 (setup test), prep session. Read `docs/phases/05-setup-test.md`, write the plan, and wait for Wyatt's approval.
+
+## 2026-10-09 · Phase 05 · Prep session: protocol and scripts (waiting for Wyatt's test-day setup)
+
+Pushed before the session: `6540cc6..ad056ad` (the 20 s test limit and the phase 04 close-out). CI run 37995406578 passed (plugin, bridge, race detector), so the timeout fix worked.
+
+Wyatt's choices (2026-10-09):
+- **Install URL:** patch the test build, so the tester copies the command from the admin page.
+- **Fresh install state:** a reset script, not a second dev site.
+- **Wallets:** a new stagenet shop wallet in Feather on the tester's machine; Wyatt's buyer wallet sends the tip.
+
+Done:
+- **`docs/setup-test.md`:**
+  - Part 1, the tester's instructions: three places, a check after every step, the installer's real prompts and finish message, `xmr-bridge status` and `install.log` for trouble, never a saved transcript.
+  - Part 2, the timing sheet and confusion log.
+  - Part 3, pass or fail, including the Feather check (spec change 9).
+  - Runs: A, own node on the LAN (counts as own, so the cross-check is off); B, a public node.
+- **Scripts (`47c0728`):**
+  - `build-dev-release.sh --base`
+  - `setup-test-plugin.sh`: swaps the install URL in the built `dist/plugin.mjs` only. The bundle check rebuilds `dist`, so it runs before the swap.
+  - `setup-test-reset.mjs`: backs up, then removes every Coffer row and setting. `--restore` puts a backup back. It refuses while port 4321 or 4322 answers.
+- **Local files, not in git:**
+  - `~/xmr-pay-dev-data/05-setup/organizer.md`: addresses, the setup order, the container-side reachability check, the evidence commands, between-run and after-test steps.
+  - `run-A.md` and `run-B.md`: sheet copies to fill in.
+- **CLAUDE.md:** two command rows. The script-test run hint is fixed to `node --test scripts/*.test.mjs`; Node 24 doesn't take a directory.
+
+Tests:
+- **Script tests:** 10 pass, 5 of them new for the reset script. Mutation check: deleting only pool and invoices fails 2.
+- **`setup-test-plugin.sh`:** checked with a documentation-range address (192.0.2.1). The URL lands in the curl command, and a plain build restores the placeholder.
+- **`build-dev-release.sh --base`:** only the address check was tested. A real build overwrites `~/xmr-pay-dev-data/dev-release`, so it runs on test day.
+
+Found while writing (for Wyatt):
+- **`curl` on the container:** a minimal Debian 12 container has no `curl`, and the install command needs it. The organizer sheet recommends Ubuntu 24.04. Phase 09's install docs should name what the wallet host must already have (`curl`, `sha256sum`, `sudo` or root), or `install.sh` should say so. Raise it in triage if the run trips on it.
+- **The dev-box bridge needs no `sudo` stop:** it syncs to `localhost:4321`, which stays stopped during the test, so it backs off. The restore brings its key back.
+
+Not covered yet:
+- **Steps 4 and 8's Feather menu names:** "Wallet → Keys" is from memory. Wyatt or the tester confirms it in the first run.
+- **The admin menu label:** "Monero payments" is the manifest's label; the exact menu path is seen on test day.
+
+Next step: Wyatt does organizer sheet section A (container, monerod LAN listener, Cloudflare hostname, public node, the tester's Feather wallet, unlocked buyer outputs) and says when he's ready. Claude then runs section B, Wyatt runs the reachability check on the container, then run A.
