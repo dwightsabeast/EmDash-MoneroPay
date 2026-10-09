@@ -1425,7 +1425,11 @@ Database backups: `baseline/data.db.before-04-livelook` and `baseline/data.db.be
 
 ## 2026-10-09 · Phase 04 · Done: Wyatt's look at round 2 passed
 
-Pushed: `ac02c68..6540cc6` (round 2 and its progress entry). CI on `6540cc6`: see the next entry.
+Pushed: `ac02c68..6540cc6` (round 2 and its progress entry).
+
+**CI on `6540cc6` failed** (run 37994601431): one plugin test timed out at vitest's 5 s default. It was "no Product field…" in `admin-invoices.test.ts`, which takes 0.7 s here. The bridge job and race detector passed. The cause is the runner's speed, not the code: CI has run 7× slower before (run 37866556943).
+- Fix: `testTimeout: 20_000` for the whole plugin suite in `vitest.config.ts`, committed locally.
+- Not yet pushed, so not yet confirmed green.
 
 Wyatt looked at the round 2 page on the dev site and passed it "for now". Phase 04's done criteria are met:
 - **Every block renders** in the dev site's admin. Wyatt looked at it in 4a, 4b, the round 1 click-through and round 2.
