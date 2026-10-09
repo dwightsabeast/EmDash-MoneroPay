@@ -1422,3 +1422,29 @@ Docs:
 - **Upstream note for Wyatt:** Block Kit has no copy-to-clipboard element and no wrapping for long values.
 
 Database backups: `baseline/data.db.before-04-livelook` and `baseline/data.db.before-04-ui-2-look`, both with `VACUUM INTO` through Node's `node:sqlite` (there is no `sqlite3` on this box).
+
+## 2026-10-09 · Phase 04 · Done: Wyatt's look at round 2 passed
+
+Pushed: `ac02c68..6540cc6` (round 2 and its progress entry). CI on `6540cc6`: see the next entry.
+
+Wyatt looked at the round 2 page on the dev site and passed it "for now". Phase 04's done criteria are met:
+- **Every block renders** in the dev site's admin. Wyatt looked at it in 4a, 4b, the round 1 click-through and round 2.
+- **Every action is covered by a runtime-host test:** Connect wallet host, Get a test address, Save settings, invoice actions (settle, expire, raise, stale state, malformed values), Load more and Newest invoices, review paging.
+- **Responses stay inside Block Kit's limits:** the worst case is 1,730 of 2,000 nodes and 68.8 KB.
+
+Phase file: the page-order note now says Connect a new wallet host is in the open in Settings after setup.
+
+State left:
+- Dev site stopped; ports 4321, 4322 and 8099 free; no tmux sessions.
+- The bridge `97f0e66` is installed and paired, backing off while the site is stopped.
+- Dev database: the four review invoices (#4, #6, #7, #261) untouched unless Wyatt resolved them in the look. Backup `baseline/data.db.before-04-ui-2-look`.
+
+Carried over for Wyatt:
+- **Spec text to fold in:** changes 6, 7 and 9–17, 19's Bridge public key row, and "invoice table" (admin route row and Build plan step 4), which is now a list of toggles.
+- **Spec change 18:** A in phase 06; B's spike after phase 04, decision before phase 07.
+- **The mainnet second-node list:** before phase 09.
+- **Self-update and the admin copy:** a self-update doesn't refresh `/usr/local/bin/xmr-bridge`. Decide before phase 09.
+- **Upstream, for Wyatt to report if he wants:** EmDash 1.1.0's confirm dialog has no padding; Block Kit has no copy-to-clipboard element, and no block wraps a long unbroken value.
+- **Review advice wording:** "find it under All invoices below" may need Load more for older invoices. Revisit if the setup test or Wyatt trips on it.
+
+Next step: phase 05 (setup test), prep session. Read `docs/phases/05-setup-test.md`, write the plan, and wait for Wyatt's approval.

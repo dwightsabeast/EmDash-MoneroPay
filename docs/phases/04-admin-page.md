@@ -19,7 +19,7 @@ Phase 04, admin page. Read docs/phases/04-admin-page.md and docs/progress.md, th
 
 **The page, top to bottom**
 
-Reordered after Wyatt's click-through (2026-10-09, `decisions.md`, Admin experience): before setup is done, banners, setup checklist, Connect wallet host, Health, Invoices, Settings; once setup is done, banners, Health, Invoices ("Needs a decision", then "All invoices"), Settings, with the checklist and Connect wallet host as closed toggles in Settings. The list below is the original description of each part.
+Reordered after Wyatt's click-through (2026-10-09, `decisions.md`, Admin experience): before setup is done, banners, setup checklist, Connect wallet host, Health, Invoices, Settings; once setup is done, banners, Health, Invoices ("Needs a decision", then "All invoices"), Settings, with Connect a new wallet host in the open in Settings and the checklist as a closed toggle last (round 2, same day). The list below is the original description of each part.
 
 
 1. **Setup checklist** (shown until the first test tip settles, then collapses): wallet host paired, wallet synced, addresses ready, price feed answering, test tip received (at least 0.0001 XMR). Each unchecked item says what to do next. The test-tip item has a **Get a test address** button: it creates an open `kind: "tip"` invoice through the private `admin` route (the core has supported tip-shaped invoices since phase 02; public tip checkout comes in phase 07) and shows the subaddress, the dust floor and the `monero:` URI as copyable text. A QR code here would need a new route, so ask before proposing one.
