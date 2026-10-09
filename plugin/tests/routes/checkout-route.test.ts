@@ -146,7 +146,9 @@ describe("checkout", () => {
 		}
 	});
 
-	it("site-wide cap: TOO_MANY_OPEN at the cap; invoices past their deadline stop counting", async () => {
+	// 80 storage fixtures written one by one (the test host has no batch write): 0.7 s on the dev box, over vitest's 5 s
+	// default on a shared CI runner (run 37866556943). The longer timeout is for this test only.
+	it("site-wide cap: TOO_MANY_OPEN at the cap; invoices past their deadline stop counting", { timeout: 30_000 }, async () => {
 		const h = await setup();
 		const now = Date.now();
 		for (let i = 0; i < MAX_OPEN_TOTAL; i++) {
