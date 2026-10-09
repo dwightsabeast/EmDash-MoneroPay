@@ -19,6 +19,9 @@ Phase 04, admin page. Read docs/phases/04-admin-page.md and docs/progress.md, th
 
 **The page, top to bottom**
 
+Reordered after Wyatt's click-through (2026-10-09, `decisions.md`, Admin experience): before setup is done, banners, setup checklist, Connect wallet host, Health, Invoices, Settings; once setup is done, banners, Health, Invoices ("Needs a decision", then "All invoices"), Settings, with the checklist and Connect wallet host as closed toggles in Settings. The list below is the original description of each part.
+
+
 1. **Setup checklist** (shown until the first test tip settles, then collapses): wallet host paired, wallet synced, addresses ready, price feed answering, test tip received (at least 0.0001 XMR). Each unchecked item says what to do next. The test-tip item has a **Get a test address** button: it creates an open `kind: "tip"` invoice through the private `admin` route (the core has supported tip-shaped invoices since phase 02; public tip checkout comes in phase 07) and shows the subaddress, the dust floor and the `monero:` URI as copyable text. A QR code here would need a new route, so ask before proposing one.
 2. **Connect wallet host:** a button that issues a pairing code and shows the one install command with the code built in, a 15-minute countdown, and the cautious manual path. Pressing it again issues a new code; a completed pairing replaces the old key and says so.
 3. **Health:** one line per check: paired, last sync, wallet height against the expected height, free addresses (a meter against the pool target), price feed, review items, a run of unpaid expired invoices, remote-node cross-check. A red line names its fix, for example "Wallet host silent for 12 min. On the wallet host, run `xmr-bridge status`."

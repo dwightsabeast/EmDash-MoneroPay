@@ -108,7 +108,7 @@ describe("admin page", () => {
 		const page = (await host.admin.loadPage("/payments")).blocks as B[];
 		expect(find(page, (x) => x.type === "fields" && x.block_id === "health")?.fields[0]).toEqual({ label: "Wallet host", value: "Paired" });
 		const button = find(page, (x) => x.type === "actions")?.elements[0];
-		expect(button).toMatchObject({ label: "Connect a new wallet host", confirm: { confirm: "Create a code" } });
+		expect(button).toEqual({ type: "button", action_id: "connect_wallet_host", label: "Connect a new wallet host", style: "primary" });
 	});
 
 	it("warns when the wallet host is silent or outdated, on the page and in the widget", async () => {

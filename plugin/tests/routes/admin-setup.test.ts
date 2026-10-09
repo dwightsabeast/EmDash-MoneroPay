@@ -126,13 +126,13 @@ describe("setup checklist", () => {
 		expect(text(await load())).toContain(`Payment seen: 1 of ${tip.required} confirmations`);
 		await h.fixtures.plugin.storage("invoices", tip.id, { ...tip, status: "settled", settledAt: Date.now(), transfers: [{ ...transfer, confirmations: tip.required }] });
 		let b = await load();
-		expect(checklist(b)).toMatchObject({ label: "Setup complete", default_open: false });
+		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
 		expect(items(b)[4]).toEqual({ label: "Test tip received", value: "Done" });
 		expect(await h.inspect.kv.get("state:setupDone")).toBe(true);
 		// Collapsed for good: even with the wallet host silent later (the health panel covers that).
 		await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - 60 * 60_000, version: 1, outdated: false });
 		b = await load();
-		expect(checklist(b)).toMatchObject({ label: "Setup complete", default_open: false });
+		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
 	});
 });
 

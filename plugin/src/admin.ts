@@ -2,7 +2,8 @@
  * The admin route: the Monero payments page and the dashboard widget (phase 04). Block Kit as plain JSON objects
  * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget. Session 4b: the setup checklist with
  * Get a test address, pairing notes, the bridge key. Session 4c: the invoice table and row actions. Session 4d: the
- * review queue. Settings and Connect wallet host are from phase 02 session 2e.
+ * review queue, reworked after Wyatt's click-through (2026-10-09) into "Needs a decision", with the page reordered.
+ * Settings and Connect wallet host are from phase 02 session 2e.
  */
 import type { PluginContext } from "emdash/plugin";
 
@@ -132,7 +133,7 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 	}
 	if (checks?.wallet?.state === "unavailable") out.push({ variant: "alert", title: "The wallet host can't read its node's height", description: checks.wallet.detail ?? "On the wallet host, run: xmr-bridge status" });
 	if (checks?.node?.state === "unavailable") out.push({ variant: "alert", title: "Remote-node cross-check unavailable", description: checks.node.detail ?? "No second node answered; confirmations are reported as the configured node gives them" });
-	if (h.review > 0) out.push({ variant: "alert", title: `${plural(h.review, "invoice needs", "invoices need")} a decision`, description: "Each one shows what happened and a recommended action in the review queue." });
+	if (h.review > 0) out.push({ variant: "alert", title: `${plural(h.review, "invoice needs", "invoices need")} a decision`, description: "They're under Needs a decision, below Health, each with what happened and a recommended action." });
 	if (h.unpaidRun >= UNPAID_RUN_ALERT) out.push({ variant: "alert", title: `The last ${h.unpaidRun} checkouts expired unpaid`, description: "Buyers may be stuck. Open your pay page and check that it shows the address and the amount, then try a small test payment." });
 	return out;
 }
@@ -193,8 +194,11 @@ async function testTips(ctx: PluginContext): Promise<Invoice[]> {
 const DUST_XMR = atomicToXmr(DUST_ATOMIC);
 const tipUri = (address: string) => `monero:${address}?tx_amount=${DUST_XMR}&tx_description=${encodeURIComponent("Coffer test tip")}`;
 
-/** The setup checklist (spec, Install flow step 4): open until a test tip settles, then collapsed for good. */
-async function setupBlocks(ctx: PluginContext, h: Health, now: number): Promise<Block[]> {
+/**
+ * The setup checklist (spec, Install flow step 4), as a toggle: open near the top until a test tip settles, then closed
+ * in Settings for good (Wyatt, 2026-10-09).
+ */
+async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: boolean; toggle: Block }> {
 	const tips = await testTips(ctx);
 	let done = (await ctx.kv.get<boolean>(KV.setupDone)) === true;
 	if (!done && tips.some((t) => t.status === "settled")) {
@@ -234,7 +238,7 @@ async function setupBlocks(ctx: PluginContext, h: Health, now: number): Promise<
 		inner.push({ type: "actions", elements: [{ type: "button", action_id: "get_test_address", label: "Get a test address" }] });
 	}
 	const count = rows.filter(([, ok]) => ok).length;
-	return [{ type: "accordion", block_id: "setup", label: done ? "Setup complete" : `Setup: ${count} of 5 done`, default_open: !done, blocks: inner }];
+	return { done, toggle: { type: "accordion", block_id: "setup", label: done ? "Setup (complete)" : `Setup: ${count} of 5 done`, default_open: !done, blocks: inner } };
 }
 
 /** Get a test address: an open tip invoice on a pool address, through this private route (phase 07 adds public tips). */
@@ -266,14 +270,49 @@ function installBlocks(siteUrl: string, code: string, expiresAt: number, now: nu
 
 const INVOICE_PAGE = 25;
 const STATUS_TEXT: Record<Invoice["status"], string> = { new: "New", seen: "Seen", confirming: "Confirming", settled: "Settled", expired: "Expired", review: "Review" };
-const statusText = (inv: Invoice) => `${STATUS_TEXT[inv.status]}${inv.status === "review" && inv.reviewReason ? `: ${inv.reviewReason}` : ""}${inv.adminFinal ? " (by admin)" : ""}`;
+const statusText = (inv: Invoice) =>
+	inv.status === "review" ? `Needs decision: ${inv.reviewReason ?? "review"}` : `${STATUS_TEXT[inv.status]}${inv.adminFinal ? " (by admin)" : ""}`;
 const xmr = (atomic: bigint) => (atomic === 0n ? "0" : atomicToXmr(atomic));
 
-/** The deepest counted transfer, so an underpaid or review invoice doesn't read "0 confirmations" (phase 03 3h note). */
+/**
+ * The deepest counted transfer, so an underpaid or review invoice doesn't read "0 confirmations" (phase 03 3h note). A
+ * payment that's gone says so instead of "None yet" (Wyatt, 2026-10-09).
+ */
 function confirmationsText(inv: Invoice): string {
+	if (inv.status === "review" && inv.reviewReason === "reversed") return `No longer reported (needed ${inv.required})`;
+	if (inv.status === "review" && inv.reviewReason === "reorg") return `Not mined again (needed ${inv.required})`;
 	const deepest = Math.max(-1, ...inv.transfers.filter(counted).map((t) => t.confirmations));
 	return `${deepest < 0 ? "None yet" : deepest} (needs ${inv.required})`;
 }
+
+/** Why a transfer doesn't count; empty when it does. unlock_time below 500000000 is a block height, otherwise a Unix time. */
+function notCountedReasons(t: Invoice["transfers"][number]): string[] {
+	const why: string[] = [];
+	if (t.unlockTime !== "0") {
+		const u = BigInt(t.unlockTime);
+		why.push(`time-locked until ${u < 500_000_000n ? `block ${u}` : new Date(Number(u) * 1000).toISOString()}`);
+	}
+	if (t.doubleSpendSeen) why.push("flagged as a possible double spend");
+	return why;
+}
+
+/** The amount counted now; for a gone payment, "now", and what was reported if a not-counted transfer remains. */
+function receivedText(inv: Invoice): string {
+	const now = xmr(totals(inv).received);
+	if (inv.status === "review" && inv.reviewReason === "reorg") return `${now} XMR, not in a block now`;
+	if (inv.status === "review" && inv.reviewReason === "reversed") {
+		const held = inv.transfers.filter((t) => !counted(t));
+		if (held.length === 0) return `${now} XMR now`;
+		const sum = held.reduce((a, t) => a + BigInt(t.amountAtomic), 0n);
+		const why = [...new Set(held.flatMap(notCountedReasons))].join("; ");
+		return `${now} XMR now (${atomicToXmr(sum)} XMR was reported, now not counted: ${why})`;
+	}
+	return `${now} XMR`;
+}
+
+/** Change 8: a link to the product's editor; the host resolves it, so no lookup here. */
+const productLink = (inv: Invoice): Block[] =>
+	inv.productRef ? [{ type: "link", label: "Open product", target: { kind: "content", collection: inv.productRef.collection, id: inv.productRef.id } }] : [];
 
 type Verb = "settle" | "expire" | "raise" | "details";
 const VERB_LABELS: Record<Verb, string> = { settle: "Mark settled", expire: "Expire", raise: `Raise confirmations to ${MAX_REQUIRED}`, details: "Details and txids" };
@@ -303,14 +342,9 @@ function invoiceRow(inv: Invoice): Record<string, unknown> {
 	};
 }
 
-/** Why a transfer doesn't count, or "counted". unlock_time below 500000000 is a block height, otherwise a Unix time. */
+/** A transfer with why it doesn't count, or "counted". */
 function transferNote(t: Invoice["transfers"][number]): string {
-	const why: string[] = [];
-	if (t.unlockTime !== "0") {
-		const u = BigInt(t.unlockTime);
-		why.push(`time-locked until ${u < 500_000_000n ? `block ${u}` : new Date(Number(u) * 1000).toISOString()}`);
-	}
-	if (t.doubleSpendSeen) why.push("flagged as a possible double spend");
+	const why = notCountedReasons(t);
 	const base = `${atomicToXmr(BigInt(t.amountAtomic))} XMR, ${t.confirmations} confirmations`;
 	return why.length === 0 ? `${base}, counted` : `${base}, not counted: ${why.join("; ")}`;
 }
@@ -320,7 +354,7 @@ function detailBlocks(inv: Invoice): Block[] {
 	const fields = [
 		{ label: "Status", value: statusText(inv) },
 		{ label: "Amount", value: invoiceRow(inv).amount as string },
-		{ label: "Received", value: `${xmr(totals(inv).received)} XMR` },
+		{ label: "Received", value: receivedText(inv) },
 		{ label: "Confirmations", value: confirmationsText(inv) },
 		{ label: "Payment address", value: `#${inv.addrIndex}: ${inv.subaddress}` },
 		...(inv.productRef ? [{ label: "Product", value: inv.productRef.id }] : []),
@@ -329,6 +363,7 @@ function detailBlocks(inv: Invoice): Block[] {
 		...(inv.buyer?.note ? [{ label: "Note", value: inv.buyer.note }] : []),
 	];
 	const inner: Block[] = [{ type: "fields", fields }];
+	if (inv.productRef) inner.push({ type: "actions", elements: productLink(inv) });
 	if (inv.transfers.length === 0) inner.push({ type: "context", text: "No payment reported yet." });
 	for (const t of inv.transfers) inner.push({ type: "context", text: transferNote(t) }, { type: "code", code: t.txid });
 	return [{ type: "accordion", block_id: "invoice_details", label: `Invoice ${inv.id}`, default_open: true, blocks: inner }];
@@ -336,7 +371,7 @@ function detailBlocks(inv: Invoice): Block[] {
 
 async function invoiceBlocks(ctx: PluginContext, opts: PageOptions): Promise<Block[]> {
 	const r = await invoices(ctx).query({ where: { kind: "product" }, orderBy: { createdAt: "desc" }, limit: INVOICE_PAGE, ...(opts.cursor ? { cursor: opts.cursor } : {}) });
-	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Invoices" }];
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "All invoices" }];
 	if (opts.details) blocks.push(...detailBlocks(opts.details));
 	blocks.push({
 		type: "table",
@@ -360,27 +395,52 @@ async function invoiceBlocks(ctx: PluginContext, opts: PageOptions): Promise<Blo
 	return blocks;
 }
 
-const REVIEW_PAGE = 20;
+/** Review items per page: 12 worst-case items next to a full table and an open Details panel stay under Block Kit's
+ * 2,000 nodes (a full 25-row table is about 840; a reversed item with everything about 61). Paged up to item 60, then
+ * the rest are pointed at in All invoices (Wyatt, 2026-10-09). */
+const REVIEW_STEP = 12;
+const REVIEW_MAX = 60;
+/** Review invoices read for ordering: red first needs the reason, which has no index (adding one is a stop point). */
+const REVIEW_SCAN_PAGES = 5;
 const REVIEW_TITLE: Record<NonNullable<Invoice["reviewReason"]>, string> = { late: "Late payment", underpaid: "Underpaid", reorg: "Payment not re-mined after a reorg", reversed: "Settled payment gone" };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (ms: number) => `${MONTHS[new Date(ms).getUTCMonth()]} ${new Date(ms).getUTCDate()}`;
+/** Red where the money may be gone, yellow where it arrived and the admin decides (Wyatt, 2026-10-09). */
+const isRed = (inv: Invoice) => inv.reviewReason === "reversed" || inv.reviewReason === "reorg";
 const button = (label: string, value: string, style: "primary" | "secondary", confirm?: Record<string, string>): Block => ({ type: "button", action_id: "invoice_action", label, style, value, ...(confirm ? { confirm } : {}) });
 
-/** One review item: what happened, and the one recommended action (Wyatt, 2026-10-08, decisions.md). */
-function reviewItem(inv: Invoice, open: boolean): Block {
+/**
+ * One review item: a banner with the reason and its invoice, then a closed "Details and actions" toggle with what
+ * happened and the one recommended action (decisions.md, 2026-10-08 and 2026-10-09).
+ */
+function reviewItem(inv: Invoice): Block[] {
 	const t = totals(inv);
 	const expected = BigInt(inv.expectedAtomic ?? inv.minAtomic ?? "0");
+	const pct = expected > 0n ? (t.received * 100n) / expected : 0n;
+	const full = t.received >= t.threshold;
 	const deepest = Math.max(0, ...inv.transfers.filter(counted).map((x) => x.confirmations));
 	const reason = inv.reviewReason ?? "late";
+	// The products table holds product invoices only (tips come with phase 07).
+	const rowHint = (accept: string) => (inv.kind === "product" ? ` To accept ${accept} instead, use Mark settled in its row under All invoices below.` : "");
+	let title = REVIEW_TITLE[reason];
 	let what: string;
 	let advice: string;
 	const actions: Block[] = [];
-	if (reason === "late") {
+	if (reason === "late" && full) {
+		title += " · paid in full";
 		what = `Paid in full (${xmr(t.received)} XMR), but mined after the invoice's deadline. The money is in your wallet.`;
 		advice = "Recommended: mark it settled and fulfil the order.";
 		actions.push(button("Mark settled", `settle:${inv.id}`, "primary"));
+	} else if (reason === "late") {
+		// Late and short of the price: like underpaid (Wyatt, Q2, 2026-10-09).
+		title += ` · ${pct}% received`;
+		what = `${xmr(t.received)} of ${xmr(expected)} XMR arrived (${pct}%), part of it after the invoice's deadline.`;
+		advice = `Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${rowHint("it")}`;
+		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
 	} else if (reason === "underpaid") {
-		const pct = expected > 0n ? (t.received * 100n) / expected : 0n;
+		title += ` · ${pct}% received`;
 		what = `${xmr(t.received)} of ${xmr(expected)} XMR arrived (${pct}%) by the deadline, ${deepest} confirmations.`;
-		advice = "Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept the smaller amount instead, use Mark settled in the invoice's menu below.";
+		advice = `Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${rowHint("the smaller amount")}`;
 		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
 	} else if (reason === "reorg") {
 		what = `A chain reorganisation knocked the payment out of its block, and it wasn't mined again within ${RECONFIRM_BLOCKS} blocks.`;
@@ -394,29 +454,50 @@ function reviewItem(inv: Invoice, open: boolean): Block {
 			button("Mark settled", `settle:${inv.id}`, "secondary", { title: "Mark this invoice settled?", text: "Only if your wallet app shows the payment. The decision is final.", confirm: "Mark settled", deny: "Cancel" }),
 		);
 	}
+	actions.push(...productLink(inv));
 	const fields = [
-		{ label: "Received", value: `${xmr(t.received)} XMR` },
+		{ label: "Received", value: receivedText(inv) },
 		{ label: "Confirmations", value: confirmationsText(inv) },
 		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
 		...(inv.buyer?.refundAddress ? [{ label: "Refund address", value: inv.buyer.refundAddress }] : []),
 	];
 	const amount = inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : inv.kind;
-	return {
-		type: "accordion",
-		block_id: `review_${inv.id}`,
-		label: `${REVIEW_TITLE[reason]}: ${inv.id} (${amount})`,
-		default_open: open,
-		blocks: [{ type: "section", text: what }, { type: "context", text: advice }, { type: "fields", fields }, { type: "actions", elements: actions }],
-	};
+	return [
+		{ type: "banner", block_id: `review_${inv.id}`, variant: isRed(inv) ? "error" : "alert", title, description: `${inv.id} · ${amount} · created ${shortDate(inv.createdAt)}` },
+		{
+			type: "accordion",
+			block_id: `review_${inv.id}_details`,
+			label: "Details and actions",
+			default_open: false,
+			blocks: [{ type: "section", text: what }, { type: "context", text: advice }, { type: "fields", fields }, { type: "actions", elements: actions }],
+		},
+	];
 }
 
-/** The review queue: the oldest deadlines first, at most REVIEW_PAGE at a time. */
-async function reviewBlocks(ctx: PluginContext, total: number): Promise<Block[]> {
-	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Review queue" }];
-	if (total === 0) return [...blocks, { type: "context", text: "Nothing needs a decision." }];
-	const r = await invoices(ctx).query({ where: { status: "review" }, orderBy: { expiresAt: "asc" }, limit: REVIEW_PAGE });
-	blocks.push(...r.items.map((i, n) => reviewItem(i.data, n === 0)));
-	if (total > r.items.length) blocks.push({ type: "context", text: `${total - r.items.length} more wait after these.` });
+/** Needs a decision: red first, then the oldest deadline, 12 at a time from `start`, up to item 60. */
+async function reviewBlocks(ctx: PluginContext, total: number, start: number): Promise<Block[]> {
+	if (total === 0) return [];
+	const all: Invoice[] = [];
+	let cursor: string | undefined;
+	for (let page = 0; page < REVIEW_SCAN_PAGES; page++) {
+		const r = await invoices(ctx).query({ where: { status: "review" }, orderBy: { expiresAt: "asc" }, limit: 100, ...(cursor ? { cursor } : {}) });
+		all.push(...r.items.map((i) => i.data));
+		if (!r.hasMore || !r.cursor) break;
+		cursor = r.cursor;
+	}
+	const ordered = [...all.filter(isRed), ...all.filter((inv) => !isRed(inv))];
+	const reachable = Math.min(total, REVIEW_MAX, ordered.length);
+	const from = start < reachable ? start : 0;
+	const page = ordered.slice(from, Math.min(from + REVIEW_STEP, reachable));
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: `Needs a decision (${total})` }];
+	if (total > REVIEW_STEP) blocks.push({ type: "context", text: `Showing ${from + 1}–${from + page.length} of ${total}.` });
+	blocks.push(...page.flatMap(reviewItem));
+	const end = from + page.length;
+	const nav: Block[] = [];
+	if (from > 0) nav.push({ type: "button", action_id: "review_page", label: `Back to the first ${REVIEW_STEP}`, value: { start: 0 } });
+	if (end < reachable) nav.push({ type: "button", action_id: "review_page", label: `Show the next ${REVIEW_STEP} (${total - end} more)`, value: { start: end } });
+	if (nav.length > 0) blocks.push({ type: "actions", block_id: "review_nav", elements: nav });
+	if (end >= reachable && total > end) blocks.push({ type: "context", text: `${total - end} more are in All invoices below, marked Needs decision.` });
 	return blocks;
 }
 
@@ -462,14 +543,15 @@ interface PageOptions {
 	cursor?: string;
 	/** An invoice to show in the details panel. */
 	details?: Invoice;
+	/** The first review item shown (0, 12, 24, 36 or 48). */
+	reviewStart?: number;
 }
 
-async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
-	const { shownCode } = opts;
-	const h = await health(ctx, now, { checkRate: true });
-	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...(await setupBlocks(ctx, h, now))];
+const PAIRED_WARNING = "A wallet host is already paired. Pairing a new one replaces it, and the current one stops syncing.";
 
-	blocks.push({ type: "divider" }, { type: "header", text: "Connect wallet host" });
+/** Connect wallet host's contents: the code and commands when just made, the notes, the warning, the button. */
+async function connectBlocks(ctx: PluginContext, h: Health, now: number, shownCode?: PageOptions["shownCode"]): Promise<Block[]> {
+	const blocks: Block[] = [];
 	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
 	const siteUrl = ctx.site.url.replace(/\/$/, "");
 	if (!siteUrl) {
@@ -486,20 +568,23 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 		blocks.push({ type: "context", text: `Wallet host paired at ${utc(last.at)}${last.replaced ? ", replacing the previous one, which no longer syncs" : ""}.` });
 	}
 	if (siteUrl) blocks.push({ type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` });
-	blocks.push({
-		type: "actions",
-		elements: [
-			{
-				type: "button",
-				action_id: "connect_wallet_host",
-				label: h.paired ? "Connect a new wallet host" : "Connect wallet host",
-				style: "primary",
-				...(h.paired ? { confirm: { title: "Replace the paired wallet host?", text: "When the new wallet host pairs, it replaces the current one, which stops syncing.", confirm: "Create a code", deny: "Cancel" } } : {}),
-			},
-		],
-	});
+	// No confirmation dialog (EmDash 1.1.0's has no padding): making a code unpairs nothing, so the page says it instead.
+	if (h.paired) blocks.push({ type: "context", text: PAIRED_WARNING });
+	blocks.push({ type: "actions", elements: [{ type: "button", action_id: "connect_wallet_host", label: h.paired ? "Connect a new wallet host" : "Connect wallet host", style: "primary" }] });
+	return blocks;
+}
 
-	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review)), ...(await invoiceBlocks(ctx, opts)));
+/**
+ * The page (Wyatt, 2026-10-09). Before setup: banners, checklist, Connect wallet host, Health, invoices, Settings. After
+ * setup: banners, Health, invoices, Settings, with the checklist and Connect wallet host as closed toggles in Settings.
+ */
+async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
+	const h = await health(ctx, now, { checkRate: true });
+	const setup = await setupSection(ctx, h);
+	const connect = await connectBlocks(ctx, h, now, opts.shownCode);
+	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h)];
+	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, opts)));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
@@ -507,8 +592,6 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 	blocks.push(
 		{ type: "divider" },
 		{ type: "header", text: "Settings" },
-		{ type: "fields", block_id: "bridge_key", fields: [{ label: "Bridge public key", value: key ?? "Not paired" }] },
-		{ type: "context", text: "Filled in by pairing, the only way to set it. It's a public key, not a secret. On the wallet host, xmr-bridge status prints the same key." },
 		{
 			type: "form",
 			block_id: "settings",
@@ -519,7 +602,13 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 			submit: { label: "Save", action_id: "save_settings" },
 		},
 		{ type: "context", text: "Changes apply to new invoices only. Tiers are for orders under 100, 100 to 1,000, and over 1,000 in your currency." },
+		{ type: "fields", block_id: "bridge_key", fields: [{ label: "Bridge public key", value: key ?? "Not paired" }] },
+		{ type: "context", text: "Filled in by pairing, the only way to set it. It's a public key, not a secret. On the wallet host, xmr-bridge status prints the same key." },
 	);
+	if (setup.done) {
+		// A new block_id while a code shows: the host keeps each toggle's open state by block_id, so this one opens.
+		blocks.push(setup.toggle, { type: "accordion", block_id: opts.shownCode ? "connect_code" : "connect", label: "Connect a new wallet host", default_open: Boolean(opts.shownCode), blocks: connect });
+	}
 	return blocks;
 }
 
@@ -572,6 +661,11 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 		return { blocks: await page(ctx, now, cursor ? { cursor } : {}) };
 	}
 	if (i.type === "block_action" && i.action_id === "invoices_newest") return { blocks: await page(ctx, now) };
+	if (i.type === "block_action" && i.action_id === "review_page") {
+		const v = isObject(i.value) ? i.value : {};
+		const n = typeof v.start === "number" && Number.isFinite(v.start) ? Math.floor(v.start / REVIEW_STEP) * REVIEW_STEP : 0;
+		return { blocks: await page(ctx, now, { reviewStart: Math.min(REVIEW_MAX - REVIEW_STEP, Math.max(0, n)) }) };
+	}
 	if (i.type === "block_action" && i.action_id === "invoice_action") {
 		const r = await invoiceAction(ctx, i.value, now);
 		return { blocks: await page(ctx, now, r.details ? { details: r.details } : {}), ...(r.toast ? { toast: r.toast } : {}) };

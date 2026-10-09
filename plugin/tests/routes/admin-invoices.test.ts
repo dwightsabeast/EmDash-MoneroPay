@@ -62,7 +62,7 @@ describe("invoice table", () => {
 			["status", "badge"], ["amount", "text"], ["xmr", "text"], ["received", "text"], ["confirmations", "text"], ["created", "relative_time"], ["expires", "relative_time"], ["actions", "element"],
 		]);
 		expect(t.rows.map((r: B) => r.id)).toEqual(["inv_0003", "inv_0002", "inv_0001"]);
-		expect(row(await load(), "inv_0003")).toMatchObject({ status: "Review: underpaid", amount: "12.00 USD", xmr: "0.080000000000", received: "0.040000000000", confirmations: "7 (needs 2)" });
+		expect(row(await load(), "inv_0003")).toMatchObject({ status: "Needs decision: underpaid", amount: "12.00 USD", xmr: "0.080000000000", received: "0.040000000000", confirmations: "7 (needs 2)" });
 		expect(row(await load(), "inv_0002")).toMatchObject({ status: "Confirming", received: "0.080000000000", confirmations: "1 (needs 2)" });
 		const first = row(await load(), "inv_0001");
 		expect(first).toMatchObject({ status: "New", received: "0", confirmations: "None yet (needs 2)" });
@@ -103,6 +103,29 @@ describe("invoice table", () => {
 		expect(menuValues(row(b, "inv_0005"))).toEqual(["settle:inv_0005", "expire:inv_0005", "details:inv_0005"]);
 		expect(menuValues(row(b, "inv_0006"))).toEqual(["details:inv_0006"]);
 		expect(row(b, "inv_0006").status).toBe("Settled (by admin)");
+	});
+});
+
+describe("review invoices in the table (click-through changes 6 to 8)", () => {
+	it("status reads Needs decision with the reason; a gone payment's confirmations say so", async () => {
+		await setup([
+			invoice(1, { status: "review", reviewReason: "late", transfers: [transfer()] }),
+			invoice(2, { status: "review", reviewReason: "underpaid", transfers: [transfer({ amountAtomic: "1" })] }),
+			invoice(3, { status: "review", reviewReason: "reorg", transfers: [transfer({ confirmations: 0, height: 0 })] }),
+			invoice(4, { status: "review", reviewReason: "reversed", settledAt: T0 }),
+		]);
+		const b = await load();
+		expect(["inv_0001", "inv_0002", "inv_0003", "inv_0004"].map((id) => row(b, id).status)).toEqual(["Needs decision: late", "Needs decision: underpaid", "Needs decision: reorg", "Needs decision: reversed"]);
+		expect(row(b, "inv_0003").confirmations).toBe("Not mined again (needed 2)");
+		expect(row(b, "inv_0004").confirmations).toBe("No longer reported (needed 2)");
+	});
+
+	it("details: an Open product link to the product's editor when the invoice has a productRef, none without", async () => {
+		await setup([invoice(1, { productRef: { collection: "products", id: "prod_abc" } }), invoice(2)]);
+		const panel = async (id: string) => ((await act(`details:${id}`)).blocks as B[]).find((b) => b.type === "accordion" && b.block_id === "invoice_details") as B;
+		const links = (p: B) => p.blocks.filter((b: B) => b.type === "actions").flatMap((b: B) => b.elements).filter((e: B) => e.type === "link");
+		expect(links(await panel("inv_0001"))).toEqual([{ type: "link", label: "Open product", target: { kind: "content", collection: "products", id: "prod_abc" } }]);
+		expect(links(await panel("inv_0002"))).toEqual([]);
 	});
 });
 
@@ -191,17 +214,16 @@ describe("limits", () => {
 		expect(table(blocks).rows).toHaveLength(25);
 		const json = JSON.stringify(page);
 		expect(json.length).toBeLessThan(256 * 1024);
+		// EmDash counts every value as a node (validateResponseBounds), strings and numbers included.
 		let nodes = 0;
 		const walk = (v: unknown) => {
+			nodes++;
 			if (Array.isArray(v)) {
 				expect(v.length).toBeLessThan(1000);
 				v.forEach(walk);
-			} else if (v && typeof v === "object") {
-				nodes++;
-				Object.values(v).forEach(walk);
-			}
+			} else if (v && typeof v === "object") Object.values(v).forEach(walk);
 		};
-		walk(blocks);
+		walk(page);
 		expect(nodes).toBeLessThan(2000);
 	});
 });

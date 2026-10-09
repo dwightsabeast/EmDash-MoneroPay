@@ -162,7 +162,7 @@ describe("health panel", () => {
 		for (const [id, reason] of [["inv_r1", "late"], ["inv_r2", "underpaid"]] as const) await h.fixtures.plugin.storage("invoices", id, invoice(id, id === "inv_r1" ? 3 : 4, { status: "review", reviewReason: reason }));
 		const b = await load();
 		expect(field(b, "Review items")).toBe("2 need a decision");
-		expect(banners(b)).toContainEqual({ variant: "alert", title: "2 invoices need a decision", description: "Each one shows what happened and a recommended action in the review queue." });
+		expect(banners(b)).toContainEqual({ variant: "alert", title: "2 invoices need a decision", description: "They're under Needs a decision, below Health, each with what happened and a recommended action." });
 		expect(await widgetText()).toContain("2 review items");
 	});
 
