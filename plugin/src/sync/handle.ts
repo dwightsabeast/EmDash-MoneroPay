@@ -3,7 +3,7 @@
  * ctx.kv and declares the route). Returns the response body and the lifecycle events for the caller to record.
  */
 import { RESTORE_MARGIN_BLOCKS } from "../core/constants";
-import type { Invoice, InvoiceEvent } from "../core/invoice";
+import { type Invoice, type InvoiceEvent, counted } from "../core/invoice";
 import { isWatched } from "../core/watch";
 import { mergeSnapshot } from "./merge";
 import { type PairingState, isPairingActive, pairingCodeMatches } from "./pairing";
@@ -36,6 +36,8 @@ export interface SyncStore {
 	setPairing(state: PairingState): Promise<void>;
 	getBridgeState(): Promise<BridgeState | null>;
 	setBridgeState(state: BridgeState): Promise<void>;
+	/** Raises the highest subaddress index known to have received a counted payment (spec change 9's gap). */
+	notePaid(index: number): Promise<void>;
 	/** True if the pool already has this subaddress index (free or claimed). */
 	poolHas(index: number): Promise<boolean>;
 	poolAdd(row: { addrIndex: number; address: string }): Promise<void>;
@@ -122,6 +124,9 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 	for (const a of parsed.addresses) {
 		if (!(await store.poolHas(a.index))) await store.poolAdd({ addrIndex: a.index, address: a.address });
 	}
+	// The highest index with a counted payment in this sync, noted once.
+	const paid = Math.max(0, ...parsed.snapshots.filter((snap) => snap.transfers.some((t) => counted(t) && t.amount !== "0")).map((snap) => snap.index));
+	if (paid > 0) await store.notePaid(paid);
 	const events: SyncOutcome["events"] = [];
 	for (const snap of parsed.snapshots) {
 		const inv = await store.invoiceForIndex(snap.index);

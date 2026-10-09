@@ -169,6 +169,8 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 	);
 	if (!inv) return fail("NO_ADDRESS_AVAILABLE");
 
+	// For the admin page: per-visitor limits work only when the site passes client IPs.
+	await ctx.kv.set(KV.clientIp, ip !== null);
 	if (bucket && ip) {
 		(bucket.all[bucket.key] ??= []).push(now);
 		const keys = Object.keys(bucket.all);

@@ -166,6 +166,19 @@ describe("ordinary syncs", () => {
 		expect(store.bridge).not.toHaveProperty("checks");
 	});
 
+	it("notes the highest index with a counted payment, once per sync, never lowering it (the unpaid address gap, spec change 9)", async () => {
+		const store = pairedStore();
+		const t = (over: Record<string, unknown> = {}) => ({ txid: TXID(1), amount: "1000", confirmations: 1, height: H0, timestamp: 1_790_000_100, doubleSpendSeen: false, unlockTime: "0", ...over });
+		await send(store, syncBody({ snapshots: [{ index: 3, transfers: [] }] }));
+		expect(store.paidTop).toBeNull();
+		await send(store, syncBody({ seq: T0 + 1, snapshots: [{ index: 5, transfers: [t()] }, { index: 4, transfers: [t({ txid: TXID(2) })] }] }), { now: T0 + 1000 });
+		expect(store.paidTop).toBe(5);
+		await send(store, syncBody({ seq: T0 + 2, snapshots: [{ index: 3, transfers: [t()] }, { index: 9, transfers: [t({ unlockTime: "10" }), t({ txid: TXID(2), doubleSpendSeen: true })] }] }), { now: T0 + 2000 });
+		expect(store.paidTop).toBe(5); // lower, time-locked and flagged don't count
+		await send(store, syncBody({ seq: T0 + 3, snapshots: [{ index: 9, transfers: [t()] }] }), { now: T0 + 3000 });
+		expect(store.paidTop).toBe(9);
+	});
+
 	it("the stored height never goes down (spec change 16): a fresh wallet's low first height keeps the stored one", async () => {
 		const store = pairedStore();
 		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });

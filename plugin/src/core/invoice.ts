@@ -140,7 +140,7 @@ export function newInvoice(input: NewInvoiceInput): Invoice {
 }
 
 /** Only spendable money counts: no time lock (unlock_time "0") and no double-spend flag. Never wallet-rpc's `locked`. */
-export const counted = (t: Transfer) => !t.doubleSpendSeen && t.unlockTime === "0";
+export const counted = (t: Pick<Transfer, "doubleSpendSeen" | "unlockTime">) => !t.doubleSpendSeen && t.unlockTime === "0";
 
 /**
  * Made inside the window? Any one is enough (spec change 5): the plugin saw it by expiresAt; the wallet first saw it

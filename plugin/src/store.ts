@@ -14,7 +14,7 @@ import type { BridgeState, SyncStore } from "./sync/handle";
 import type { PairingState } from "./sync/pairing";
 
 export const SETTING = { publicKey: "bridgePublicKey", currency: "currency", speed: "speed" } as const;
-export const KV = { pairing: "state:pairing", bridge: "state:bridge", alerts: "state:alerts", purgeCursor: "state:purgeCursor", cronScheduled: "state:cronScheduled", salt: "state:salt", buckets: "state:buckets" } as const;
+export const KV = { pairing: "state:pairing", bridge: "state:bridge", alerts: "state:alerts", purgeCursor: "state:purgeCursor", cronScheduled: "state:cronScheduled", salt: "state:salt", buckets: "state:buckets", paidTop: "state:paidTop", clientIp: "state:clientIp" } as const;
 
 export interface PoolRow {
 	addrIndex: number;
@@ -62,6 +62,10 @@ export class CtxSyncStore implements SyncStore {
 	}
 	setBridgeState(state: BridgeState) {
 		return this.ctx.kv.set(KV.bridge, state);
+	}
+	async notePaid(index: number) {
+		const top = await this.ctx.kv.get<number>(KV.paidTop);
+		if (top === null || index > top) await this.ctx.kv.set(KV.paidTop, index);
 	}
 	poolHas(index: number) {
 		return pool(this.ctx).exists(String(index));

@@ -163,6 +163,16 @@ describe("checkout", () => {
 		expect((await checkout({ kind: "product", product: "handbook" })).status).toBe("new");
 	});
 
+	it("records whether the last checkout came with the visitor's IP (the admin page's spam-limit line)", async () => {
+		const h = await setup();
+		await h.http.respond(KRAKEN("USD"), new Response(krakenBody("USD", "150")));
+		expect(await h.inspect.kv.get("state:clientIp")).toBeNull();
+		await checkout({ kind: "product", product: "handbook" });
+		expect(await h.inspect.kv.get("state:clientIp")).toBe(false);
+		await checkoutWithIp({ kind: "product", product: "handbook" }, "203.0.113.7");
+		expect(await h.inspect.kv.get("state:clientIp")).toBe(true);
+	});
+
 	it("per-client cap only when the IP is known", async ({ task }) => {
 		const h = await setup({ pool: 8 });
 		await h.http.respond(KRAKEN("USD"), new Response(krakenBody("USD", "150")));
