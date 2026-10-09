@@ -1300,3 +1300,23 @@ Not covered:
 - **After a row action, the table returns to its first page:** the menu's value doesn't carry the cursor.
 
 Next step: session 4d (review queue with one recommended action per reason, the false-`reversed` path). Then Wyatt's click-through of the whole page on the dev site.
+
+## 2026-10-09 · Phase 04 · Session 4d: review queue (code done; click-through led to UI changes)
+
+Pushed before the session: `21ec032..3c69299`. CI run 37871358018 passed (plugin, bridge, race detector).
+
+Done (`56da16f`, local):
+- **Review queue,** between Health and Invoices. Each review invoice is an accordion with what happened, the recommendation, received, confirmations, buyer email and refund address, and one primary button: late → Mark settled; underpaid, reorg and reversed → Expire. Reversed also gets Mark settled behind a confirmation (3h's false reversed).
+- **Wiring:** the buttons use the row-action path, so the stale-state checks and the `compareAndSet` write apply.
+- **Order and limits:** oldest deadline first, at most 20, plus "N more wait". Tips in review are listed.
+
+Tests:
+- Plugin: 179 pass (9 new in `admin-review.test.ts`), typecheck clean, bundle 45.1 KB validates.
+
+Click-through (dev site, 01:52 UTC):
+- Wyatt reviewed screenshots in his planning chat and wrote UI changes to `~/xmr-pay-dev-data/04-ui/notes.md`, with four screenshots: page order, the checklist and Connect into Settings, no confirm dialog, review items as colored banners, banner wording, "Needs decision" status.
+- Database backup before the click-through: `baseline/data.db.before-4d-clickthrough`.
+
+Bug found while planning those changes (mine, 4d):
+- "Late" is set whenever any payment arrived after the deadline, whether or not the total reached the price (`evaluate`, `hasLate`).
+- The late item always says "Paid in full … The money is in your wallet", which is wrong for a late partial payment. Fix and recommended action: in the UI-changes plan.
