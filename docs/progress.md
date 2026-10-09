@@ -1207,3 +1207,30 @@ Then 4b (setup checklist, test address, pairing notes, the bridge key setting).
   - Dev site and release server stopped.
 
 Next step: session 4b (setup checklist with Get a test address, pairing notes, the bridge key read-only with the paste-by-hand fallback).
+
+## 2026-10-09 · Phase 04 · Session 4b: setup checklist, test address, pairing notes (code done)
+
+Pushed with Wyatt's approval: `b821886..281ef6d`. **CI run 37866556943 failed** in the plugin job: one test timed out, `checkout-route.test.ts` "site-wide cap" (5 s default; 0.7 s here; it passed in the previous run). The job log needs a signed-in account (HTTP 403), so only the annotation was read.
+- Fix: `9b4dc8f`, a 30 s per-test timeout in `plugin/vitest.config.ts`. The bridge job passed, race detector included.
+- Not pushed yet.
+
+Done (local commits):
+- `f69065c` Session 4b:
+  - **Setup checklist** (an accordion): five items, each saying what to do next. It collapses for good once a test tip settles (`state:setupDone`).
+  - **Get a test address:** an open `kind: "tip"` invoice through the admin route (`claimAndStore` and `newIds` now exported from checkout). It shows the subaddress, the 0.0001 floor and the `monero:` URI, then the payment's progress. Pressing again reuses an open one. It's refused while the wallet host is silent or no address is free.
+  - **Connect wallet host:** minutes left as of page load. "Paired at HH:MM UTC" (", replacing the previous one, which no longer syncs") for a day (`state:lastPairing`, written by the sync route).
+  - **Settings:** the bridge key, read-only.
+  - **Page order:** banners, checklist, Connect, Health, Settings.
+- `07caf81` **Spec change 19, proposed:** the "paste a key by hand" fallback has no bridge counterpart (the bridge makes its key only while pairing and never prints it). I recommend dropping it. Not built.
+
+Tests:
+- Plugin: 159 pass (10 new in `admin-setup.test.ts`, covering the checklist, the test address with reuse, refusals and an expired one, collapse, minutes left, an expired code, pairing notes and the key field).
+- Typecheck clean; bundle 37.3 KB validates.
+
+Not covered:
+- A live test tip from Wyatt's buyer wallet (the checklist's last item).
+- Block Kit has no live countdown or copy button, so the page shows minutes left as of load, and code blocks to select.
+
+Next step:
+1. Wyatt: approve pushing `07caf81` (CI fix included), decide spec change 19, and optionally do a live test tip.
+2. Then 4c (invoice table and row actions).
