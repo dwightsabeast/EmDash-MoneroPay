@@ -1,12 +1,13 @@
 /**
  * The admin route: the Monero payments page and the dashboard widget (phase 04). Block Kit as plain JSON objects
  * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget. Session 4b: the setup checklist with
- * Get a test address, pairing notes, the bridge key. Settings and Connect wallet host are from phase 02 session 2e.
+ * Get a test address, pairing notes, the bridge key. Session 4c: the invoice table and row actions. Session 4d: the
+ * review queue. Settings and Connect wallet host are from phase 02 session 2e.
  */
 import type { PluginContext } from "emdash/plugin";
 
 import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkout";
-import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
+import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
 import { ensureCron } from "./housekeeping";
@@ -359,6 +360,66 @@ async function invoiceBlocks(ctx: PluginContext, opts: PageOptions): Promise<Blo
 	return blocks;
 }
 
+const REVIEW_PAGE = 20;
+const REVIEW_TITLE: Record<NonNullable<Invoice["reviewReason"]>, string> = { late: "Late payment", underpaid: "Underpaid", reorg: "Payment not re-mined after a reorg", reversed: "Settled payment gone" };
+const button = (label: string, value: string, style: "primary" | "secondary", confirm?: Record<string, string>): Block => ({ type: "button", action_id: "invoice_action", label, style, value, ...(confirm ? { confirm } : {}) });
+
+/** One review item: what happened, and the one recommended action (Wyatt, 2026-10-08, decisions.md). */
+function reviewItem(inv: Invoice, open: boolean): Block {
+	const t = totals(inv);
+	const expected = BigInt(inv.expectedAtomic ?? inv.minAtomic ?? "0");
+	const deepest = Math.max(0, ...inv.transfers.filter(counted).map((x) => x.confirmations));
+	const reason = inv.reviewReason ?? "late";
+	let what: string;
+	let advice: string;
+	const actions: Block[] = [];
+	if (reason === "late") {
+		what = `Paid in full (${xmr(t.received)} XMR), but mined after the invoice's deadline. The money is in your wallet.`;
+		advice = "Recommended: mark it settled and fulfil the order.";
+		actions.push(button("Mark settled", `settle:${inv.id}`, "primary"));
+	} else if (reason === "underpaid") {
+		const pct = expected > 0n ? (t.received * 100n) / expected : 0n;
+		what = `${xmr(t.received)} of ${xmr(expected)} XMR arrived (${pct}%) by the deadline, ${deepest} confirmations.`;
+		advice = "Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept the smaller amount instead, use Mark settled in the invoice's menu below.";
+		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
+	} else if (reason === "reorg") {
+		what = `A chain reorganisation knocked the payment out of its block, and it wasn't mined again within ${RECONFIRM_BLOCKS} blocks.`;
+		advice = "Recommended: expire it and don't fulfil the order.";
+		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
+	} else {
+		what = "This invoice was settled, but the wallet host no longer reports its payment (double-spent, or removed in a reorg).";
+		advice = "Recommended: expire it and don't fulfil the order. If your wallet app still shows this payment, mark it settled instead: a reinstalled wallet host can report a payment gone by mistake.";
+		actions.push(
+			button("Expire", `expire:${inv.id}`, "primary"),
+			button("Mark settled", `settle:${inv.id}`, "secondary", { title: "Mark this invoice settled?", text: "Only if your wallet app shows the payment. The decision is final.", confirm: "Mark settled", deny: "Cancel" }),
+		);
+	}
+	const fields = [
+		{ label: "Received", value: `${xmr(t.received)} XMR` },
+		{ label: "Confirmations", value: confirmationsText(inv) },
+		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
+		...(inv.buyer?.refundAddress ? [{ label: "Refund address", value: inv.buyer.refundAddress }] : []),
+	];
+	const amount = inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : inv.kind;
+	return {
+		type: "accordion",
+		block_id: `review_${inv.id}`,
+		label: `${REVIEW_TITLE[reason]}: ${inv.id} (${amount})`,
+		default_open: open,
+		blocks: [{ type: "section", text: what }, { type: "context", text: advice }, { type: "fields", fields }, { type: "actions", elements: actions }],
+	};
+}
+
+/** The review queue: the oldest deadlines first, at most REVIEW_PAGE at a time. */
+async function reviewBlocks(ctx: PluginContext, total: number): Promise<Block[]> {
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Review queue" }];
+	if (total === 0) return [...blocks, { type: "context", text: "Nothing needs a decision." }];
+	const r = await invoices(ctx).query({ where: { status: "review" }, orderBy: { expiresAt: "asc" }, limit: REVIEW_PAGE });
+	blocks.push(...r.items.map((i, n) => reviewItem(i.data, n === 0)));
+	if (total > r.items.length) blocks.push({ type: "context", text: `${total - r.items.length} more wait after these.` });
+	return blocks;
+}
+
 const ACTION_VALUE = /^(settle|expire|raise|details):(inv_[A-Za-z0-9_]{1,40})$/;
 
 /** A row action, re-checked against the invoice as stored now and written only if it hasn't changed since read. */
@@ -438,7 +499,7 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 		],
 	});
 
-	blocks.push(...healthBlocks(h), ...(await invoiceBlocks(ctx, opts)));
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review)), ...(await invoiceBlocks(ctx, opts)));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
