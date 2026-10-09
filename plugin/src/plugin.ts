@@ -48,6 +48,8 @@ const plugin: SandboxedPlugin = {
 				const now = Date.now();
 				const out = await handleSync({ body: routeCtx.input, headers: routeCtx.request.headers, now }, new CtxSyncStore(ctx));
 				if ("ok" in out.response) {
+					// For the admin page: when the wallet host paired, and whether it replaced an earlier one.
+					if (out.paired) await ctx.kv.set(KV.lastPairing, { at: now, replaced: out.replaced === true });
 					await recordEvents(ctx, out.events, now);
 					await purgeBatch(ctx, now);
 				}

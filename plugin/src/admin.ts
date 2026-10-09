@@ -1,13 +1,14 @@
 /**
  * The admin route: the Monero payments page and the dashboard widget (phase 04). Block Kit as plain JSON objects
- * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget; settings and Connect wallet host are
- * from phase 02 session 2e.
+ * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget. Session 4b: the setup checklist with
+ * Get a test address, pairing notes, the bridge key. Settings and Connect wallet host are from phase 02 session 2e.
  */
 import type { PluginContext } from "emdash/plugin";
 
-import { MAX_OPEN_TOTAL } from "./checkout";
-import { GAP_ALERT, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
-import { counted, isOpen } from "./core/invoice";
+import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkout";
+import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
+import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
+import { atomicToXmr } from "./core/money";
 import { ensureCron } from "./housekeeping";
 import { CURRENCIES, type Currency, getRate, isCurrency } from "./rates";
 import { KV, SETTING, invoices, pool } from "./store";
@@ -146,11 +147,18 @@ function walletHeightText(h: Health): string {
 
 const NODE_CHECK_TEXT = { off: "Off (the wallet host uses your own node)", ok: "OK", unavailable: "Unavailable", mismatch: "Mismatch" } as const;
 
-function healthBlocks(h: Health): Block[] {
+/** The red and amber lines, then the update notice: shown at the top of the page. */
+function bannerBlocks(h: Health): Block[] {
 	const blocks: Block[] = problems(h).map((p) => ({ type: "banner", ...p }));
 	if (h.bridge?.outdated) blocks.push({ type: "banner", variant: "default", title: "Wallet host update available", description: "On the wallet host, run: xmr-bridge update" });
+	return blocks;
+}
+
+function healthBlocks(h: Health): Block[] {
+	const blocks: Block[] = [];
 	const node = h.bridge?.checks?.node?.state;
 	blocks.push(
+		{ type: "divider" },
 		{ type: "header", text: "Health" },
 		{
 			type: "fields",
@@ -175,9 +183,80 @@ function healthBlocks(h: Health): Block[] {
 	return blocks;
 }
 
-function installBlocks(siteUrl: string, code: string, expiresAt: number): Block[] {
+/** The newest test tips (kind "tip" invoices made from this page; public tips come in phase 07). */
+async function testTips(ctx: PluginContext): Promise<Invoice[]> {
+	const r = await invoices(ctx).query({ where: { kind: "tip" }, orderBy: { createdAt: "desc" }, limit: 10 });
+	return r.items.map((i) => i.data);
+}
+
+const DUST_XMR = atomicToXmr(DUST_ATOMIC);
+const tipUri = (address: string) => `monero:${address}?tx_amount=${DUST_XMR}&tx_description=${encodeURIComponent("Coffer test tip")}`;
+
+/** The setup checklist (spec, Install flow step 4): open until a test tip settles, then collapsed for good. */
+async function setupBlocks(ctx: PluginContext, h: Health, now: number): Promise<Block[]> {
+	const tips = await testTips(ctx);
+	let done = (await ctx.kv.get<boolean>(KV.setupDone)) === true;
+	if (!done && tips.some((t) => t.status === "settled")) {
+		done = true;
+		await ctx.kv.set(KV.setupDone, true);
+	}
+	const wallet = h.bridge?.checks?.wallet;
+	const synced = h.bridge !== null && h.silentFor === null && wallet?.state !== "behind";
+	const rows: Array<[string, boolean, string]> = [
+		["Wallet host paired", h.paired, "press Connect wallet host below and run the command on your wallet host."],
+		[
+			"Wallet synced",
+			synced,
+			h.silentFor !== null
+				? "the wallet host is silent. On the wallet host, run: xmr-bridge status"
+				: wallet?.state === "behind"
+					? `the wallet is catching up with its node (${wallet.detail ?? "behind"}).`
+					: "the wallet host syncs within a minute of pairing.",
+		],
+		["Payment addresses ready", h.free > 0, "the wallet host adds them at its first sync."],
+		["Price feed answering", Boolean(h.rate), "both price services failed just now; this page checks again when it loads."],
+		["Test tip received", done, `once the items above are done, press Get a test address and send at least ${DUST_XMR.replace(/0+$/, "")} XMR to it.`],
+	];
+	const inner: Block[] = [{ type: "fields", fields: rows.map(([label, ok, next]) => ({ label, value: ok ? "Done" : `To do: ${next}` })) }];
+	const ready = rows.slice(0, 4).every(([, ok]) => ok);
+	if (!done && ready) {
+		const open = tips.find((t) => isOpen(t));
+		if (open) {
+			const t = totals(open);
+			inner.push(
+				{ type: "section", text: `Send at least ${DUST_XMR.replace(/0+$/, "")} XMR to this address from any wallet. It's a tip to your own shop wallet, so the money stays yours.` },
+				{ type: "code", code: open.subaddress },
+				{ type: "code", code: tipUri(open.subaddress) },
+				{ type: "context", text: open.status === "new" ? `Waiting for the payment (until ${utc(open.expiresAt)}).` : `Payment seen: ${t.depth} of ${open.required} confirmations.` },
+			);
+		}
+		inner.push({ type: "actions", elements: [{ type: "button", action_id: "get_test_address", label: "Get a test address" }] });
+	}
+	const count = rows.filter(([, ok]) => ok).length;
+	return [{ type: "accordion", block_id: "setup", label: done ? "Setup complete" : `Setup: ${count} of 5 done`, default_open: !done, blocks: inner }];
+}
+
+/** Get a test address: an open tip invoice on a pool address, through this private route (phase 07 adds public tips). */
+async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
+	if (!(await ctx.settings.get<string>(SETTING.publicKey))) return { type: "error", message: "Connect a wallet host first." };
+	const chainHeight = checkoutHeight(await ctx.kv.get<BridgeState>(KV.bridge), now);
+	if (chainHeight === null) return { type: "error", message: "The wallet host must be syncing first. On the wallet host, run: xmr-bridge status" };
+	if ((await testTips(ctx)).some((t) => isOpen(t))) return { type: "info", message: "Your test address is below." };
+	const speedSetting = await ctx.settings.get<string>(SETTING.speed);
+	const speed: Speed = isSpeed(speedSetting) ? speedSetting : "standard";
+	const currencySetting = await ctx.settings.get<string>(SETTING.currency);
+	const inv = await claimAndStore(ctx, (row) =>
+		newInvoice({ ...newIds(), kind: "tip", fiatMinor: null, currency: isCurrency(currencySetting) ? currencySetting : "USD", rate: null, speed, subaddress: row.address, addrIndex: row.addrIndex, now, chainHeight }),
+	);
+	if (!inv) return { type: "error", message: "No payment address is free yet. The wallet host adds them at its next sync; try again in a minute." };
+	return { type: "success", message: "Test address ready. Send the test tip from any wallet." };
+}
+
+const minutesLeft = (expiresAt: number, now: number) => Math.max(0, Math.floor((expiresAt - now) / 60_000));
+
+function installBlocks(siteUrl: string, code: string, expiresAt: number, now: number): Block[] {
 	return [
-		{ type: "banner", variant: "default", title: "Pairing code ready", description: `It works once, until ${utc(expiresAt)}. Run one of these on your wallet host (a Linux machine, not your site's server).` },
+		{ type: "banner", variant: "default", title: "Pairing code ready", description: `It works once, until ${utc(expiresAt)} (${minutesLeft(expiresAt, now)} min left). Run one of these on your wallet host (a Linux machine, not your site's server).` },
 		{ type: "code", language: "bash", code: `curl -fsSL ${INSTALL_URL} | sh -s -- --site ${siteUrl} --pair ${code}` },
 		{ type: "context", text: "Cautious path, if the bridge is already installed: download and verify it first, then run:" },
 		{ type: "code", language: "bash", code: `xmr-bridge install --site ${siteUrl} --pair ${code}` },
@@ -186,7 +265,7 @@ function installBlocks(siteUrl: string, code: string, expiresAt: number): Block[
 
 async function page(ctx: PluginContext, now: number, shownCode?: { code: string; expiresAt: number }): Promise<Block[]> {
 	const h = await health(ctx, now, { checkRate: true });
-	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...healthBlocks(h)];
+	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...(await setupBlocks(ctx, h, now))];
 
 	blocks.push({ type: "divider" }, { type: "header", text: "Connect wallet host" });
 	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
@@ -194,11 +273,15 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 	if (!siteUrl) {
 		blocks.push({ type: "banner", variant: "error", title: "Your site's address isn't known", description: "Set siteUrl in the site's Astro config (or the EMDASH_SITE_URL environment variable) to its public address, then reload this page." });
 	} else if (shownCode) {
-		blocks.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt));
+		blocks.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt, now));
 	} else {
 		const pairing = await ctx.kv.get<PairingState>(KV.pairing);
-		if (isPairingActive(pairing, now)) blocks.push({ type: "context", text: `A pairing code is active until ${utc(pairing.expiresAt)}. Codes are shown once; press the button for a new one (it replaces the old code).` });
+		if (isPairingActive(pairing, now)) blocks.push({ type: "context", text: `A pairing code is active until ${utc(pairing.expiresAt)} (${minutesLeft(pairing.expiresAt, now)} min left). Codes are shown once; press the button for a new one (it replaces the old code).` });
 		else blocks.push({ type: "context", text: "Creates a one-time code (15 minutes) and the install command for your wallet host." });
+	}
+	const last = await ctx.kv.get<{ at: number; replaced: boolean }>(KV.lastPairing);
+	if (last && now - last.at < LATE_WINDOW_MS) {
+		blocks.push({ type: "context", text: `Wallet host paired at ${utc(last.at)}${last.replaced ? ", replacing the previous one, which no longer syncs" : ""}.` });
 	}
 	if (siteUrl) blocks.push({ type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` });
 	blocks.push({
@@ -214,11 +297,16 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 		],
 	});
 
+	blocks.push(...healthBlocks(h));
+
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
+	const key = await ctx.settings.get<string>(SETTING.publicKey);
 	blocks.push(
 		{ type: "divider" },
 		{ type: "header", text: "Settings" },
+		{ type: "fields", block_id: "bridge_key", fields: [{ label: "Bridge public key", value: key ?? "Not paired" }] },
+		{ type: "context", text: "Filled in by pairing. It's a public key, not a secret." },
 		{
 			type: "form",
 			block_id: "settings",
@@ -271,6 +359,10 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 		const { code, state } = await newPairingCode(now);
 		await ctx.kv.set(KV.pairing, state);
 		return { blocks: await page(ctx, now, { code, expiresAt: now + PAIRING_TTL_MS }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };
+	}
+	if (i.type === "block_action" && i.action_id === "get_test_address") {
+		const toast = await testAddress(ctx, now);
+		return { blocks: await page(ctx, now), toast };
 	}
 	if (i.type === "page_load" || i.type === undefined) return { blocks: await page(ctx, now) };
 	return { blocks: await page(ctx, now), toast: { message: "That action isn't available.", type: "error" } };

@@ -61,6 +61,9 @@ export function validateCheckout(body: unknown): CheckoutInput | null {
 const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
+/** A new invoice's id and its status token (the buyer's only handle on it). */
+export const newIds = () => ({ id: `inv_${hex(crypto.getRandomValues(new Uint8Array(8)))}`, token: base64url(crypto.getRandomValues(new Uint8Array(16))) });
+
 /** Short-lived hashed buckets: a per-site salt in KV, never a raw IP. */
 async function clientBucket(ctx: PluginContext, ip: string, now: number) {
 	let salt = await ctx.kv.get<string>(KV.salt);
@@ -152,8 +155,7 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 
 	const inv = await claimAndStore(ctx, (row) =>
 		newInvoice({
-			id: `inv_${hex(crypto.getRandomValues(new Uint8Array(8)))}`,
-			token: base64url(crypto.getRandomValues(new Uint8Array(16))),
+			...newIds(),
 			kind: "product",
 			fiatMinor,
 			currency,

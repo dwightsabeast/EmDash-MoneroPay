@@ -70,6 +70,8 @@ export interface SyncOutcome {
 	events: Array<{ invoiceId: string; event: InvoiceEvent }>;
 	/** Set when this request completed a pairing. */
 	paired?: boolean;
+	/** With paired: the pairing replaced a key that was already stored. */
+	replaced?: boolean;
 }
 
 const error = (code: SyncErrorCode): SyncOutcome => ({ response: { error: { code } }, events: [] });
@@ -87,6 +89,7 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 	const pairing = await store.getPairing();
 	let parsed: SyncBody | null = null;
 	let paired = false;
+	let replaced = false;
 	if (isPairingActive(pairing, now) && bytes.length <= PAIR_MAX_BYTES) {
 		const text = decodeStrict(bytes);
 		if (text === null) return error("INVALID_ENCODING");
@@ -96,6 +99,7 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 			if (!(await pairingCodeMatches(pairing, body.value.pair.code, now))) return error("PAIRING_REJECTED");
 			const key = decodeBase64(body.value.pair.publicKey, 32);
 			if (!key || !(await verifySignature(key, ts, bytes, signature))) return error("BAD_SIGNATURE");
+			replaced = (await store.getPublicKey()) !== null;
 			await store.setPublicKey(body.value.pair.publicKey);
 			await store.setPairing({ ...pairing, used: true });
 			parsed = body.value;
@@ -144,5 +148,5 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 	if (paired && watched.length > 0) {
 		response.restoreHeight = Math.max(0, Math.min(...watched.map((inv) => inv.createdHeight)) - RESTORE_MARGIN_BLOCKS);
 	}
-	return { response, events, ...(paired ? { paired } : {}) };
+	return { response, events, ...(paired ? { paired, replaced } : {}) };
 }
