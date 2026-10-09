@@ -1491,3 +1491,52 @@ Not covered yet:
 - **The admin menu label:** "Monero payments" is the manifest's label; the exact menu path is seen on test day.
 
 Next step: Wyatt does organizer sheet section A (container, monerod LAN listener, Cloudflare hostname, public node, the tester's Feather wallet, unlocked buyer outputs) and says when he's ready. Claude then runs section B, Wyatt runs the reachability check on the container, then run A.
+
+## 2026-10-09 · Phase 05 · End of night: handoff (prep done, waiting for Wyatt's test-day setup)
+
+Pushed: `ad056ad..bc06da6` (the phase 05 prep). CI run 37997475345 passed (plugin, bridge, race detector).
+
+Where things stand:
+- **Phase 04: done.**
+  - Round 2 click-through built, looked at and passed.
+  - The CI timeout fix (20 s per test) confirmed green.
+- **Phase 05: prep done, no runs yet.** Done:
+  - the protocol, `docs/setup-test.md`
+  - the scripts (`setup-test-reset.mjs`, `setup-test-plugin.sh`, `build-dev-release.sh --base`)
+  - the local organizer sheet and run sheets in `~/xmr-pay-dev-data/05-setup/`
+- **Nothing is half-done:** no uncommitted changes, and nothing applied to the dev site for the test yet.
+
+State left (checked at handoff):
+- **Dev site, built copy and release server stopped:** ports 4321, 4322 and 8099 free, no tmux sessions.
+- **Services:** `monerod-stagenet` active. The installed bridge `97f0e66` is active and backing off while the site is stopped.
+- **`plugin/dist`:** a normal build, so it holds the install-URL placeholder, not the test patch.
+- **Dev database:** unchanged since the round 2 look. Backups: `baseline/data.db.before-04-livelook` and `baseline/data.db.before-04-ui-2-look`. The setup-test reset hasn't run.
+- **`~/xmr-pay-dev-data/dev-release`:** still phase 03's release. The LAN-address build happens on test day.
+
+Next steps, in order:
+1. **Wyatt:** organizer sheet section A:
+   - the Ubuntu 24.04 container, snapshotted `blank` (it has `curl`; minimal Debian 12 doesn't)
+   - monerod's LAN listener on 38089
+   - the Cloudflare hostname
+   - a public stagenet node
+   - the tester's new Feather shop wallet
+   - several unlocked buyer outputs
+   Then tell Claude it's ready.
+2. **Claude:** section B, one step at a time:
+   - reset (keep the first backup's name for the final restore)
+   - build the LAN release; Wyatt signs it
+   - serve it on the LAN
+   - `setup-test-plugin.sh`
+   - build the site and start `built` with `EMDASH_SITE_URL`
+3. **Wyatt:** the reachability check on the container, roll it back to `blank`, then run A, then run B (section D between them).
+4. **Claude:** section E (stop, restore, normal plugin build, dev site check), then the triage session from the filled-in run sheets.
+
+To resume: "Continue phase 05. Read docs/progress.md for where we stopped, then plan the next step."
+
+Carried over for Wyatt (unchanged from the phase 04 close-out):
+- **Spec text to fold in:** changes 6, 7, 9–17, 19's Bridge public key row, and "invoice table".
+- **Spec change 18:** A in phase 06; B's spike decision before phase 07.
+- **The mainnet second-node list:** before phase 09.
+- **The self-update admin-copy question:** before phase 09.
+- **Upstream notes:** the confirm dialog's padding, no copy-to-clipboard element, no wrapping for long values.
+- **Review advice "find it under All invoices below":** may need Load more.
