@@ -32,6 +32,10 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | The wallet host must be a separate machine from the site; no in-plugin "quick setup" mode | Keeps the shop's payment history off the site's server. The installer refuses to run beside a site, except with a stagenet-only dev flag |
 | Own `monerod` recommended; a remote node allowed | Own node is the most private and secure; remote nodes get a block-hash cross-check |
 | Linux only at launch | One platform to test and support; macOS and Windows later |
+| Admin page wording for the pool (2026-10-08, phase 04 plan): "Payment addresses ready: 48 of 50", with the hint "Each payment gets its own address from your wallet. The wallet host adds more automatically.", on the page and in the widget | "Free addresses" read like linked wallets (setup-friction, 2026-10-03) |
+| The unpaid address gap line (2026-10-08, phase 04 plan, spec change 9): built in phase 04 with a constant threshold of 150, and as its fix the remedy phase 03 found on stagenet: in the wallet app, create receiving addresses up to the index, then rescan | Phase 03 showed both steps are needed; the wallet-app check is phase 05 |
+| Wallet height against the expected height (2026-10-08, phase 04 plan): the bridge reports a `checks.wallet` entry (its wallet's height against its node's) in the optional `checks` field; the plugin shows it | The site has no independent expected height; no contract change |
+| One recommended action per review reason (2026-10-08, phase 04 plan): late → Mark settled; underpaid → Expire (refund outside Coffer; Mark settled stays in the row menu); reorg that didn't recover → Expire; reversed → Expire, with "if your wallet app shows this payment, use Mark settled" | The money arrived for late; for the others nothing should ship until the admin checks; a false reversed (3h) stays recoverable |
 
 ## Project and process
 
@@ -67,7 +71,7 @@ Made by Wyatt between Sep 30 and Oct 1, 2026, before any code was written. The r
 | Question | When |
 | --- | --- |
 | Spec change 14 (the Coffer rename): fold the listed lines into the live spec; decide the unit's `Description=xmr-pay wallet host` and the proof-of-concept page | Any time |
-| The manual step behind the unpaid-address gap warning (spec change 9): how an admin raises the wallet app's subaddress lookahead (which apps allow it, and the exact steps), and whether that occasional step fits the admin budget or the feature must change | After phase 03's stagenet test, before phase 04 |
+| The manual step behind the unpaid-address gap warning (spec change 9): how an admin raises the wallet app's subaddress lookahead (which apps allow it, and the exact steps), and whether that occasional step fits the admin budget or the feature must change | Phase 05 (wallet-app check). The phase 04 warning text uses phase 03's remedy (Wyatt, 2026-10-08, Admin experience) |
 | The built-in mainnet second nodes for the cross-check (spec change 13). Candidates from monero.fail's HTTPS list, not probed from the dev box (no mainnet use in development): `xmr-node.cakewallet.com:18081`, `mainnet.xmr.kernal.eu:18089`, `xmr-lim.tari.com`, `xmr-bhs.tari.com`, `node.monero.fail` | Before phase 09 (release) |
 | npm package name for the theme components (needs an npm account to publish) | Phase 06 |
 | Hosted bridge service: optional, paid, run by Wyatt, never the default; no keys in plaintext; one bridge per shop or a shared one. Pricing direction (Wyatt, 2026-10-03): tiers by monthly checkouts, with soft limits (going over doesn't cut a shop off); the plugin stays tier-free (it never knows or enforces a tier; the tiers live only in the hosted service) | After phase 05 (current phases unchanged) |
