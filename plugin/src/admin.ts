@@ -6,7 +6,7 @@
 import type { PluginContext } from "emdash/plugin";
 
 import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkout";
-import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
+import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
 import { ensureCron } from "./housekeeping";
@@ -263,7 +263,148 @@ function installBlocks(siteUrl: string, code: string, expiresAt: number, now: nu
 	];
 }
 
-async function page(ctx: PluginContext, now: number, shownCode?: { code: string; expiresAt: number }): Promise<Block[]> {
+const INVOICE_PAGE = 25;
+const STATUS_TEXT: Record<Invoice["status"], string> = { new: "New", seen: "Seen", confirming: "Confirming", settled: "Settled", expired: "Expired", review: "Review" };
+const statusText = (inv: Invoice) => `${STATUS_TEXT[inv.status]}${inv.status === "review" && inv.reviewReason ? `: ${inv.reviewReason}` : ""}${inv.adminFinal ? " (by admin)" : ""}`;
+const xmr = (atomic: bigint) => (atomic === 0n ? "0" : atomicToXmr(atomic));
+
+/** The deepest counted transfer, so an underpaid or review invoice doesn't read "0 confirmations" (phase 03 3h note). */
+function confirmationsText(inv: Invoice): string {
+	const deepest = Math.max(-1, ...inv.transfers.filter(counted).map((t) => t.confirmations));
+	return `${deepest < 0 ? "None yet" : deepest} (needs ${inv.required})`;
+}
+
+type Verb = "settle" | "expire" | "raise" | "details";
+const VERB_LABELS: Record<Verb, string> = { settle: "Mark settled", expire: "Expire", raise: `Raise confirmations to ${MAX_REQUIRED}`, details: "Details and txids" };
+
+/** What an admin may do to an invoice in its current state. A decision (settle, expire) is final. */
+function allowed(inv: Invoice): Verb[] {
+	if (inv.adminFinal) return ["details"];
+	const out: Verb[] = [];
+	if (inv.status !== "settled") out.push("settle");
+	if (isOpen(inv) || inv.status === "review") out.push("expire");
+	if (isOpen(inv) && inv.required < MAX_REQUIRED) out.push("raise");
+	out.push("details");
+	return out;
+}
+
+function invoiceRow(inv: Invoice): Record<string, unknown> {
+	return {
+		id: inv.id,
+		status: statusText(inv),
+		amount: inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : "",
+		xmr: inv.expectedAtomic ? xmr(BigInt(inv.expectedAtomic)) : "",
+		received: xmr(totals(inv).received),
+		confirmations: confirmationsText(inv),
+		created: new Date(inv.createdAt).toISOString(),
+		expires: new Date(inv.expiresAt).toISOString(),
+		actions: { type: "menu", action_id: "invoice_action", label: "Actions", items: allowed(inv).map((v) => ({ label: VERB_LABELS[v], value: `${v}:${inv.id}` })) },
+	};
+}
+
+/** Why a transfer doesn't count, or "counted". unlock_time below 500000000 is a block height, otherwise a Unix time. */
+function transferNote(t: Invoice["transfers"][number]): string {
+	const why: string[] = [];
+	if (t.unlockTime !== "0") {
+		const u = BigInt(t.unlockTime);
+		why.push(`time-locked until ${u < 500_000_000n ? `block ${u}` : new Date(Number(u) * 1000).toISOString()}`);
+	}
+	if (t.doubleSpendSeen) why.push("flagged as a possible double spend");
+	const base = `${atomicToXmr(BigInt(t.amountAtomic))} XMR, ${t.confirmations} confirmations`;
+	return why.length === 0 ? `${base}, counted` : `${base}, not counted: ${why.join("; ")}`;
+}
+
+/** One invoice's details: buyer-supplied text only as plain text, each txid as copyable text. */
+function detailBlocks(inv: Invoice): Block[] {
+	const fields = [
+		{ label: "Status", value: statusText(inv) },
+		{ label: "Amount", value: invoiceRow(inv).amount as string },
+		{ label: "Received", value: `${xmr(totals(inv).received)} XMR` },
+		{ label: "Confirmations", value: confirmationsText(inv) },
+		{ label: "Payment address", value: `#${inv.addrIndex}: ${inv.subaddress}` },
+		...(inv.productRef ? [{ label: "Product", value: inv.productRef.id }] : []),
+		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
+		...(inv.buyer?.refundAddress ? [{ label: "Refund address", value: inv.buyer.refundAddress }] : []),
+		...(inv.buyer?.note ? [{ label: "Note", value: inv.buyer.note }] : []),
+	];
+	const inner: Block[] = [{ type: "fields", fields }];
+	if (inv.transfers.length === 0) inner.push({ type: "context", text: "No payment reported yet." });
+	for (const t of inv.transfers) inner.push({ type: "context", text: transferNote(t) }, { type: "code", code: t.txid });
+	return [{ type: "accordion", block_id: "invoice_details", label: `Invoice ${inv.id}`, default_open: true, blocks: inner }];
+}
+
+async function invoiceBlocks(ctx: PluginContext, opts: PageOptions): Promise<Block[]> {
+	const r = await invoices(ctx).query({ where: { kind: "product" }, orderBy: { createdAt: "desc" }, limit: INVOICE_PAGE, ...(opts.cursor ? { cursor: opts.cursor } : {}) });
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Invoices" }];
+	if (opts.details) blocks.push(...detailBlocks(opts.details));
+	blocks.push({
+		type: "table",
+		block_id: "invoices",
+		page_action_id: "invoices_page",
+		empty_text: "No orders yet.",
+		columns: [
+			{ key: "status", label: "Status", format: "badge" },
+			{ key: "amount", label: "Amount" },
+			{ key: "xmr", label: "XMR" },
+			{ key: "received", label: "Received" },
+			{ key: "confirmations", label: "Confirmations" },
+			{ key: "created", label: "Created", format: "relative_time" },
+			{ key: "expires", label: "Expires", format: "relative_time" },
+			{ key: "actions", label: "", format: "element" },
+		],
+		rows: r.items.map((i) => invoiceRow(i.data)),
+		...(r.hasMore && r.cursor ? { next_cursor: r.cursor } : {}),
+	});
+	if (opts.cursor) blocks.push({ type: "actions", block_id: "invoices_nav", elements: [{ type: "button", action_id: "invoices_newest", label: "Newest invoices" }] });
+	return blocks;
+}
+
+const ACTION_VALUE = /^(settle|expire|raise|details):(inv_[A-Za-z0-9_]{1,40})$/;
+
+/** A row action, re-checked against the invoice as stored now and written only if it hasn't changed since read. */
+async function invoiceAction(ctx: PluginContext, value: unknown, now: number): Promise<{ toast?: Toast; details?: Invoice }> {
+	const m = typeof value === "string" ? ACTION_VALUE.exec(value) : null;
+	if (!m) return { toast: { type: "error", message: "That action isn't available." } };
+	const verb = m[1] as Verb;
+	const current = await invoices(ctx).getVersioned(m[2]);
+	if (!current || !current.value) return { toast: { type: "error", message: "That invoice wasn't found." } };
+	const inv = current.value;
+	if (verb === "details") return { details: inv };
+	if (!allowed(inv).includes(verb)) {
+		if (verb === "raise" && isOpen(inv) && !inv.adminFinal) return { toast: { type: "error", message: `This invoice already needs ${inv.required} confirmations; it can't go higher.` } };
+		return { toast: { type: "error", message: `This invoice changed since the page loaded (it's now ${statusText(inv).toLowerCase()}). Nothing was changed.` } };
+	}
+	const next: Invoice = structuredClone(inv);
+	let message: string;
+	if (verb === "raise") {
+		next.required = MAX_REQUIRED;
+		message = `This invoice now needs ${MAX_REQUIRED} confirmations.`;
+	} else {
+		next.status = verb === "settle" ? "settled" : "expired";
+		next.adminFinal = true;
+		next.finalAt ??= now;
+		if (verb === "settle") next.settledAt ??= now;
+		delete next.reviewReason;
+		delete next.pendingExpiry;
+		delete next.reconfirmingSince;
+		message = verb === "settle" ? "Marked settled. The invoice won't change again." : "Expired. The invoice won't change again.";
+	}
+	const write = await invoices(ctx).compareAndSet(inv.id, current.revision, next);
+	if (!write.applied) return { toast: { type: "error", message: "This invoice changed while you were deciding (a sync came in). Nothing was changed; look again and retry." } };
+	ctx.log.info("invoice admin action", { invoiceId: inv.id, action: verb, from: inv.status, to: next.status });
+	return { toast: { type: "success", message } };
+}
+
+interface PageOptions {
+	shownCode?: { code: string; expiresAt: number };
+	/** The invoice table's page (a storage cursor); the newest page when absent. */
+	cursor?: string;
+	/** An invoice to show in the details panel. */
+	details?: Invoice;
+}
+
+async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
+	const { shownCode } = opts;
 	const h = await health(ctx, now, { checkRate: true });
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...(await setupBlocks(ctx, h, now))];
 
@@ -297,7 +438,7 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 		],
 	});
 
-	blocks.push(...healthBlocks(h));
+	blocks.push(...healthBlocks(h), ...(await invoiceBlocks(ctx, opts)));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
@@ -358,11 +499,21 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 		// A new code replaces the stored hash, so any earlier code stops working at once.
 		const { code, state } = await newPairingCode(now);
 		await ctx.kv.set(KV.pairing, state);
-		return { blocks: await page(ctx, now, { code, expiresAt: now + PAIRING_TTL_MS }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };
+		return { blocks: await page(ctx, now, { shownCode: { code, expiresAt: now + PAIRING_TTL_MS } }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };
 	}
 	if (i.type === "block_action" && i.action_id === "get_test_address") {
 		const toast = await testAddress(ctx, now);
 		return { blocks: await page(ctx, now), toast };
+	}
+	if (i.type === "block_action" && i.action_id === "invoices_page") {
+		const v = isObject(i.value) ? i.value : {};
+		const cursor = typeof v.cursor === "string" && v.cursor.length > 0 && v.cursor.length <= 1000 ? v.cursor : undefined;
+		return { blocks: await page(ctx, now, cursor ? { cursor } : {}) };
+	}
+	if (i.type === "block_action" && i.action_id === "invoices_newest") return { blocks: await page(ctx, now) };
+	if (i.type === "block_action" && i.action_id === "invoice_action") {
+		const r = await invoiceAction(ctx, i.value, now);
+		return { blocks: await page(ctx, now, r.details ? { details: r.details } : {}), ...(r.toast ? { toast: r.toast } : {}) };
 	}
 	if (i.type === "page_load" || i.type === undefined) return { blocks: await page(ctx, now) };
 	return { blocks: await page(ctx, now), toast: { message: "That action isn't available.", type: "error" } };
