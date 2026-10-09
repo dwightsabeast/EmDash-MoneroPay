@@ -298,3 +298,95 @@ Implemented in session 3j (2026-10-08), option (a) with a 720-block margin (Wyat
 - **A kept wallet** (a rerun for the same address, or `xmr-bridge pair`) keeps its height. The admin is told how to start over (`uninstall --delete-data`, then install again) when that height is newer than the suggestion. There's no warning when the height wasn't written down (wallets made before 3j without `--restore-height`).
 - If wallet creation fails after pairing, the code is spent; the error says to press Connect wallet host for a new one.
 Spec text to fold in, Admin setup step 3: "creates the view-only wallet with a restore height of today (no full-chain scan), or, when the site already has open invoices, from just before the oldest of them (the pairing response suggests it), so a reinstall sees payments made while the wallet host was away"; and in the installer's steps, pairing moves before the wallet's creation. API contracts, `bridge/sync` response: "`restoreHeight` (number, on the response that completes a pairing only, absent when no invoice is watched)".
+
+## 18. A tips-only tier with no wallet host  (status: proposed, 2026-10-08)
+Found in: Wyatt's planning chat, 2026-10-08, comparing Coffer with SlowBearDigger's `xmr-pay` (npm 1.1.0, published 2026-06-21; README section "You do not need a dedicated server"). Not found by code or tests; it reopens a decision at Wyatt's request.
+Spec says:
+- Key design decisions, "Wallet host on its own Linux machine": "A watcher inside the plugin and running on the site's server were both considered and rejected."
+- Where the wallet host runs: "Considered and rejected: … a watcher inside the plugin with no machine at all (the site would hold the view key and depend on public nodes)."
+- Tip jar mode, the options table: "Static address | One primary address and QR in the theme, no plugin | Works today, zero moving parts | Address reuse, no confirmation, no per-post attribution".
+- Admin budget: "Required settings | None."
+- `docs/decisions.md`: "The wallet host must be a separate machine from the site; no in-plugin "quick setup" mode". `CLAUDE.md`, trust contract: "The plugin never calls the wallet, a node, the bridge, or any host but the two price APIs."
+
+Evidence:
+1. **xmr-pay's claim.** "confirming a Monero payment is, underneath, just reading public blockchain data and doing some math", so no always-on box is needed. It offers three ways:
+   - **Proof mode:** the buyer pastes a txid and a tx key or tx proof; a stateless endpoint checks it against one or more nodes.
+   - **Watch mode:** "a long-running process you host", holding the view key (through wallet-rpc or a WASM scanner).
+   - **Its WordPress plugin:** both, in pure PHP with vendored monerophp curve code, run by WP-Cron and checkout page loads.
+2. **How each maps to a sandboxed EmDash plugin** (`docs/reference/emdash-knowledge-base.md` 9.9 and 6.11):
+   - **Watch mode:** the sandbox has no long-lived process, and a Cloudflare-hosted site has no server to run one on. On a Node site it would run on the site's own server, which the installer refuses.
+   - **Scanning inside the plugin** (the WordPress route): puts the view key in the site's database, the case the spec rejected. On Cloudflare it must also fit 50 ms CPU and 10 subrequests per call, with at least one variable-base curve multiplication per transaction in every block.
+   - **Proof checking:** fits the sandbox's shape: one public route, no long-lived process, no view key. The site needs only a public shop address, and a proof is bound to that address.
+3. **Their JavaScript can't be used as-is.**
+   - `verifyPayment` needs `monero-ts`: a multi-MB WASM build, rejected in `docs/decisions.md`, and over the 128 KB `backend.js` cap.
+   - `verifyPaymentViaRpc` needs a wallet-rpc, which is a server.
+   - So a proof check in the plugin means our own Keccak-256 and Ed25519 point arithmetic in TypeScript. WebCrypto's Ed25519 only signs and verifies.
+   - Precedent: spec change 11's base-point multiplication in the bridge (`internal/edwards`, about 150 lines on `math/big`).
+   - The plugin bundle is 27.9 KB of 128 KB today.
+4. **Two traps a proof check must close.**
+   - **The encrypted amount (`ecdhInfo`) isn't checked by consensus,** so a sender can write any amount there. The check must decode the amount and verify it against the output's commitment (`C == mask·G + amount·H`), as `wallet2` does when it checks a tx key.
+   - **The check trusts the node for the transaction itself.** A dishonest node can serve a transaction that was never mined, built to match a proof the attacker made. Two independent nodes agreeing, plus the txid being in the block at its height (the spec change 13 check), limit this; nothing removes it. That's why this proposal covers tips only: a forged tip releases nothing, a forged order would.
+5. **Why it matters.** Coffer's pitch says it isn't for "anyone without a machine of their own or a host they trust", and "no server" is xmr-pay's headline. A tier with no machine and no view key on the site answers that without giving up "the site holds nothing worth stealing".
+
+Proposal: two steps, decided separately. Neither changes phase 04.
+
+**A. Static tip button (theme kit, phase 06).** The spec's "Static address" option, shipped as a mode of Coffer's tip button instead of being left to each theme.
+- The button takes a shop address as a prop. That can be the primary address or a subaddress set aside for tips, which keeps the primary address unpublished.
+- It shows a locally rendered QR, the address, copy and "open in wallet", with a plain label: the site doesn't confirm these tips.
+- Once a wallet host is paired, the same button makes tip invoices (phase 07), with no theme edit in between.
+- For Wyatt: while checkout returns `WALLET_HOST_SILENT`, should the button fall back to the static address (tips keep flowing during an outage, unrecorded) or show the error?
+- No plugin change.
+
+**B. Proof-checked tips with no wallet host (plugin, phase 07 at the earliest), only if the spike below passes.**
+1. **Tip address:** the admin types the tip address once on the admin page. It's public data, not a secret.
+2. **Submitting a proof:** after paying, the buyer submits:
+   - the txid
+   - the tx key or an OutProofV2
+   - optionally, the entry reference and a note
+
+   A new public route (for example `tip/prove`, POST) validates the format before any network call and refuses a txid already recorded (a unique index). The pay page prefers the OutProof where the buyer's wallet offers one: a tx key also lets the site test the transaction's other outputs, such as the buyer's change, against addresses it knows.
+3. **The check:** the plugin asks two nodes from a built-in list for the transaction and the chain height. The nodes learn which txid the site asked about, not the amount or the address. A tip counts only if:
+   - both nodes return the same transaction, mined, and the txid is in the block at that height
+   - `unlock_time` is 0 and there's no double-spend flag
+   - the proof is valid for the tip address
+   - each amount decodes and matches its commitment
+   - the sum to the tip address is at least the dust floor
+   - confirmations are at least the lowest tier of the speed preset
+4. **Not passed yet:** a transaction that isn't mined, or is short of confirmations, is stored as pending and rechecked in bounded batches by the backup cron and the status route (as in spec change 2). Nothing counts as a tip until it passes. A node that doesn't answer means "try again", never a tip.
+5. **After it passes:** the tip counts toward per-entry totals and notes exactly like a settled tip invoice. The admin page marks it "checked by public nodes".
+6. **Pairing a wallet host later:** new tips switch to tip invoices. Only the bridge, holding the view key, can confirm that a tip subaddress belongs to its wallet. How it reports that is a detail for phase 07.
+7. **Spam:** checkout's site-wide cap approach, plus a per-minute cap on node calls, so a flood of fake submissions can't exhaust the nodes or the CPU budget.
+
+**Spike for B** (about half a session, after phase 04):
+1. Does `ctx.http.fetch` reach `http://` hosts and non-default ports (18081, 18089) listed in `allowedHosts`, on both runners? If not, only HTTPS nodes qualify. How many public HTTPS nodes exist for stagenet and mainnet?
+2. CPU: our own BigInt verifier on a real 2-output and a 16-output stagenet transaction, in the Cloudflare runner (50 ms) and in workerd.
+3. Size: what the verifier adds to `backend.js`.
+4. Outbound calls per check against Cloudflare's 10-subrequest cap, and whether `ctx.storage` calls count toward it.
+5. Correctness: our verifier against the dev box's `monero-wallet-rpc` (`check_tx_key`, `check_tx_proof`) as an oracle on stagenet. Cases:
+   - real tips
+   - a wrong key
+   - a wrong address
+   - a hand-built mismatched `ecdhInfo` amount
+   - a time-locked transaction
+   - a fabricated transaction served by a proxy node
+6. Buyer side: which wallets show a tx key or make a tx proof, and in how many steps (a setup-friction row for buyers).
+
+If any of items 1–4 fails, B is dropped and A stands alone.
+
+Effect on the admin budget:
+- **A:** none. The tip button takes one prop (the address); no new step.
+- **B:** a tips-only site is set up with the registry install plus one typed value: no command, no machine, no view key. But the address is a fourth setting, required in this tier, against "Required settings: None"; Wyatt decides whether that's acceptable. No routine upkeep for admins. The built-in node list needs plugin releases as nodes disappear, which is upkeep for the maintainer, not the admin.
+
+Effect on the trust contract:
+- **A:** none.
+- **B:** broadens it:
+  - `allowedHosts` gains the built-in node hosts
+  - a new public route
+  - a unique `txid` index, on `invoices` or a new collection
+  - a fourth setting
+  - CLAUDE.md's line "never calls … a node" changes
+
+  If all of it lands before the first release, no installed site has consented to the old contract. After release, adding a node host is a broadening, so a major version.
+- **Both keep** the reason behind the "no in-plugin watcher" decision: no key of any kind on the site; the view key stays on the wallet host or nowhere. B does take on the rejected watcher's other cost, depending on public nodes, and accepts it for tips only. Only the decision's wording, "no in-plugin quick setup mode", is reopened.
+
+Recommended order (planning chat): accept A for phase 06. Run B's spike after phase 04 and decide B before phase 07. Phase 04 goes ahead as written.
