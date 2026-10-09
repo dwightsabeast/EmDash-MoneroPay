@@ -1382,3 +1382,43 @@ Carried over for Wyatt:
 - **The mainnet second-node list** (before phase 09).
 - **A self-update doesn't refresh the root-owned admin copy** (`/usr/local/bin/xmr-bridge`), so new `status` output reaches existing installs only when the installer runs again. Decide before phase 09.
 - **EmDash's confirm dialog has no padding:** upstream, for Wyatt to report if he wants.
+
+## 2026-10-09 · Phase 04 · Round 2 click-through changes (code done; live look next)
+
+Pushed before the session: `3c69299..ac02c68`. CI run 37986414420 passed (plugin, bridge, race detector).
+
+Wyatt's second click-through (`~/xmr-pay-dev-data/04-ui-2/notes.md`, five screenshots) asked for six changes. His decisions are recorded in `decisions.md`, Admin experience. The round 1 Connect-toggle row was updated, not contradicted.
+
+**Plugin (`ce60feb`):**
+- **All invoices as toggles** (change 1): one closed toggle per invoice, opening in place. The label is the summary on one line; inside are the details, the Actions menu and Open product.
+  - **10 a page,** Wyatt's choice. Measured before building: a 25-row table was 744 nodes and the review queue's worst case 739. One invoice with its details is about 80 nodes, so 25 can't fit.
+  - After an action, the invoice opens (block_id `invoice_<id>_acted`) and the page stays put (the menu value carries `|cursor`).
+- **Long values** (change 2): the payment address and the refund address go in labeled code boxes, in invoices and review items.
+  - Block Kit 1.1.0 has no wrapping style for these blocks: the code box is a bare `<pre>`, and the fields grid truncates.
+  - The admin's `<main>` has `overflow-y: auto`, so the page scrolls sideways at narrow widths. Wyatt accepted that.
+  - Wyatt asked for a copy button. Block Kit has no clipboard element, and the plugin can't add one (category (c)). Wyatt chose no hint, and may raise it upstream.
+- **Settings after setup** (change 3): the button, its hint, the site line, then the code; Setup (complete) is last. Before setup nothing changes.
+- **Payments** (change 4): all of an invoice's payments in one code box, each with "Transaction ID: …" under it, at most 50 listed.
+- **Product ID field removed** (change 5).
+- **Due and Received** (change 6): the labels; Expires reads "—" once an invoice is final.
+
+Tests:
+- **Plugin:** 205 pass.
+  - `admin-invoices.test.ts` rewritten.
+  - Settings tests in `admin-layout.test.ts`.
+  - The worst case in `admin-review.test.ts`: 300 reversed items, 10 invoices with 16 payments and every buyer field, a pairing code showing. It comes to 1,730 nodes and 68.8 KB.
+  - Typecheck clean, validate passes, bundle 48.8 KB validates.
+- **Mutation checks:** "acted invoice not opened" and "expiry shown on final invoices" were both caught.
+- **Bridge:** the `sitetext` label test still passes.
+
+Not covered:
+- **Narrow-width rendering:** checked in the CSS only, not on screen. That's for the live look.
+- **The `compareAndSet` race:** still untested, as before.
+- **Review advice for invoices on a later page:** it says "find it under All invoices below", which may need Load more.
+
+Docs:
+- **Phase 04 file:** item 5 now describes the list.
+- **Spec text for Wyatt to fold in:** "invoice table" in the spec (the admin route row and line 591) is now a list of toggles. This adds to the carried-over spec text list.
+- **Upstream note for Wyatt:** Block Kit has no copy-to-clipboard element and no wrapping for long values.
+
+Database backups: `baseline/data.db.before-04-livelook` and `baseline/data.db.before-04-ui-2-look`, both with `VACUUM INTO` through Node's `node:sqlite` (there is no `sqlite3` on this box).
