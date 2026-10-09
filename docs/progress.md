@@ -1234,3 +1234,38 @@ Not covered:
 Next step:
 1. Wyatt: approve pushing `07caf81` (CI fix included), decide spec change 19, and optionally do a live test tip.
 2. Then 4c (invoice table and row actions).
+
+## 2026-10-09 · Phase 04 · Session 4b: Wyatt's changes, CI, live test tip, key check (done)
+
+Wyatt's decisions on the 4b report:
+- **Spec change 19: (a), drop the paste-a-key fallback** (`e5f8eae`).
+  - `xmr-bridge status` now prints `Bridge key: <base64>`, the admin page's form. An unreadable key file is unhealthy, with the re-pair fix.
+  - The page's hint names the command.
+  - `decisions.md` row; phase 04's Settings item updated.
+  - **The spec's Bridge public key row isn't edited here:** `.claude/settings.json` denies edits to `docs/spec.md` (CLAUDE.md agrees). The exact new row is in spec change 19 for Wyatt to apply, in the live spec and the snapshot. No other spec line mentions pasting a key.
+- **CI timeout:** back to vitest's 5 s default, with only the site-wide cap test at 30 s (`feceff2`, replacing `9b4dc8f`).
+- **Pushed:** `281ef6d..feceff2`. CI run 37868656023 passed (plugin, bridge, race detector).
+
+Live (dev site, stagenet; times UTC):
+
+| Step | Result |
+|---|---|
+| Checklist before | "Setup: 4 of 5 done" |
+| Get a test address (Wyatt, through the tunnel) | `inv_08a47de9…`, kind tip, index 267, min 100000000 atomic, 2 confirmations, `createdHeight` 2225154 |
+| 0.0001 sXMR from the buyer wallet (`3h-pay-4btip.sh`) | Tx `04074b35…e049`, fee 0.0000304 |
+| Seen | 01:21:38, confirming 0 of 2 |
+| Mined | 01:22:51 at 2225155, 1 of 2 |
+| Settled | 01:26:04, 2 confirmations |
+| Reload | **"Setup complete"**, collapsed; `state:setupDone` true |
+| Key check: the new build's `status` against the installed config (`4b-status-output.txt`) | `Bridge key: N2wSOfKJ…+B8=` equals the site's `bridgePublicKey` |
+
+Finding for Wyatt (phase 09 or later), not acted on:
+- **A self-update replaces only the service's binary** in `/var/lib/xmr-bridge/bin`. The root-owned admin copy (`/usr/local/bin/xmr-bridge`, which runs `status`, `pair` and `uninstall`) stays at the installed version, by design: the service account must not be able to write it.
+- **So new status output reaches existing installs only when the installer runs again.** The key line was checked by running the dev release's binary directly. `CheckFormat` stops an outdated admin copy only when the state format changes.
+
+State left:
+- Bridge `97f0e66` installed (the `feceff2` release was built, never signed or installed).
+- Dev site and release server stopped.
+- Database backup before the tip: `baseline/data.db.before-4b-tip`.
+
+Next step: session 4c (invoice table: paged products, row actions with stale-state checks, not-counted transfers, hundreds of invoices).
