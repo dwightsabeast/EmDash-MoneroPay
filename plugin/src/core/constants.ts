@@ -27,6 +27,13 @@ export const RECONFIRM_BLOCKS = 5;
  * checkout refuses (spec change 16). */
 export const SILENT_MS = 5 * 60_000;
 
+/** The unpaid address gap (highest claimed pool index minus the highest paid one) that turns the admin page's line red:
+ * wallet apps look about 200 addresses past the last paid one (spec change 9). A constant, never a setting. */
+export const GAP_ALERT = 150;
+
+/** This many unpaid expired checkouts in a row turn an admin page line amber (buyers may be stuck on the pay page). */
+export const UNPAID_RUN_ALERT = 10;
+
 /** A reinstall's suggested restore height is this far below the oldest watched invoice's createdHeight (about a day),
  * because createdHeight runs high when blocks come slower than every 2 minutes (spec change 17). */
 export const RESTORE_MARGIN_BLOCKS = 720;

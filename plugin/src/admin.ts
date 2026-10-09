@@ -1,13 +1,16 @@
 /**
- * The minimal admin route (phase 02 session 2e): settings and Connect wallet host. Block Kit as plain JSON objects
- * (CLAUDE.md, "Dependency tiers"). The full admin page (checklist, health, review queue, invoices) is phase 04.
+ * The admin route: the Monero payments page and the dashboard widget (phase 04). Block Kit as plain JSON objects
+ * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget; settings and Connect wallet host are
+ * from phase 02 session 2e.
  */
 import type { PluginContext } from "emdash/plugin";
 
-import { PRESETS, SILENT_MS, type Speed } from "./core/constants";
+import { MAX_OPEN_TOTAL } from "./checkout";
+import { GAP_ALERT, PRESETS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
+import { counted, isOpen } from "./core/invoice";
 import { ensureCron } from "./housekeeping";
-import { CURRENCIES, isCurrency } from "./rates";
-import { KV, SETTING, pool } from "./store";
+import { CURRENCIES, type Currency, getRate, isCurrency } from "./rates";
+import { KV, SETTING, invoices, pool } from "./store";
 import type { BridgeState } from "./sync/handle";
 import { type PairingState, PAIRING_TTL_MS, isPairingActive, newPairingCode } from "./sync/pairing";
 import { POOL_TARGET } from "./sync/protocol";
@@ -44,16 +47,132 @@ interface Health {
 	paired: boolean;
 	bridge: BridgeState | null;
 	free: number;
+	/** Set when the wallet host is paired and its last sync is older than SILENT_MS (spec change 2). */
 	silentFor: number | null;
+	lastSyncAgo: number | null;
+	review: number;
+	unpaidRun: number;
+	/** Highest claimed pool index minus the highest paid one (spec change 9). */
+	gap: { value: number; paidTop: number; claimedTop: number };
+	/** The price check: a rate, null when both services failed, undefined when not checked (the widget). */
+	rate?: { minor: bigint; source: string; currency: Currency } | null;
+	clientIp: boolean | null;
 }
 
-async function health(ctx: PluginContext, now: number): Promise<Health> {
+/** The highest subaddress index with a counted payment; worked out once from the invoices if it was never recorded. */
+async function paidTop(ctx: PluginContext): Promise<number> {
+	const stored = await ctx.kv.get<number>(KV.paidTop);
+	if (stored !== null) return stored;
+	let top = 0;
+	let cursor: string | undefined;
+	for (let page = 0; page < 10; page++) {
+		const r = await invoices(ctx).query({ limit: 100, ...(cursor ? { cursor } : {}) });
+		for (const { data } of r.items) if (data.addrIndex > top && data.transfers.some((t) => counted(t) && t.amountAtomic !== "0")) top = data.addrIndex;
+		if (!r.hasMore || !r.cursor) break;
+		cursor = r.cursor;
+	}
+	await ctx.kv.set(KV.paidTop, top);
+	return top;
+}
+
+async function health(ctx: PluginContext, now: number, opts: { checkRate: boolean }): Promise<Health> {
 	const paired = Boolean(await ctx.settings.get<string>(SETTING.publicKey));
 	const bridge = await ctx.kv.get<BridgeState>(KV.bridge);
 	const free = await pool(ctx).count({ status: "free" });
 	// The silent-bridge flag is worked out here, when the admin page or widget loads (spec change 2).
-	const silentFor = paired && (!bridge || now - bridge.lastSyncAt > SILENT_MS) ? (bridge ? now - bridge.lastSyncAt : null) : null;
-	return { paired, bridge, free, silentFor };
+	const silentFor = paired && bridge && now - bridge.lastSyncAt > SILENT_MS ? now - bridge.lastSyncAt : null;
+	const review = await invoices(ctx).count({ status: "review" });
+	// The newest invoices past their deadline: count the expired, unpaid ones until the first that isn't (open invoices
+	// still waiting for evidence are skipped).
+	const recent = await invoices(ctx).query({ where: { expiresAt: { lt: now } }, orderBy: { expiresAt: "desc" }, limit: 2 * UNPAID_RUN_ALERT });
+	let unpaidRun = 0;
+	for (const { data } of recent.items) {
+		if (isOpen(data)) continue;
+		if (data.status !== "expired" || data.transfers.length > 0 || unpaidRun === UNPAID_RUN_ALERT) break;
+		unpaidRun++;
+	}
+	const claimed = await pool(ctx).query({ where: { status: "claimed" }, orderBy: { addrIndex: "desc" }, limit: 1 });
+	const claimedTop = claimed.items[0]?.data.addrIndex ?? 0;
+	const top = await paidTop(ctx);
+	const gap = { value: Math.max(0, claimedTop - top), paidTop: top, claimedTop };
+	let rate: Health["rate"];
+	if (opts.checkRate) {
+		const setting = await ctx.settings.get<string>(SETTING.currency);
+		const currency: Currency = isCurrency(setting) ? setting : "USD";
+		const r = await getRate(ctx, currency, now);
+		rate = r ? { minor: r.minor, source: r.source, currency } : null;
+	}
+	const clientIp = await ctx.kv.get<boolean>(KV.clientIp);
+	return { paired, bridge, free, silentFor, lastSyncAgo: bridge ? now - bridge.lastSyncAt : null, review, unpaidRun, gap, rate, clientIp };
+}
+
+const minorText = (m: bigint) => `${m / 100n}.${(m % 100n).toString().padStart(2, "0")}`;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Red (error) and amber (alert) lines, worst first, each naming its fix. */
+function problems(h: Health): Array<{ variant: "error" | "alert"; title: string; description: string }> {
+	const out: ReturnType<typeof problems> = [];
+	const checks = h.bridge?.checks;
+	if (h.silentFor !== null) out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
+	if (h.paired && !h.bridge) out.push({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
+	if (checks?.wallet?.state === "behind") {
+		out.push({ variant: "error", title: "The wallet is behind its node", description: `${checks.wallet.detail ?? "The wallet is behind its node"}. It catches up by itself after a restart or an outage; if this stays, run xmr-bridge status on the wallet host.` });
+	}
+	if (checks?.node?.state === "mismatch") out.push({ variant: "error", title: "The wallet host's node disagrees with a second node", description: checks.node.detail ?? "Payments in the disputed block are held at 0 confirmations. Use your own node, or one you trust" });
+	if (h.paired && h.bridge && h.free === 0) out.push({ variant: "error", title: "No payment addresses ready", description: "Checkout can't take payments until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host." });
+	if (h.rate === null) out.push({ variant: "error", title: "Price feed not answering", description: "Both price services failed just now, so checkout refuses new orders until one answers. It retries by itself; if this lasts, check the site's outbound network." });
+	if (h.gap.value >= GAP_ALERT) {
+		out.push({
+			variant: "error",
+			title: "Your wallet app may miss payments",
+			description: `${h.gap.value} payment addresses have gone unpaid since the last payment (address #${h.gap.paidTop}). Wallet apps look only about 200 addresses past the last paid one, so a payment to a later address can be missing from your wallet app's balance (Coffer still sees it). In your wallet app, create receiving addresses up to #${h.gap.claimedTop}, then rescan the wallet.`,
+		});
+	}
+	if (checks?.wallet?.state === "unavailable") out.push({ variant: "alert", title: "The wallet host can't read its node's height", description: checks.wallet.detail ?? "On the wallet host, run: xmr-bridge status" });
+	if (checks?.node?.state === "unavailable") out.push({ variant: "alert", title: "Remote-node cross-check unavailable", description: checks.node.detail ?? "No second node answered; confirmations are reported as the configured node gives them" });
+	if (h.review > 0) out.push({ variant: "alert", title: `${plural(h.review, "invoice needs", "invoices need")} a decision`, description: "Each one shows what happened and a recommended action in the review queue." });
+	if (h.unpaidRun >= UNPAID_RUN_ALERT) out.push({ variant: "alert", title: `The last ${h.unpaidRun} checkouts expired unpaid`, description: "Buyers may be stuck. Open your pay page and check that it shows the address and the amount, then try a small test payment." });
+	return out;
+}
+
+function walletHeightText(h: Health): string {
+	if (!h.bridge) return "Unknown until the wallet host syncs";
+	const w = h.bridge.checks?.wallet;
+	if (w?.state === "ok") return `${h.bridge.height}, in step with its node`;
+	if (w?.state === "behind") return `${h.bridge.height}: ${w.detail ?? "behind its node"}`;
+	if (w?.state === "unavailable") return `${h.bridge.height} (its node's height is unknown${w.detail ? `: ${w.detail}` : ""})`;
+	return String(h.bridge.height);
+}
+
+const NODE_CHECK_TEXT = { off: "Off (the wallet host uses your own node)", ok: "OK", unavailable: "Unavailable", mismatch: "Mismatch" } as const;
+
+function healthBlocks(h: Health): Block[] {
+	const blocks: Block[] = problems(h).map((p) => ({ type: "banner", ...p }));
+	if (h.bridge?.outdated) blocks.push({ type: "banner", variant: "default", title: "Wallet host update available", description: "On the wallet host, run: xmr-bridge update" });
+	const node = h.bridge?.checks?.node?.state;
+	blocks.push(
+		{ type: "header", text: "Health" },
+		{
+			type: "fields",
+			block_id: "health",
+			fields: [
+				{ label: "Wallet host", value: h.paired ? "Paired" : "Not paired" },
+				{ label: "Last sync", value: h.lastSyncAgo === null ? "Never" : ago(h.lastSyncAgo) },
+				{ label: "Wallet height", value: walletHeightText(h) },
+				{ label: "Price feed", value: h.rate ? `1 XMR = ${minorText(h.rate.minor)} ${h.rate.currency} (${h.rate.source})` : "Not answering" },
+				{ label: "Review items", value: h.review === 0 ? "None" : `${h.review} need a decision` },
+				{ label: "Unpaid checkouts in a row", value: String(h.unpaidRun) },
+				{ label: "Remote-node cross-check", value: node ? NODE_CHECK_TEXT[node] : "Not reported yet" },
+				{ label: "Unpaid addresses since the last payment", value: `${h.gap.value} (warning at ${GAP_ALERT})` },
+			],
+		},
+		{ type: "meter", label: "Payment addresses ready", value: h.free, max: POOL_TARGET, custom_value: `${h.free} of ${POOL_TARGET}` },
+		{ type: "context", text: "Each payment gets its own address from your wallet. The wallet host adds more automatically." },
+	);
+	if (h.clientIp === false) {
+		blocks.push({ type: "context", text: `Per-visitor spam limits are off: this site doesn't pass visitors' IP addresses to plugins. The site-wide limit of ${MAX_OPEN_TOTAL} open invoices still applies.` });
+	}
+	return blocks;
 }
 
 function installBlocks(siteUrl: string, code: string, expiresAt: number): Block[] {
@@ -66,25 +185,8 @@ function installBlocks(siteUrl: string, code: string, expiresAt: number): Block[
 }
 
 async function page(ctx: PluginContext, now: number, shownCode?: { code: string; expiresAt: number }): Promise<Block[]> {
-	const h = await health(ctx, now);
-	const blocks: Block[] = [{ type: "header", text: "Monero payments" }];
-	if (h.silentFor !== null || (h.paired && !h.bridge)) {
-		blocks.push({
-			type: "banner",
-			variant: "alert",
-			title: h.bridge ? `Wallet host silent for ${Math.floor((h.silentFor ?? 0) / 60_000)} min` : "Wallet host paired but not syncing yet",
-			description: "On the wallet host, run: xmr-bridge status",
-		});
-	}
-	if (h.bridge?.outdated) blocks.push({ type: "banner", variant: "default", title: "Wallet host update available", description: "On the wallet host, run: xmr-bridge update" });
-	blocks.push({
-		type: "fields",
-		fields: [
-			{ label: "Wallet host", value: h.paired ? "Paired" : "Not paired" },
-			{ label: "Last sync", value: h.bridge ? ago(now - h.bridge.lastSyncAt) : "Never" },
-			{ label: "Free addresses", value: `${h.free} of ${POOL_TARGET}` },
-		],
-	});
+	const h = await health(ctx, now, { checkRate: true });
+	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...healthBlocks(h)];
 
 	blocks.push({ type: "divider" }, { type: "header", text: "Connect wallet host" });
 	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
@@ -132,12 +234,17 @@ async function page(ctx: PluginContext, now: number, shownCode?: { code: string;
 }
 
 async function widget(ctx: PluginContext, now: number): Promise<Block[]> {
-	const h = await health(ctx, now);
+	// No price request from the dashboard: the widget loads often, and the page checks the feed.
+	const h = await health(ctx, now, { checkRate: false });
+	const worst = problems(h).find((p) => p.variant === "error");
+	const reviews = h.review > 0 ? ` ${plural(h.review, "review item", "review items")}.` : "";
 	const line = !h.paired
 		? "Not set up: connect a wallet host on the Monero payments page."
-		: h.silentFor !== null || !h.bridge
-			? "Wallet host silent: on the wallet host, run xmr-bridge status."
-			: `Healthy: last sync ${ago(now - h.bridge.lastSyncAt)}, ${h.free} free addresses.`;
+		: worst
+			? `${worst.title}.${reviews}`
+			: !h.bridge
+				? `Wallet host paired but not syncing yet.${reviews}`
+				: `Healthy: last sync ${ago(now - h.bridge.lastSyncAt)}, ${h.free} of ${POOL_TARGET} payment addresses ready.${reviews}`;
 	return [{ type: "context", text: line }];
 }
 
