@@ -2,8 +2,9 @@
  * The admin route: the Monero payments page and the dashboard widget (phase 04). Block Kit as plain JSON objects
  * (CLAUDE.md, "Dependency tiers"). Session 4a: the health panel and the widget. Session 4b: the setup checklist with
  * Get a test address, pairing notes, the bridge key. Session 4c: the invoice table and row actions. Session 4d: the
- * review queue, reworked after Wyatt's click-through (2026-10-09) into "Needs a decision", with the page reordered.
- * Settings and Connect wallet host are from phase 02 session 2e.
+ * review queue, reworked after Wyatt's click-through (2026-10-09) into "Needs a decision", with the page reordered. His
+ * second click-through (~/xmr-pay-dev-data/04-ui-2/notes.md) turned the table into toggles that open in place and moved
+ * Connect a new wallet host out of its toggle. Settings and Connect wallet host are from phase 02 session 2e.
  */
 import type { PluginContext } from "emdash/plugin";
 
@@ -268,11 +269,30 @@ function installBlocks(siteUrl: string, code: string, expiresAt: number, now: nu
 	];
 }
 
-const INVOICE_PAGE = 25;
+/** 10 a page: every invoice's details are in the response, closed or not, and the page must stay under Block Kit's
+ * 2,000 nodes next to a full review queue (Wyatt, 2026-10-09, round 2). */
+const INVOICE_PAGE = 10;
+/** Payments listed per invoice, to keep one invoice's box well inside the 256 KiB response. */
+const TRANSFERS_LISTED = 50;
 const STATUS_TEXT: Record<Invoice["status"], string> = { new: "New", seen: "Seen", confirming: "Confirming", settled: "Settled", expired: "Expired", review: "Review" };
 const statusText = (inv: Invoice) =>
 	inv.status === "review" ? `Needs decision: ${inv.reviewReason ?? "review"}` : `${STATUS_TEXT[inv.status]}${inv.adminFinal ? " (by admin)" : ""}`;
 const xmr = (atomic: bigint) => (atomic === 0n ? "0" : atomicToXmr(atomic));
+const fiatText = (inv: Invoice) => (inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : "");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (ms: number) => `${MONTHS[new Date(ms).getUTCMonth()]} ${new Date(ms).getUTCDate()}`;
+const dateTime = (ms: number) => `${shortDate(ms)}, ${utc(ms)}`;
+/** Settled, expired, or decided by the admin: nothing will change it, so its expiry no longer means anything. */
+const isFinal = (inv: Invoice) => inv.adminFinal === true || inv.status === "settled" || inv.status === "expired";
+
+function since(ms: number): string {
+	const min = Math.floor(ms / 60_000);
+	if (min < 1) return "less than a minute ago";
+	if (min < 60) return `${min} min ago`;
+	const h = Math.floor(min / 60);
+	if (h < 24) return `${plural(h, "hour", "hours")} ago`;
+	return `${plural(Math.floor(h / 24), "day", "days")} ago`;
+}
 
 /**
  * The deepest counted transfer, so an underpaid or review invoice doesn't read "0 confirmations" (phase 03 3h note). A
@@ -314,32 +334,17 @@ function receivedText(inv: Invoice): string {
 const productLink = (inv: Invoice): Block[] =>
 	inv.productRef ? [{ type: "link", label: "Open product", target: { kind: "content", collection: inv.productRef.collection, id: inv.productRef.id } }] : [];
 
-type Verb = "settle" | "expire" | "raise" | "details";
-const VERB_LABELS: Record<Verb, string> = { settle: "Mark settled", expire: "Expire", raise: `Raise confirmations to ${MAX_REQUIRED}`, details: "Details and txids" };
+type Verb = "settle" | "expire" | "raise";
+const VERB_LABELS: Record<Verb, string> = { settle: "Mark settled", expire: "Expire", raise: `Raise confirmations to ${MAX_REQUIRED}` };
 
 /** What an admin may do to an invoice in its current state. A decision (settle, expire) is final. */
 function allowed(inv: Invoice): Verb[] {
-	if (inv.adminFinal) return ["details"];
+	if (inv.adminFinal) return [];
 	const out: Verb[] = [];
 	if (inv.status !== "settled") out.push("settle");
 	if (isOpen(inv) || inv.status === "review") out.push("expire");
 	if (isOpen(inv) && inv.required < MAX_REQUIRED) out.push("raise");
-	out.push("details");
 	return out;
-}
-
-function invoiceRow(inv: Invoice): Record<string, unknown> {
-	return {
-		id: inv.id,
-		status: statusText(inv),
-		amount: inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : "",
-		xmr: inv.expectedAtomic ? xmr(BigInt(inv.expectedAtomic)) : "",
-		received: xmr(totals(inv).received),
-		confirmations: confirmationsText(inv),
-		created: new Date(inv.createdAt).toISOString(),
-		expires: new Date(inv.expiresAt).toISOString(),
-		actions: { type: "menu", action_id: "invoice_action", label: "Actions", items: allowed(inv).map((v) => ({ label: VERB_LABELS[v], value: `${v}:${inv.id}` })) },
-	};
 }
 
 /** A transfer with why it doesn't count, or "counted". */
@@ -349,62 +354,88 @@ function transferNote(t: Invoice["transfers"][number]): string {
 	return why.length === 0 ? `${base}, counted` : `${base}, not counted: ${why.join("; ")}`;
 }
 
-/** One invoice's details: buyer-supplied text only as plain text, each txid as copyable text. */
-function detailBlocks(inv: Invoice): Block[] {
-	const fields = [
-		{ label: "Status", value: statusText(inv) },
-		{ label: "Amount", value: invoiceRow(inv).amount as string },
-		{ label: "Received", value: receivedText(inv) },
-		{ label: "Confirmations", value: confirmationsText(inv) },
-		{ label: "Payment address", value: `#${inv.addrIndex}: ${inv.subaddress}` },
-		...(inv.productRef ? [{ label: "Product", value: inv.productRef.id }] : []),
-		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
-		...(inv.buyer?.refundAddress ? [{ label: "Refund address", value: inv.buyer.refundAddress }] : []),
-		...(inv.buyer?.note ? [{ label: "Note", value: inv.buyer.note }] : []),
-	];
-	const inner: Block[] = [{ type: "fields", fields }];
-	if (inv.productRef) inner.push({ type: "actions", elements: productLink(inv) });
-	if (inv.transfers.length === 0) inner.push({ type: "context", text: "No payment reported yet." });
-	for (const t of inv.transfers) inner.push({ type: "context", text: transferNote(t) }, { type: "code", code: t.txid });
-	return [{ type: "accordion", block_id: "invoice_details", label: `Invoice ${inv.id}`, default_open: true, blocks: inner }];
+/** The toggle's label: the invoice on one line, due and received told apart, no expiry (round 2, changes 1 and 6). */
+function invoiceLabel(inv: Invoice, now: number): string {
+	const parts = [statusText(inv)];
+	if (inv.fiat) parts.push(fiatText(inv));
+	if (inv.status === "review" && inv.reviewReason === "reversed") parts.push("payment no longer reported");
+	else if (inv.status === "review" && inv.reviewReason === "reorg") parts.push("payment not mined again");
+	else {
+		const received = totals(inv).received;
+		const due = inv.expectedAtomic ? BigInt(inv.expectedAtomic) : null;
+		if (received === 0n) parts.push(due === null ? "nothing received" : `nothing received (${xmr(due)} XMR due)`);
+		else if (due !== null && received < due) parts.push(`received ${xmr(received)} of ${xmr(due)} XMR`);
+		else parts.push(`received ${xmr(received)} XMR`);
+		const depths = inv.transfers.filter(counted).map((t) => t.confirmations);
+		if (depths.length > 0) parts.push(plural(Math.max(...depths), "confirmation", "confirmations"));
+	}
+	parts.push(`created ${since(now - inv.createdAt)}`);
+	return parts.join(" · ");
 }
 
-async function invoiceBlocks(ctx: PluginContext, opts: PageOptions): Promise<Block[]> {
+/**
+ * Every payment in one box, each with its Transaction ID under it (round 2, change 4). One code block costs the same
+ * few nodes whatever the count, which is what fits 10 invoices' details on one page.
+ */
+function transfersCode(inv: Invoice): string {
+	const n = inv.transfers.length;
+	const listed = inv.transfers.slice(0, TRANSFERS_LISTED).map((t, i) => `Payment ${i + 1} of ${n}: ${transferNote(t)}\nTransaction ID: ${t.txid}`);
+	if (n > TRANSFERS_LISTED) listed.push(`…and ${n - TRANSFERS_LISTED} more payments.`);
+	return listed.join("\n\n");
+}
+
+/**
+ * One invoice: a closed toggle with the summary as its label, and inside it the details, the Actions menu and the long
+ * values in their own boxes. Buyer-supplied text only as plain text. The invoice just acted on gets a new block_id and
+ * starts open: the host keeps each toggle's open state by block_id.
+ */
+function invoiceItem(inv: Invoice, now: number, opts: { acted: boolean; cursor?: string }): Block {
+	const fields = [
+		{ label: "Status", value: statusText(inv) },
+		...(inv.fiat ? [{ label: "Amount", value: fiatText(inv) }] : []),
+		...(inv.expectedAtomic ? [{ label: "Due", value: `${xmr(BigInt(inv.expectedAtomic))} XMR` }] : []),
+		{ label: "Received", value: receivedText(inv) },
+		{ label: "Confirmations", value: confirmationsText(inv) },
+		{ label: "Created", value: dateTime(inv.createdAt) },
+		{ label: "Expires", value: isFinal(inv) ? "—" : dateTime(inv.expiresAt) },
+		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
+	];
+	const inner: Block[] = [{ type: "fields", fields }];
+	const verbs = allowed(inv);
+	const suffix = opts.cursor ? `|${opts.cursor}` : "";
+	const elements: Block[] = [
+		...(verbs.length > 0 ? [{ type: "menu", action_id: "invoice_action", label: "Actions", items: verbs.map((v) => ({ label: VERB_LABELS[v], value: `${v}:${inv.id}${suffix}` })) }] : []),
+		...productLink(inv),
+	];
+	if (elements.length > 0) inner.push({ type: "actions", elements });
+	inner.push({ type: "context", text: `Payment address (#${inv.addrIndex})` }, { type: "code", code: inv.subaddress });
+	if (inv.buyer?.refundAddress) inner.push({ type: "context", text: "Buyer's refund address" }, { type: "code", code: inv.buyer.refundAddress });
+	if (inv.buyer?.note) inner.push({ type: "context", text: `Buyer's note: ${inv.buyer.note}` });
+	if (inv.transfers.length === 0) inner.push({ type: "context", text: "No payment reported yet." });
+	else inner.push({ type: "context", text: "Find each payment in your wallet app's transaction history by its Transaction ID." }, { type: "code", code: transfersCode(inv) });
+	return { type: "accordion", block_id: opts.acted ? `invoice_${inv.id}_acted` : `invoice_${inv.id}`, label: invoiceLabel(inv, now), default_open: opts.acted, blocks: inner };
+}
+
+async function invoiceBlocks(ctx: PluginContext, now: number, opts: PageOptions): Promise<Block[]> {
 	const r = await invoices(ctx).query({ where: { kind: "product" }, orderBy: { createdAt: "desc" }, limit: INVOICE_PAGE, ...(opts.cursor ? { cursor: opts.cursor } : {}) });
 	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "All invoices" }];
-	if (opts.details) blocks.push(...detailBlocks(opts.details));
-	blocks.push({
-		type: "table",
-		block_id: "invoices",
-		page_action_id: "invoices_page",
-		empty_text: "No orders yet.",
-		columns: [
-			{ key: "status", label: "Status", format: "badge" },
-			{ key: "amount", label: "Amount" },
-			{ key: "xmr", label: "XMR" },
-			{ key: "received", label: "Received" },
-			{ key: "confirmations", label: "Confirmations" },
-			{ key: "created", label: "Created", format: "relative_time" },
-			{ key: "expires", label: "Expires", format: "relative_time" },
-			{ key: "actions", label: "", format: "element" },
-		],
-		rows: r.items.map((i) => invoiceRow(i.data)),
-		...(r.hasMore && r.cursor ? { next_cursor: r.cursor } : {}),
-	});
-	if (opts.cursor) blocks.push({ type: "actions", block_id: "invoices_nav", elements: [{ type: "button", action_id: "invoices_newest", label: "Newest invoices" }] });
+	if (r.items.length === 0) blocks.push({ type: "context", block_id: "invoices_empty", text: "No orders yet." });
+	blocks.push(...r.items.map(({ data }) => invoiceItem(data, now, { acted: data.id === opts.acted, ...(opts.cursor ? { cursor: opts.cursor } : {}) })));
+	const nav: Block[] = [];
+	if (opts.cursor) nav.push({ type: "button", action_id: "invoices_newest", label: "Newest invoices" });
+	if (r.hasMore && r.cursor) nav.push({ type: "button", action_id: "invoices_page", label: "Load more", value: { cursor: r.cursor } });
+	if (nav.length > 0) blocks.push({ type: "actions", block_id: "invoices_nav", elements: nav });
 	return blocks;
 }
 
-/** Review items per page: 12 worst-case items next to a full table and an open Details panel stay under Block Kit's
- * 2,000 nodes (a full 25-row table is about 840; a reversed item with everything about 61). Paged up to item 60, then
- * the rest are pointed at in All invoices (Wyatt, 2026-10-09). */
+/** Review items per page: 12 worst-case items next to a full page of invoices stay under Block Kit's 2,000 nodes (a
+ * reversed item with everything is about 64). Paged up to item 60, then the rest are pointed at in All invoices (Wyatt,
+ * 2026-10-09). */
 const REVIEW_STEP = 12;
 const REVIEW_MAX = 60;
 /** Review invoices read for ordering: red first needs the reason, which has no index (adding one is a stop point). */
 const REVIEW_SCAN_PAGES = 5;
 const REVIEW_TITLE: Record<NonNullable<Invoice["reviewReason"]>, string> = { late: "Late payment", underpaid: "Underpaid", reorg: "Payment not re-mined after a reorg", reversed: "Settled payment gone" };
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const shortDate = (ms: number) => `${MONTHS[new Date(ms).getUTCMonth()]} ${new Date(ms).getUTCDate()}`;
 /** Red where the money may be gone, yellow where it arrived and the admin decides (Wyatt, 2026-10-09). */
 const isRed = (inv: Invoice) => inv.reviewReason === "reversed" || inv.reviewReason === "reorg";
 const button = (label: string, value: string, style: "primary" | "secondary", confirm?: Record<string, string>): Block => ({ type: "button", action_id: "invoice_action", label, style, value, ...(confirm ? { confirm } : {}) });
@@ -420,8 +451,8 @@ function reviewItem(inv: Invoice): Block[] {
 	const full = t.received >= t.threshold;
 	const deepest = Math.max(0, ...inv.transfers.filter(counted).map((x) => x.confirmations));
 	const reason = inv.reviewReason ?? "late";
-	// The products table holds product invoices only (tips come with phase 07).
-	const rowHint = (accept: string) => (inv.kind === "product" ? ` To accept ${accept} instead, use Mark settled in its row under All invoices below.` : "");
+	// All invoices lists product invoices only (tips come with phase 07).
+	const rowHint = (accept: string) => (inv.kind === "product" ? ` To accept ${accept} instead, find it under All invoices below and choose Mark settled from its Actions menu.` : "");
 	let title = REVIEW_TITLE[reason];
 	let what: string;
 	let advice: string;
@@ -459,9 +490,10 @@ function reviewItem(inv: Invoice): Block[] {
 		{ label: "Received", value: receivedText(inv) },
 		{ label: "Confirmations", value: confirmationsText(inv) },
 		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
-		...(inv.buyer?.refundAddress ? [{ label: "Refund address", value: inv.buyer.refundAddress }] : []),
 	];
-	const amount = inv.fiat ? `${minorText(BigInt(inv.fiat.amountMinor))} ${inv.fiat.currency}` : inv.kind;
+	// The refund address in its own box, never cut off in the fields grid (round 2, change 2).
+	const refund: Block[] = inv.buyer?.refundAddress ? [{ type: "context", text: "Buyer's refund address" }, { type: "code", code: inv.buyer.refundAddress }] : [];
+	const amount = inv.fiat ? fiatText(inv) : inv.kind;
 	return [
 		{ type: "banner", block_id: `review_${inv.id}`, variant: isRed(inv) ? "error" : "alert", title, description: `${inv.id} · ${amount} · created ${shortDate(inv.createdAt)}` },
 		{
@@ -469,7 +501,7 @@ function reviewItem(inv: Invoice): Block[] {
 			block_id: `review_${inv.id}_details`,
 			label: "Details and actions",
 			default_open: false,
-			blocks: [{ type: "section", text: what }, { type: "context", text: advice }, { type: "fields", fields }, { type: "actions", elements: actions }],
+			blocks: [{ type: "section", text: what }, { type: "context", text: advice }, { type: "fields", fields }, ...refund, { type: "actions", elements: actions }],
 		},
 	];
 }
@@ -501,20 +533,29 @@ async function reviewBlocks(ctx: PluginContext, total: number, start: number): P
 	return blocks;
 }
 
-const ACTION_VALUE = /^(settle|expire|raise|details):(inv_[A-Za-z0-9_]{1,40})$/;
+/** "verb:invoice", then "|cursor" when the invoice was on a later page, so the page stays put after the action. */
+const ACTION_VALUE = /^(settle|expire|raise):(inv_[A-Za-z0-9_]{1,40})(?:\|([^\n]{1,1000}))?$/;
 
-/** A row action, re-checked against the invoice as stored now and written only if it hasn't changed since read. */
-async function invoiceAction(ctx: PluginContext, value: unknown, now: number): Promise<{ toast?: Toast; details?: Invoice }> {
+interface ActionResult {
+	toast: Toast;
+	/** The invoice acted on, opened on the next page whether the action applied or was refused. */
+	acted?: string;
+	cursor?: string;
+}
+
+/** An invoice action, re-checked against the invoice as stored now and written only if it hasn't changed since read. */
+async function invoiceAction(ctx: PluginContext, value: unknown, now: number): Promise<ActionResult> {
 	const m = typeof value === "string" ? ACTION_VALUE.exec(value) : null;
 	if (!m) return { toast: { type: "error", message: "That action isn't available." } };
 	const verb = m[1] as Verb;
+	const back = m[3] ? { cursor: m[3] } : {};
 	const current = await invoices(ctx).getVersioned(m[2]);
-	if (!current || !current.value) return { toast: { type: "error", message: "That invoice wasn't found." } };
+	if (!current || !current.value) return { toast: { type: "error", message: "That invoice wasn't found." }, ...back };
 	const inv = current.value;
-	if (verb === "details") return { details: inv };
+	const at = { acted: inv.id, ...back };
 	if (!allowed(inv).includes(verb)) {
-		if (verb === "raise" && isOpen(inv) && !inv.adminFinal) return { toast: { type: "error", message: `This invoice already needs ${inv.required} confirmations; it can't go higher.` } };
-		return { toast: { type: "error", message: `This invoice changed since the page loaded (it's now ${statusText(inv).toLowerCase()}). Nothing was changed.` } };
+		if (verb === "raise" && isOpen(inv) && !inv.adminFinal) return { toast: { type: "error", message: `This invoice already needs ${inv.required} confirmations; it can't go higher.` }, ...at };
+		return { toast: { type: "error", message: `This invoice changed since the page loaded (it's now ${statusText(inv).toLowerCase()}). Nothing was changed.` }, ...at };
 	}
 	const next: Invoice = structuredClone(inv);
 	let message: string;
@@ -532,59 +573,65 @@ async function invoiceAction(ctx: PluginContext, value: unknown, now: number): P
 		message = verb === "settle" ? "Marked settled. The invoice won't change again." : "Expired. The invoice won't change again.";
 	}
 	const write = await invoices(ctx).compareAndSet(inv.id, current.revision, next);
-	if (!write.applied) return { toast: { type: "error", message: "This invoice changed while you were deciding (a sync came in). Nothing was changed; look again and retry." } };
+	if (!write.applied) return { toast: { type: "error", message: "This invoice changed while you were deciding (a sync came in). Nothing was changed; look again and retry." }, ...at };
 	ctx.log.info("invoice admin action", { invoiceId: inv.id, action: verb, from: inv.status, to: next.status });
-	return { toast: { type: "success", message } };
+	return { toast: { type: "success", message }, ...at };
 }
 
 interface PageOptions {
 	shownCode?: { code: string; expiresAt: number };
-	/** The invoice table's page (a storage cursor); the newest page when absent. */
+	/** The invoice list's page (a storage cursor); the newest page when absent. */
 	cursor?: string;
-	/** An invoice to show in the details panel. */
-	details?: Invoice;
+	/** The invoice just acted on, shown open. */
+	acted?: string;
 	/** The first review item shown (0, 12, 24, 36 or 48). */
 	reviewStart?: number;
 }
 
 const PAIRED_WARNING = "A wallet host is already paired. Pairing a new one replaces it, and the current one stops syncing.";
+const CONNECT_HINT = "Use this to move, rebuild or replace your wallet host. It creates a one-time code (15 minutes) and the install command.";
 
-/** Connect wallet host's contents: the code and commands when just made, the notes, the warning, the button. */
-async function connectBlocks(ctx: PluginContext, h: Health, now: number, shownCode?: PageOptions["shownCode"]): Promise<Block[]> {
-	const blocks: Block[] = [];
+/**
+ * Connect wallet host's contents. Before setup: the code and commands when just made (or the notes), the site line,
+ * the warning, the button. After setup, in Settings: the button, its hint, the site line, then the code and commands
+ * (Wyatt, round 2, change 3).
+ */
+async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSetup: boolean, shownCode?: PageOptions["shownCode"]): Promise<Block[]> {
 	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
 	const siteUrl = ctx.site.url.replace(/\/$/, "");
-	if (!siteUrl) {
-		blocks.push({ type: "banner", variant: "error", title: "Your site's address isn't known", description: "Set siteUrl in the site's Astro config (or the EMDASH_SITE_URL environment variable) to its public address, then reload this page." });
-	} else if (shownCode) {
-		blocks.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt, now));
-	} else {
+	const site: Block = siteUrl
+		? { type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` }
+		: { type: "banner", variant: "error", title: "Your site's address isn't known", description: "Set siteUrl in the site's Astro config (or the EMDASH_SITE_URL environment variable) to its public address, then reload this page." };
+	const code: Block[] = [];
+	if (siteUrl && shownCode) code.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt, now));
+	else if (siteUrl) {
 		const pairing = await ctx.kv.get<PairingState>(KV.pairing);
-		if (isPairingActive(pairing, now)) blocks.push({ type: "context", text: `A pairing code is active until ${utc(pairing.expiresAt)} (${minutesLeft(pairing.expiresAt, now)} min left). Codes are shown once; press the button for a new one (it replaces the old code).` });
-		else blocks.push({ type: "context", text: "Creates a one-time code (15 minutes) and the install command for your wallet host." });
+		if (isPairingActive(pairing, now)) code.push({ type: "context", text: `A pairing code is active until ${utc(pairing.expiresAt)} (${minutesLeft(pairing.expiresAt, now)} min left). Codes are shown once; press the button for a new one (it replaces the old code).` });
+		else if (!afterSetup) code.push({ type: "context", text: "Creates a one-time code (15 minutes) and the install command for your wallet host." });
 	}
 	const last = await ctx.kv.get<{ at: number; replaced: boolean }>(KV.lastPairing);
-	if (last && now - last.at < LATE_WINDOW_MS) {
-		blocks.push({ type: "context", text: `Wallet host paired at ${utc(last.at)}${last.replaced ? ", replacing the previous one, which no longer syncs" : ""}.` });
+	const paired: Block[] = last && now - last.at < LATE_WINDOW_MS ? [{ type: "context", text: `Wallet host paired at ${utc(last.at)}${last.replaced ? ", replacing the previous one, which no longer syncs" : ""}.` }] : [];
+	const button: Block = { type: "actions", elements: [{ type: "button", action_id: "connect_wallet_host", label: h.paired ? "Connect a new wallet host" : "Connect wallet host", style: "primary" }] };
+	if (afterSetup) {
+		// No confirmation dialog (EmDash 1.1.0's has no padding): making a code unpairs nothing, so the hint says it instead.
+		const hint = h.paired ? `${CONNECT_HINT} When the new one pairs, the current wallet host stops syncing.` : CONNECT_HINT;
+		return [button, { type: "context", text: hint }, site, ...code, ...paired];
 	}
-	if (siteUrl) blocks.push({ type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` });
-	// No confirmation dialog (EmDash 1.1.0's has no padding): making a code unpairs nothing, so the page says it instead.
-	if (h.paired) blocks.push({ type: "context", text: PAIRED_WARNING });
-	blocks.push({ type: "actions", elements: [{ type: "button", action_id: "connect_wallet_host", label: h.paired ? "Connect a new wallet host" : "Connect wallet host", style: "primary" }] });
-	return blocks;
+	return [...(siteUrl ? [] : [site]), ...code, ...paired, ...(siteUrl ? [site] : []), ...(h.paired ? [{ type: "context", text: PAIRED_WARNING }] : []), button];
 }
 
 /**
  * The page (Wyatt, 2026-10-09). Before setup: banners, checklist, Connect wallet host, Health, invoices, Settings. After
- * setup: banners, Health, invoices, Settings, with the checklist and Connect wallet host as closed toggles in Settings.
+ * setup: banners, Health, invoices, Settings, with Connect a new wallet host in the open in Settings and the checklist
+ * as a closed toggle last (round 2, change 3).
  */
 async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
 	const h = await health(ctx, now, { checkRate: true });
 	const setup = await setupSection(ctx, h);
-	const connect = await connectBlocks(ctx, h, now, opts.shownCode);
+	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode);
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h)];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
-	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, opts)));
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, now, opts)));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
@@ -605,10 +652,7 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 		{ type: "fields", block_id: "bridge_key", fields: [{ label: "Bridge public key", value: key ?? "Not paired" }] },
 		{ type: "context", text: "Filled in by pairing, the only way to set it. It's a public key, not a secret. On the wallet host, xmr-bridge status prints the same key." },
 	);
-	if (setup.done) {
-		// A new block_id while a code shows: the host keeps each toggle's open state by block_id, so this one opens.
-		blocks.push(setup.toggle, { type: "accordion", block_id: opts.shownCode ? "connect_code" : "connect", label: "Connect a new wallet host", default_open: Boolean(opts.shownCode), blocks: connect });
-	}
+	if (setup.done) blocks.push(...connect, setup.toggle);
 	return blocks;
 }
 
@@ -668,7 +712,7 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 	}
 	if (i.type === "block_action" && i.action_id === "invoice_action") {
 		const r = await invoiceAction(ctx, i.value, now);
-		return { blocks: await page(ctx, now, r.details ? { details: r.details } : {}), ...(r.toast ? { toast: r.toast } : {}) };
+		return { blocks: await page(ctx, now, { ...(r.cursor ? { cursor: r.cursor } : {}), ...(r.acted ? { acted: r.acted } : {}) }), toast: r.toast };
 	}
 	if (i.type === "page_load" || i.type === undefined) return { blocks: await page(ctx, now) };
 	return { blocks: await page(ctx, now), toast: { message: "That action isn't available.", type: "error" } };

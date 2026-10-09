@@ -98,7 +98,7 @@ describe("Needs a decision", () => {
 		expect(banner(b, "inv_0001")).toMatchObject({ variant: "alert", title: "Late payment · 70% received" });
 		const t = toggle(b, "inv_0001") as B;
 		expect(text(t)).toContain("0.001250000001 of 0.001785714286 XMR arrived (70%), part of it after the invoice's deadline.");
-		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept it instead, use Mark settled in its row under All invoices below.");
+		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept it instead, find it under All invoices below and choose Mark settled from its Actions menu.");
 		expect(actions(t)[0]).toEqual({ type: "button", action_id: "invoice_action", label: "Expire", style: "primary", value: "expire:inv_0001" });
 	});
 
@@ -106,8 +106,11 @@ describe("Needs a decision", () => {
 		await setup([invoice(2, { reviewReason: "underpaid", buyer: { refundAddress: ADDR(77) }, transfers: [transfer({ amountAtomic: "1339285715", confirmations: 7 })] })]);
 		const t = toggle(await load(), "inv_0002") as B;
 		expect(text(t)).toContain("0.001339285715 of 0.001785714286 XMR arrived (75%) by the deadline, 7 confirmations.");
-		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept the smaller amount instead, use Mark settled in its row under All invoices below.");
-		expect(field(t, "Refund address")).toBe(ADDR(77));
+		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept the smaller amount instead, find it under All invoices below and choose Mark settled from its Actions menu.");
+		// In its own box, not cut off in the fields grid (round 2, change 2).
+		expect(fieldsOf(t).some((f) => f.label === "Refund address")).toBe(false);
+		const r = t.blocks.findIndex((b: B) => b.type === "context" && b.text === "Buyer's refund address");
+		expect(t.blocks[r + 1]).toEqual({ type: "code", code: ADDR(77) });
 		expect(actions(t)).toEqual([{ type: "button", action_id: "invoice_action", label: "Expire", style: "primary", value: "expire:inv_0002" }, OPEN_PRODUCT(2)]);
 	});
 
@@ -206,16 +209,21 @@ describe("limits", () => {
 	// EmDash counts every value as a node (validateResponseBounds), strings and numbers included.
 	const nodes = (v: unknown): number => (Array.isArray(v) ? 1 + v.reduce((a: number, x) => a + nodes(x), 0) : v && typeof v === "object" ? 1 + Object.values(v).reduce((a: number, x) => a + nodes(x), 0) : 1);
 
-	it("the worst case: 300 reversed items with everything, a full table of open invoices, and an open Details panel with 32 transfers", { timeout: 30_000 }, async () => {
+	it("the worst case: 300 reversed items with everything, 10 invoices with 16 payments and every buyer field, and a pairing code showing", { timeout: 30_000 }, async () => {
 		const worst = (n: number) => invoice(n, { reviewReason: "reversed", settledAt: T0, buyer: { email: "someone.long.name@example.invalid", refundAddress: ADDR(5) } });
-		const open = (n: number) => ({ ...invoice(n), status: "new" as const, createdAt: Date.now() - n });
-		const many = invoice(1000, { status: "new", createdAt: Date.now(), transfers: Array.from({ length: 32 }, (_, i) => transfer({ txid: i.toString(16).padStart(64, "0"), amountAtomic: "1" })) });
-		const h = await setup([...Array.from({ length: 300 }, (_, i) => worst(i + 1)), ...Array.from({ length: 25 }, (_, i) => open(2000 + i)), many]);
-		const page = await h.admin.act("/payments", "invoice_action", { value: "details:inv_1000" });
+		const heavy = (n: number) =>
+			invoice(n, {
+				status: "confirming",
+				createdAt: Date.now() - n,
+				buyer: { email: "someone.long.name@example.invalid", refundAddress: ADDR(6), note: "n".repeat(200) },
+				transfers: Array.from({ length: 16 }, (_, i) => transfer({ txid: (n * 100 + i).toString(16).padStart(64, "0"), amountAtomic: "111607143", doubleSpendSeen: i % 2 === 0, unlockTime: i % 3 === 0 ? "3000100" : "0" })),
+			});
+		const h = await setup([...Array.from({ length: 300 }, (_, i) => worst(i + 1)), ...Array.from({ length: 10 }, (_, i) => heavy(2000 + i))]);
+		const page = await h.admin.act("/payments", "connect_wallet_host");
 		const blocks = page.blocks as B[];
 		expect(reviewBanners(blocks)).toHaveLength(12);
-		expect(blocks.find((x) => x.block_id === "invoice_details")).toBeDefined();
-		expect(blocks.find((x) => x.type === "table")?.rows).toHaveLength(25);
+		expect(blocks.filter((x) => x.type === "accordion" && String(x.block_id).startsWith("invoice_"))).toHaveLength(10);
+		expect(blocks.some((x) => x.type === "code" && String(x.code).startsWith("curl"))).toBe(true);
 		expect(nodes(page)).toBeLessThan(2000);
 		expect(JSON.stringify(page).length).toBeLessThan(256 * 1024);
 	});

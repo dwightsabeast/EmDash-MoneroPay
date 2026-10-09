@@ -1,6 +1,6 @@
-// The admin page's order and the Connect wallet host section (phase 04 click-through, Wyatt's notes changes 1 to 3,
-// decisions.md 2026-10-09): before setup, banners, checklist, Connect, Health, Invoices, Settings; after setup, banners,
-// Health, Invoices, Settings, with the checklist and Connect as closed toggles in Settings.
+// The admin page's order and the Connect wallet host section (phase 04 click-throughs, decisions.md 2026-10-09): before
+// setup, banners, checklist, Connect, Health, Invoices, Settings; after setup, banners, Health, Invoices, Settings, with
+// the Connect button out in the open in Settings (round 2, change 3) and the checklist as a closed toggle last.
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
@@ -40,7 +40,7 @@ const load = async () => (await (host as PluginRuntimeTestHost).admin.loadPage("
 const outline = (blocks: B[]) =>
 	blocks.flatMap((b) => {
 		if (b.type === "header") return [`h:${b.text}`];
-		if (b.type === "accordion") return String(b.block_id).startsWith("review_") ? [] : [`a:${b.block_id}`];
+		if (b.type === "accordion") return /^(review|invoice)_/.test(String(b.block_id)) ? [] : [`a:${b.block_id}`];
 		if (b.type === "banner") return [String(b.block_id ?? "").startsWith("review_") ? "review" : "banner"];
 		return [];
 	});
@@ -49,6 +49,10 @@ const connectButton = (blocks: B[]): B | undefined => {
 	return all.find((b) => b.type === "actions" && b.elements.some((e: B) => e.action_id === "connect_wallet_host"))?.elements.find((e: B) => e.action_id === "connect_wallet_host");
 };
 const WARNING = "A wallet host is already paired. Pairing a new one replaces it, and the current one stops syncing.";
+const HINT = "Use this to move, rebuild or replace your wallet host. It creates a one-time code (15 minutes) and the install command.";
+const HINT_PAIRED = `${HINT} When the new one pairs, the current wallet host stops syncing.`;
+/** Settings, from its header to the end of the page. */
+const settings = (blocks: B[]) => blocks.slice(blocks.findIndex((b) => b.type === "header" && b.text === "Settings"));
 
 describe("page order", () => {
 	it("before setup, nothing to flag: checklist, Connect, Health, All invoices, Settings", async () => {
@@ -61,17 +65,16 @@ describe("page order", () => {
 		expect(outline(await load())).toEqual(["h:Monero payments", "banner", "banner", "a:setup", "h:Connect wallet host", "h:Health", "h:Needs a decision (1)", "review", "h:All invoices", "h:Settings"]);
 	});
 
-	it("after setup, nothing to flag: Health first, the checklist and Connect as toggles in Settings", async () => {
+	it("after setup, nothing to flag: Health first, the checklist as a closed toggle last", async () => {
 		await setup({ done: true });
 		const b = await load();
-		expect(outline(b)).toEqual(["h:Monero payments", "h:Health", "h:All invoices", "h:Settings", "a:setup", "a:connect"]);
-		expect(b.find((x) => x.block_id === "setup")).toMatchObject({ label: "Setup (complete)", default_open: false });
-		expect(b.find((x) => x.block_id === "connect")).toMatchObject({ label: "Connect a new wallet host", default_open: false });
+		expect(outline(b)).toEqual(["h:Monero payments", "h:Health", "h:All invoices", "h:Settings", "a:setup"]);
+		expect(b.at(-1)).toMatchObject({ type: "accordion", block_id: "setup", label: "Setup (complete)", default_open: false });
 	});
 
 	it("after setup, with banners and a review item", async () => {
 		await setup({ done: true, review: true, silent: true });
-		expect(outline(await load())).toEqual(["h:Monero payments", "banner", "banner", "h:Health", "h:Needs a decision (1)", "review", "h:All invoices", "h:Settings", "a:setup", "a:connect"]);
+		expect(outline(await load())).toEqual(["h:Monero payments", "banner", "banner", "h:Health", "h:Needs a decision (1)", "review", "h:All invoices", "h:Settings", "a:setup"]);
 	});
 });
 
@@ -88,15 +91,6 @@ describe("Connect wallet host", () => {
 		expect(JSON.stringify(b)).not.toContain(WARNING);
 	});
 
-	it("after setup, the warning sits inside the toggle, above the button", async () => {
-		await setup({ done: true });
-		const inner = (await load()).find((x) => x.block_id === "connect")?.blocks as B[];
-		const warn = inner.findIndex((x) => x.type === "context" && x.text === WARNING);
-		const button = inner.findIndex((x) => x.type === "actions");
-		expect(warn).toBeGreaterThan(-1);
-		expect(warn).toBeLessThan(button);
-	});
-
 	it("before setup, pressing the button shows the code at the top, where the section is", async () => {
 		const h = await setup();
 		const b = (await h.admin.act("/payments", "connect_wallet_host")).blocks as B[];
@@ -104,16 +98,43 @@ describe("Connect wallet host", () => {
 		expect(at).toBe(2);
 		expect(b.some((x) => x.type === "code" && String(x.code).startsWith("curl"))).toBe(true);
 	});
+});
 
-	it("after setup, pressing the button opens the toggle by itself with the code inside", async () => {
+describe("Settings after setup (round 2, change 3)", () => {
+	const kinds = (blocks: B[]) => settings(blocks).map((b) => (b.type === "actions" ? `actions:${b.elements.map((e: B) => e.action_id).join(",")}` : b.block_id ? `${b.type}:${b.block_id}` : b.type));
+
+	it("top to bottom: the form and its note, the bridge key and its hint, the button, its hint, the site line, the checklist toggle last", async () => {
+		await setup({ done: true });
+		const b = await load();
+		expect(kinds(b)).toEqual(["header", "form:settings", "context", "fields:bridge_key", "context", "actions:connect_wallet_host", "context", "context", "accordion:setup"]);
+		const s = settings(b);
+		expect(s[6].text).toBe(HINT_PAIRED);
+		expect(s[7].text).toMatch(/^The wallet host will connect to /);
+	});
+
+	it("the button is out in the open, not inside a toggle; no warning line above it", async () => {
+		await setup({ done: true });
+		const b = await load();
+		expect(b.find((x) => x.type === "actions" && x.elements.some((e: B) => e.action_id === "connect_wallet_host"))?.elements[0]).toEqual({ type: "button", action_id: "connect_wallet_host", label: "Connect a new wallet host", style: "primary" });
+		for (const t of b.filter((x) => x.type === "accordion")) expect(JSON.stringify(t.blocks)).not.toContain("connect_wallet_host");
+		expect(JSON.stringify(b)).not.toContain(WARNING);
+	});
+
+	it("the hint without a paired host leaves out the line about the current one", async () => {
+		await setup({ done: true, paired: false });
+		const s = settings(await load());
+		const at = s.findIndex((x) => x.type === "actions" && x.elements.some((e: B) => e.action_id === "connect_wallet_host"));
+		expect(s[at + 1].text).toBe(HINT);
+	});
+
+	it("pressing the button shows the code and the commands directly below it, outside any toggle", async () => {
 		const h = await setup({ done: true });
 		const b = (await h.admin.act("/payments", "connect_wallet_host")).blocks as B[];
-		const toggle = b.find((x) => x.type === "accordion" && String(x.block_id).startsWith("connect")) as B;
-		// A new block_id while a code shows: the host keeps a toggle's open state per block_id, so this one starts open.
-		expect(toggle).toMatchObject({ block_id: "connect_code", label: "Connect a new wallet host", default_open: true });
-		expect(toggle.blocks.some((x: B) => x.type === "code" && String(x.code).startsWith("curl"))).toBe(true);
-		expect(b.some((x) => x.type === "code")).toBe(false);
-		// The next load shows the closed toggle again (the code is shown once).
-		expect((await load()).find((x) => x.type === "accordion" && String(x.block_id).startsWith("connect"))).toMatchObject({ block_id: "connect", default_open: false });
+		expect(kinds(b)).toEqual(["header", "form:settings", "context", "fields:bridge_key", "context", "actions:connect_wallet_host", "context", "context", "banner", "code", "context", "code", "accordion:setup"]);
+		const s = settings(b);
+		expect(s[8]).toMatchObject({ type: "banner", title: "Pairing code ready" });
+		expect(String(s[9].code)).toMatch(/^curl /);
+		expect(String(s[11].code)).toMatch(/^xmr-bridge install /);
+		expect(b.some((x) => x.type === "accordion" && String(x.block_id).startsWith("connect"))).toBe(false);
 	});
 });

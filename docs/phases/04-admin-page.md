@@ -26,7 +26,7 @@ Reordered after Wyatt's click-through (2026-10-09, `decisions.md`, Admin experie
 2. **Connect wallet host:** a button that issues a pairing code and shows the one install command with the code built in, a 15-minute countdown, and the cautious manual path. Pressing it again issues a new code; a completed pairing replaces the old key and says so.
 3. **Health:** one line per check: paired, last sync, wallet height against the expected height, free addresses (a meter against the pool target), price feed, review items, a run of unpaid expired invoices, remote-node cross-check. A red line names its fix, for example "Wallet host silent for 12 min. On the wallet host, run `xmr-bridge status`."
 4. **Review queue:** underpaid, late, reorg and reversed invoices, each with what happened and one recommended action applied with one click.
-5. **Invoices:** a paged table (status, amount in fiat and XMR, received, confirmations, created, expires) with row actions: mark settled, expire, copy txid, raise confirmations (never lower). Not-counted transfers (time-locked, double-spend flag) are listed with the reason.
+5. **Invoices:** a paged list, 10 a page, one toggle per invoice that opens in place (Wyatt's round 2 click-through, `decisions.md` 2026-10-09; Block Kit tables have no expandable rows): the summary as its label; inside, status, amount, due and received in XMR, confirmations, created, expires, the payment address, buyer fields, each payment with its transaction ID, and an Actions menu: mark settled, expire, raise confirmations (never lower). Not-counted transfers (time-locked, double-spend flag) are listed with the reason.
 6. **Settings:** currency and confirmation speed, with a note that changes affect new invoices only. The bridge public key read-only (no "paste a key by hand" fallback: spec change 19); `xmr-bridge status` prints the same key.
 7. **Dashboard widget `xmr-status`:** one line of health and the count of review items.
 
@@ -39,7 +39,7 @@ Reordered after Wyatt's click-through (2026-10-09, `decisions.md`, Admin experie
 - No new settings beyond the spec's three. If a design need seems to call for one, stop and ask.
 - Every admin action is validated with hand-written checks (no schema library; `CLAUDE.md`, "Dependency tiers") and re-checked against the invoice's current state (an invoice may have changed since the page loaded).
 - Write blocks as plain JSON objects, with small local helper functions if they help readability; don't use `@emdash-cms/blocks`. The Block Kit playground is fine for checking layout, since nothing from it ships.
-- Stay inside Block Kit's limits (256 KiB, 2,000 nodes, 1,000 items per array): page the invoice table.
+- Stay inside Block Kit's limits (256 KiB, 2,000 nodes, 1,000 items per array): page the invoice list.
 - Buyer-supplied text (email, note, refund address) appears only as plain text.
 - The install URL is a constant in the plugin, still a placeholder until phase 09. Under the one command, show the spec's cautious path (`xmr-bridge install --site <url> --pair <code>`) with the same code; that's also what Wyatt uses with a locally built bridge during development. A sandboxed plugin can't read environment variables, so don't plan a separate "dev build" of the plugin.
 
