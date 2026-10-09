@@ -1158,3 +1158,39 @@ Next step: Wyatt approves the push and CI. Then phase 04 (admin page), with 3h's
 Pushed with Wyatt's approval: `60e22a8..f0a52da`. CI run 37861316946 passed both jobs (`bridge`, `plugin`). The race-detector step passed too: the first race run of the spec change 16 and 17 code. This entry is local.
 
 Next step: phase 04 (admin page), with 3h's notes: label `confirmations: 0` on review invoices, and an admin way to clear a false `reversed`. Spec changes 6, 7 and 9–17 are still for Wyatt to fold into the live spec.
+
+## 2026-10-08 · Phase 04 · Session 4a: health panel and widget (code done; live look next)
+
+Before the phase:
+- Spec change 18 (a tips-only tier with no wallet host) was added word for word from Wyatt's draft, with its "Still to decide" row (`de46b55`). It doesn't change phase 04.
+- Wyatt approved the phase 04 plan (four sessions, 4a to 4d) and took the recommended answer on all four questions. They're recorded in `decisions.md`, Admin experience (`70cd78f`):
+  - "Payment addresses ready" wording
+  - the gap line with phase 03's remedy
+  - the bridge reports `checks.wallet`
+  - one recommended action per review reason
+
+Done (local commits):
+- `e96cefe` `bridge/sync` keeps the bridge's optional `checks` (node cross-check, wallet height) with the bridge state. Parsing is by hand: known states only, details cut to 300 characters, anything malformed dropped.
+- `2297560` The highest paid index (`state:paidTop`, noted once per sync, never lowered) and whether checkouts carry the visitor's IP (`state:clientIp`).
+- `7b9414d` The health panel:
+  - one line per check, the "Payment addresses ready" meter with its hint, and the spam-limit information line
+  - red and amber banners, worst first, each naming its fix
+  - the gap red from `GAP_ALERT` = 150, and an unpaid-run line amber at `UNPAID_RUN_ALERT` = 10 (a constant I chose; the spec gives none)
+  - the widget names the worst red problem plus the review count, and makes no price request
+- `3e32e68` Bridge: `checks.wallet` is ok, behind (its node more than 5 blocks ahead) or unavailable. The node is asked at most once a minute. The node's error stays in the bridge's log, because it can hold the node's address.
+
+Tests:
+- Plugin: 149 pass (19 new, 17 of them in `admin-health.test.ts`), typecheck clean, bundle 33.7 KB validates. Mutation check: the gap threshold (`>=` to `>`) caught.
+- Bridge: gofmt, vet and `go test ./...` pass, with and without `-tags devrelease` (new: `TestWalletCheck`, `TestChecksJSON`). `-race`: CI only.
+
+Not covered:
+- **Storage calls per page load:** about 14 storage and KV calls plus 0–2 price requests, counted from the code. The test host can't count them, and whether they count toward Cloudflare's 10-subrequest cap is unknown (spike 18, item 4). The dev site runs on Node.
+- **Older sites:** a site from before `state:paidTop` gets it worked out once from its invoices on the first page load (tested).
+
+Next step: the live look.
+1. Build and serve a dev release with `3e32e68`.
+2. Wyatt signs it, and the installed bridge updates itself.
+3. Start the dev site with the new plugin build.
+4. Wyatt opens `/payments` and the dashboard through the tunnel.
+
+Then 4b (setup checklist, test address, pairing notes, the bridge key setting).
