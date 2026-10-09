@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"regexp"
 	"time"
 
@@ -23,7 +24,7 @@ type Sender interface {
 var codeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 
 // ErrBadCode: the code isn't the 22-character form the admin page shows.
-var ErrBadCode = errors.New("that isn't a pairing code: copy the 22-character code from the site's Connect wallet host button")
+var ErrBadCode = errors.New("that isn't a pairing code: copy the 22-character code that " + sitetext.Button + " shows")
 
 // Pair pairs with code and saves the new key to keyFile. height is the chain height to report (0 if unknown). It
 // returns the site's suggested restore height for a new wallet, 0 when the site watches no invoices (spec change 17).
@@ -42,7 +43,7 @@ func Pair(ctx context.Context, site Sender, code, keyFile string, height uint64,
 		var se *syncclient.Error
 		if errors.As(err, &se) && (se.Code == "BAD_SIGNATURE" || se.Code == "NOT_PAIRED" || se.Code == "PAIRING_REJECTED") {
 			// A spent or expired code: the site no longer reads the body before the signature, so it can't say more.
-			return 0, &syncclient.Error{Code: se.Code, Status: se.Status, Hint: "the pairing code is used or expired, or mistyped. Press Connect wallet host again for a new code (valid 15 minutes)"}
+			return 0, &syncclient.Error{Code: se.Code, Status: se.Status, Hint: "the pairing code is used or expired, or mistyped. Press " + sitetext.Button + " again for a new code (valid 15 minutes)"}
 		}
 		return 0, err
 	}

@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -297,7 +298,7 @@ func CheckFormat(dataDir string) error {
 		return fmt.Errorf("can't read %s: %w", filepath.Join(dataDir, "run", "update-state.json"), err)
 	}
 	if s.Format > StateFormat {
-		return fmt.Errorf("the running wallet host was updated to a newer version than this copy of xmr-bridge understands (state format %d, this copy knows %d). Re-run the installer to update this copy: the same install command, with a new code from Connect wallet host", s.Format, StateFormat)
+		return fmt.Errorf("the running wallet host was updated to a newer version than this copy of xmr-bridge understands (state format %d, this copy knows %d). Re-run the installer to update this copy: the same install command, with a new code from %s", s.Format, StateFormat, sitetext.Button)
 	}
 	return nil
 }

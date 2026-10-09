@@ -3,6 +3,7 @@ package installer
 import (
 	"context"
 	"errors"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"os"
 	"path/filepath"
 	"strings"
@@ -327,7 +328,7 @@ func TestWalletFailsAfterPairing(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	st.walletErr = errors.New("wallet-rpc refused")
 	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
-	if err == nil || !strings.Contains(err.Error(), "wallet-rpc refused") || !strings.Contains(err.Error(), "Connect wallet host") {
+	if err == nil || !strings.Contains(err.Error(), "wallet-rpc refused") || !strings.Contains(err.Error(), sitetext.Button) {
 		t.Fatalf("got %v", err)
 	}
 }

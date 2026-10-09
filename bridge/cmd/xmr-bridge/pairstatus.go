@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
 	"os"
 	"path/filepath"
@@ -118,11 +119,11 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "Bridge key: %s\n", syncsign.PublicKeyText(k))
 		} else {
 			healthy = false
-			fmt.Fprintf(stdout, "Bridge key: can't be read (%v). Pair again: on the site's Monero payments page, press Connect wallet host and run the command it shows\n", err)
+			fmt.Fprintf(stdout, "Bridge key: can't be read (%v). Pair again: press %s and run the command it shows\n", err, sitetext.Button)
 		}
 	} else {
 		healthy = false
-		fmt.Fprintln(stdout, "Paired:     no: this wallet host is not paired yet. On the site's Monero payments page, press Connect wallet host and run the command it shows")
+		fmt.Fprintf(stdout, "Paired:     no: this wallet host is not paired yet. Press %s and run the command it shows\n", sitetext.Button)
 	}
 	st, err := bridgeloop.ReadStatus(cfg.DataDir)
 	switch {

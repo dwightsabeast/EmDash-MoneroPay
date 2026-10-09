@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
 	"net/http"
 	"strconv"
@@ -115,9 +116,9 @@ func (e *Error) Error() string {
 func hint(code string) string {
 	switch code {
 	case "NOT_PAIRED", "BAD_SIGNATURE":
-		return "the site doesn't know this wallet host's key. On the site's Monero payments page, press Connect wallet host and run the new command to pair again"
+		return "the site doesn't know this wallet host's key. Press " + sitetext.Button + " and run the new command to pair again"
 	case "PAIRING_REJECTED", "PAIRING_NOT_ACTIVE":
-		return "the pairing code is wrong, used or expired. Press Connect wallet host again for a new code (valid 15 minutes)"
+		return "the pairing code is wrong, used or expired. Press " + sitetext.Button + " again for a new code (valid 15 minutes)"
 	case "STALE_TIMESTAMP":
 		return "this machine's clock is more than 5 minutes off. Fix the clock (timedatectl set-ntp true)"
 	case "UNSUPPORTED_VERSION":

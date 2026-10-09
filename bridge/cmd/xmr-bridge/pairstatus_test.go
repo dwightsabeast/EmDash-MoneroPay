@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -143,7 +144,7 @@ func TestStatusCommand(t *testing.T) {
 	write(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now, WalletHeight: 2222000, PoolFree: 48, PoolTarget: 50})
 	os.WriteFile(filepath.Join(c.DataDir, "bridge.key"), []byte("garbage"), 0o600)
 	code, out, _ = run(context.Background(), "status", "--config", p)
-	if code != 1 || !strings.Contains(out, "Bridge key: can't be read") || !strings.Contains(out, "Connect wallet host") {
+	if code != 1 || !strings.Contains(out, "Bridge key: can't be read") || !strings.Contains(out, sitetext.Button) {
 		t.Fatalf("bad key: %d %q", code, out)
 	}
 }

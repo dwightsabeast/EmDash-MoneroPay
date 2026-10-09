@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -300,7 +301,7 @@ func (l *Loop) SyncOnce(ctx context.Context) error {
 }
 
 // ErrNotPaired: no bridge key yet.
-var ErrNotPaired = errors.New("this wallet host is not paired yet. On the site's Monero payments page, press Connect wallet host and run the command it shows")
+var ErrNotPaired = errors.New("this wallet host is not paired yet. Press " + sitetext.Button + " and run the command it shows")
 
 func (l *Loop) syncOnce(ctx context.Context) error {
 	key := l.o.Key

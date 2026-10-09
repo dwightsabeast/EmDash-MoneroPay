@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
 	"os"
 	"path/filepath"
@@ -156,7 +157,7 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 		return fmt.Errorf("--site: %w", err)
 	}
 	if !codeRE.MatchString(o.Code) {
-		return errors.New("--pair needs the 22-character code from the site's Connect wallet host button")
+		return errors.New("--pair needs the 22-character code that " + sitetext.Button + " shows")
 	}
 
 	// The two values the admin types once.
@@ -333,7 +334,7 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 		tty.Say("Creating the view-only wallet (no spend key)…")
 		cred := &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}
 		if err := st.CreateWallet(ctx, cfg, view, cred); err != nil {
-			return fmt.Errorf("%w. The pairing code is used now: press Connect wallet host on the site for a new one before running the installer again", err)
+			return fmt.Errorf("%w. The pairing code is used now: press %s for a new one before running the installer again", err, sitetext.Button)
 		}
 	}
 	if err := sys.Chown(p.DataDir(), uid, gid); err != nil {

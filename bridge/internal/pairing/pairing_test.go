@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,7 @@ func TestSpentCodeMessage(t *testing.T) {
 		s := &site{fail: &syncclient.Error{Code: code}}
 		_, err := Pair(context.Background(), s, "AbCdEfGhIjKlMnOpQrSt_-", filepath.Join(t.TempDir(), "k"), 1, time.Now())
 		var e *syncclient.Error
-		if !errors.As(err, &e) || e.Code != code || !strings.Contains(err.Error(), "used or expired") || !strings.Contains(err.Error(), "Connect wallet host") {
+		if !errors.As(err, &e) || e.Code != code || !strings.Contains(err.Error(), "used or expired") || !strings.Contains(err.Error(), sitetext.Button) {
 			t.Errorf("%s: %v", code, err)
 		}
 	}
