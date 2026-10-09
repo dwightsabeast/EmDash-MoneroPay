@@ -80,6 +80,22 @@ describe("body validation", () => {
 		const r = parseSyncBody(body({ addresses: [{ index: 0, address: "7".repeat(95) }, { index: 2, address: "short" }, { index: 3, address: "0".repeat(95) }, { index: 4, address: "7".repeat(95) }] }));
 		expect(r.ok && r.value.addresses).toEqual([{ index: 4, address: "7".repeat(95) }]);
 	});
+	it("reads the bridge's checks: known states kept, long details cut, anything malformed dropped without rejecting the body", () => {
+		const checks = (c: unknown) => {
+			const r = parseSyncBody(body({ checks: c }));
+			expect(r.ok).toBe(true);
+			return r.ok ? r.value.checks : "rejected";
+		};
+		expect(parseSyncBody(body()).ok && (parseSyncBody(body()) as { value: { checks?: unknown } }).value.checks).toBeUndefined();
+		expect(checks({ node: { state: "mismatch", detail: "block 5 differs" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } }))
+			.toEqual({ node: { state: "mismatch", detail: "block 5 differs" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } });
+		for (const state of ["off", "ok", "unavailable", "mismatch"]) expect(checks({ node: { state } })).toEqual({ node: { state } });
+		for (const state of ["ok", "behind", "unavailable"]) expect(checks({ wallet: { state } })).toEqual({ wallet: { state } });
+		expect(checks({ node: { state: "weird" }, wallet: { state: "mismatch" } })).toBeUndefined();
+		expect(checks({ node: { state: "ok", detail: 7 } })).toEqual({ node: { state: "ok" } });
+		expect(checks({ wallet: { state: "ok", detail: "x".repeat(400) } })).toEqual({ wallet: { state: "ok", detail: "x".repeat(300) } });
+		for (const bad of ["nope", null, [], { node: "ok" }, { wallet: null }]) expect(checks(bad)).toBeUndefined();
+	});
 	it("validates the pair field", () => {
 		expect(code(parseSyncBody(body({ pair: { code: "A".repeat(22), publicKey: "A".repeat(43) + "=" } })))).toBe("ok");
 		expect(code(parseSyncBody(body({ pair: { code: "short", publicKey: "A".repeat(43) + "=" } })))).toBe("INVALID_BODY");

@@ -157,6 +157,15 @@ describe("ordinary syncs", () => {
 		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 500, version: 1, outdated: false });
 	});
 
+	it("records the bridge's checks with its state; a sync without them clears them (an older bridge)", async () => {
+		const store = pairedStore();
+		const checks = { node: { state: "ok" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } };
+		await send(store, syncBody({ checks }), { now: T0 + 500 });
+		expect(store.bridge).toEqual({ height: H0, lastSyncAt: T0 + 500, version: 1, outdated: false, checks });
+		await send(store, syncBody({ seq: T0 + 1 }), { now: T0 + 1000 });
+		expect(store.bridge).not.toHaveProperty("checks");
+	});
+
 	it("the stored height never goes down (spec change 16): a fresh wallet's low first height keeps the stored one", async () => {
 		const store = pairedStore();
 		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });

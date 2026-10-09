@@ -93,6 +93,12 @@ export interface RawTransfer {
 	unlockTime: string;
 }
 
+/** The wallet host's own checks, shown on the admin page (spec change 13 and the phase 04 wallet-height check). */
+export interface BridgeChecks {
+	node?: { state: "off" | "ok" | "unavailable" | "mismatch"; detail?: string };
+	wallet?: { state: "ok" | "behind" | "unavailable"; detail?: string };
+}
+
 export interface SyncBody {
 	v: number;
 	seq: number;
@@ -100,6 +106,7 @@ export interface SyncBody {
 	addresses: Array<{ index: number; address: string }>;
 	snapshots: Array<{ index: number; transfers: RawTransfer[] }>;
 	pair?: { code: string; publicKey: string };
+	checks?: BridgeChecks;
 	/** True when the bridge speaks the previous protocol version: the admin page shows "wallet host update available". */
 	outdated: boolean;
 }
@@ -126,6 +133,24 @@ function parseTransfer(t: unknown): RawTransfer | null {
 		txid: t.txid, amount: t.amount, confirmations: t.confirmations, height: t.height, timestamp: t.timestamp,
 		doubleSpendSeen: t.doubleSpendSeen, unlockTime: t.unlockTime,
 	};
+}
+
+const NODE_STATES: ReadonlySet<string> = new Set(["off", "ok", "unavailable", "mismatch"]);
+const WALLET_STATES: ReadonlySet<string> = new Set(["ok", "behind", "unavailable"]);
+const MAX_DETAIL = 300;
+
+function parseCheck<S extends string>(c: unknown, states: ReadonlySet<string>): { state: S; detail?: string } | undefined {
+	if (!isObject(c) || typeof c.state !== "string" || !states.has(c.state)) return undefined;
+	return { state: c.state as S, ...(typeof c.detail === "string" ? { detail: c.detail.slice(0, MAX_DETAIL) } : {}) };
+}
+
+/** Checks are information for the admin page: anything malformed is dropped, never a reason to refuse the body. */
+function parseChecks(c: unknown): BridgeChecks | undefined {
+	if (!isObject(c)) return undefined;
+	const node = parseCheck<NonNullable<BridgeChecks["node"]>["state"]>(c.node, NODE_STATES);
+	const wallet = parseCheck<NonNullable<BridgeChecks["wallet"]>["state"]>(c.wallet, WALLET_STATES);
+	if (!node && !wallet) return undefined;
+	return { ...(node ? { node } : {}), ...(wallet ? { wallet } : {}) };
 }
 
 /**
@@ -171,6 +196,8 @@ export function parseSyncBody(text: string, current: number = PROTOCOL_VERSION):
 	}
 
 	const body: SyncBody = { v: json.v as number, seq: json.seq as number, height: json.height as number, addresses, snapshots, outdated: (json.v as number) < current };
+	const checks = parseChecks(json.checks);
+	if (checks) body.checks = checks;
 	if (json.pair !== undefined) {
 		const p = json.pair;
 		if (!isObject(p) || typeof p.code !== "string" || !PAIRING_CODE.test(p.code) || typeof p.publicKey !== "string" || !decodeBase64(p.publicKey, 32)) {

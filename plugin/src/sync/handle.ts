@@ -8,6 +8,7 @@ import { isWatched } from "../core/watch";
 import { mergeSnapshot } from "./merge";
 import { type PairingState, isPairingActive, pairingCodeMatches } from "./pairing";
 import {
+	type BridgeChecks,
 	PAIR_MAX_BYTES,
 	POOL_TARGET,
 	type SyncBody,
@@ -24,6 +25,8 @@ export interface BridgeState {
 	lastSyncAt: number;
 	version: number;
 	outdated: boolean;
+	/** The wallet host's checks from its last sync; absent when it sent none (an older bridge). */
+	checks?: BridgeChecks;
 }
 
 export interface SyncStore {
@@ -115,7 +118,7 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 	// 4. Apply: bridge state, pool top-up, snapshots. The chain height never goes down (spec change 16): a fresh
 	// wallet's first sync reports the height it has scanned to, which can be far below the chain's.
 	const height = Math.max((await store.getBridgeState())?.height ?? 0, parsed.height);
-	await store.setBridgeState({ height, lastSyncAt: now, version: parsed.v, outdated: parsed.outdated });
+	await store.setBridgeState({ height, lastSyncAt: now, version: parsed.v, outdated: parsed.outdated, ...(parsed.checks ? { checks: parsed.checks } : {}) });
 	for (const a of parsed.addresses) {
 		if (!(await store.poolHas(a.index))) await store.poolAdd({ addrIndex: a.index, address: a.address });
 	}
