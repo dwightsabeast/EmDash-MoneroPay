@@ -1685,3 +1685,79 @@ Carried over for Wyatt:
 - **Spec text to fold in:** changes 20 (including item 5's checkout code) and 21, added to the earlier list.
 
 Next step: unchanged. Wyatt says when the node is near 100%. Then the "Node caught up" check and section B.
+
+## 2026-10-12 · Phase 05 · End of day: handoff (waiting for run A's node to sync)
+
+Pushed: everything, up to `95c42a2`. CI passed on every push today:
+- run 38276652301 (`aac82bb`)
+- run 38297524757 (`70f7dfb`)
+- run 38300653835 (`e6fbb74`)
+- run 38301056873 (`95c42a2`)
+
+Where things stand:
+- **Phases 00–04: done.**
+- **Phase 05 (setup test): prep done, fixes done, no runs yet.** It waits for run A's node `debian-monerod-stagenet` to report `synchronized`.
+  - Last check, 2026-10-12 20:03 UTC: block 443,267 of 2,227,856, about 20%.
+  - It has been slowing: about 90,000 blocks an hour in the afternoon, about 60,000 by 20:00. Expect 30 hours or more, so late 2026-10-13 or 2026-10-14.
+- **Phases 06–09: not started.** Phase 07 has one decision recorded in advance (tips stay open whatever the wallet host's state; `docs/decisions.md`).
+
+Done today (details in the entries above):
+- **Run A's node** is its own container. The phase file and the organizer sheet were updated.
+- **Cross-check:** it never uses the configured node's host as its second node, and only uses a second node that is synchronized.
+- **Spec change 20, a node that's still syncing:**
+  - the installer says so
+  - the bridge sends a `syncing` wallet check, and `xmr-bridge status` shows it
+  - the admin page shows a red line
+  - checkout refuses with `WALLET_HOST_SYNCING` (item 5, Wyatt's option (a))
+- **Spec change 21, no curl on the wallet host:** the admin page's command and `install.sh` use curl, else wget (no redirects), else say what to install.
+- **Organizer sheet** (local): machines, wallets (Wyatt is the tester, both wallets in Feather), the live-site guard, the invite step, and a wget reachability check.
+- **Decision for phase 07:** recorded in `docs/decisions.md` and pointed to from `docs/phases/07-tip-mode.md`.
+- **`CLAUDE.md`:** a command row for the "Node caught up" check.
+
+Nothing is half-done:
+- no uncommitted changes
+- no dev-site or database changes for the test yet (the setup-test reset hasn't run)
+- `plugin/dist` is a normal build, with the install-URL placeholder
+
+State left (checked at handoff):
+- **Ports and sessions:** the dev site, built copy and release server are stopped. Ports 4321, 4322 and 8099 are free, and there are no tmux sessions.
+- **Services:** `monerod-stagenet` and the installed dev-box bridge (`97f0e66`, older than today's bridge changes) are active. The bridge backs off while the site is stopped. It needs no update: section B builds a new release for `coffer-test`.
+- **Memory:** about 4.9 GB available, but swap is full (511 of 512 MB). Check `free -m` before each heavy step.
+- **Dev database:** unchanged since phase 04's round 2 look. The backups are in `~/xmr-pay-dev-data/baseline/`.
+- **Dev-box buyer wallet:** empty (Wyatt moved the funds to Feather), so `dev-invoices.mjs pay-script` has no funds.
+
+Next steps, in order:
+1. **Wyatt:** when the node is near 100%, start a session: "Continue phase 05. Read docs/progress.md for where we stopped, then plan the next step."
+2. **Claude:** run the "Node caught up" check (`CLAUDE.md` says where it is). It must print PASS.
+3. **Claude, section B** of the organizer sheet, one heavy step at a time:
+   - reset, keeping the first backup's name
+   - write and run the tester-invite script (with its test), with the dev site in `astro dev` on localhost
+   - `build-dev-release.sh --base http://<dev box LAN>:8099`
+4. **Wyatt:** signs the release.
+5. **Claude:** serve the release, then `setup-test-plugin.sh`, the site build, and the `built` copy with `EMDASH_SITE_URL=https://dev.wyattdilley.com`.
+6. **Wyatt:**
+   - copies the invite with scp and registers a passkey at `dev.wyattdilley.com`
+   - runs the wget reachability check on `coffer-test`, then rolls it back to `blank`
+   - opens and syncs both Feather wallets
+   - does run A
+7. **Claude:** section D.
+8. **Wyatt:** run B.
+9. **Claude:** section E (stop, restore, normal build, dev-site sync check). Then the triage session from the run sheets.
+
+Carried over for Wyatt:
+- **Spec text to fold in:**
+  - changes 6, 7, 9–17
+  - change 19's Bridge public key row
+  - "invoice table"
+  - change 20 (the installer line, the second node, the admin health line, and the checkout code `WALLET_HOST_SYNCING`)
+  - change 21 (the install command)
+- **Spec change 18:** A in phase 06. B's spike decision before phase 07.
+- **Phase 06's pay page:** show `WALLET_HOST_SYNCING` the same way as `WALLET_HOST_SILENT`.
+- **Before phase 09:**
+  - the mainnet second-node list
+  - the self-update admin-copy question
+  - an install host that serves the bridge binaries without redirects (spec change 21)
+  - install docs that list what the wallet host needs
+- **Open, not changed:** on a syncing node, the installer's default restore height is that node's low height. That's safe, but the first scan is slow.
+- **Upstream notes:** the confirm dialog's padding, no copy-to-clipboard element, no wrapping for long values.
+- **Review advice "find it under All invoices below":** may need Load more.
