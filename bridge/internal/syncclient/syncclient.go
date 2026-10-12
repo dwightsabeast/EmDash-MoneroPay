@@ -49,7 +49,7 @@ type Body struct {
 // Checks are the wallet host's health checks.
 type Checks struct {
 	Node   *Check `json:"node,omitempty"`   // the remote-node cross-check
-	Wallet *Check `json:"wallet,omitempty"` // the wallet's height against its node's ("ok", "behind", "unavailable")
+	Wallet *Check `json:"wallet,omitempty"` // the wallet's height against its node's ("ok", "behind", "unavailable"), or "syncing" while the node catches up with the network
 }
 
 // Check is one check's state ("off", "ok", "unavailable" or "mismatch") and what it means.

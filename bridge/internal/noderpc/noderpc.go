@@ -26,6 +26,7 @@ const (
 type Info struct {
 	NetType      string // "mainnet", "stagenet" or "testnet"
 	Height       uint64 // block count (top block height + 1)
+	TargetHeight uint64 // the network's height as the node's peers report it while it syncs; 0 once synchronized
 	Synchronized bool
 	Offline      bool
 	Version      string
@@ -99,6 +100,7 @@ func GetInfo(ctx context.Context, nodeURL string, hc *http.Client) (Info, error)
 	var r struct {
 		NetType      string `json:"nettype"`
 		Height       uint64 `json:"height"`
+		TargetHeight uint64 `json:"target_height"`
 		Synchronized bool   `json:"synchronized"`
 		Offline      bool   `json:"offline"`
 		Version      string `json:"version"`
@@ -115,7 +117,15 @@ func GetInfo(ctx context.Context, nodeURL string, hc *http.Client) (Info, error)
 	default:
 		return Info{}, errors.New("noderpc: get_info: the node did not say which network it is on")
 	}
-	return Info{NetType: r.NetType, Height: r.Height, Synchronized: r.Synchronized, Offline: r.Offline, Version: r.Version}, nil
+	return Info{NetType: r.NetType, Height: r.Height, TargetHeight: r.TargetHeight, Synchronized: r.Synchronized, Offline: r.Offline, Version: r.Version}, nil
+}
+
+// Progress is "block N of about M" while the node knows the network's height, else "block N".
+func (i Info) Progress() string {
+	if i.TargetHeight > i.Height {
+		return fmt.Sprintf("block %d of about %d", i.Height, i.TargetHeight)
+	}
+	return fmt.Sprintf("block %d", i.Height)
 }
 
 type header struct {

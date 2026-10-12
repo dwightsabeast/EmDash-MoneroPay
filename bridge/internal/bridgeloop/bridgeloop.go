@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
@@ -79,8 +80,8 @@ type Options struct {
 	CrossCheck CrossChecker
 	// Updates, when set, describes the update state for the status file.
 	Updates func() string
-	// NodeHeight, when set, reads the node's chain height for the wallet check sent to the site.
-	NodeHeight func(ctx context.Context) (uint64, error)
+	// NodeInfo, when set, reads the node's get_info for the wallet check sent to the site.
+	NodeInfo func(ctx context.Context) (noderpc.Info, error)
 
 	Interval   time.Duration // default 12 s
 	Jitter     time.Duration // default 3 s
@@ -101,6 +102,8 @@ type Status struct {
 	Pending       int               `json:"pending"`
 	Warnings      []string          `json:"warnings,omitempty"`
 	NodeCheck     crosscheck.Report `json:"nodeCheck"`
+	// WalletCheck is the wallet check last sent to the site (nil without NodeInfo).
+	WalletCheck *syncclient.Check `json:"walletCheck,omitempty"`
 	// What the site did with the syncs sent since this process started (for the update rule).
 	Synced      int    `json:"synced"`
 	SiteRefused int    `json:"siteRefused"`
@@ -136,9 +139,9 @@ type Loop struct {
 	poolTop uint32
 	catchup uint32
 	// The wallet check's last node answer and when it was asked.
-	nodeAt     time.Time
-	nodeHeight uint64
-	nodeErr    error
+	nodeAt   time.Time
+	nodeInfo noderpc.Info
+	nodeErr  error
 }
 
 // New loads any pending addresses from a previous run.
@@ -357,6 +360,9 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 	nc := l.st.NodeCheck
 	l.mu.Unlock()
 	checks := &syncclient.Checks{Node: &syncclient.Check{State: string(nc.State), Detail: nc.Detail}, Wallet: l.walletCheck(ctx, height)}
+	l.mu.Lock()
+	l.st.WalletCheck = checks.Wallet
+	l.mu.Unlock()
 	for {
 		body := syncclient.Body{V: syncclient.ProtocolV, Seq: l.nextSeq(), Height: height, Addresses: addresses, Snapshots: snapshots[:sent], Checks: checks}
 		resp, err = l.o.Site.Send(ctx, key, body)
@@ -618,10 +624,11 @@ func less(a, b string) bool {
 	return a < b
 }
 
-// walletCheck compares the wallet's height with its node's (asked at most every nodeHeightEvery); nil without
-// NodeHeight. The node's error stays in the log: it can hold the node's address, which the site doesn't need.
+// walletCheck compares the wallet's height with its node's (asked at most every nodeHeightEvery), and says when
+// the node itself hasn't caught up with the network (spec change 20); nil without NodeInfo. The node's error stays in
+// the log: it can hold the node's address, which the site doesn't need.
 func (l *Loop) walletCheck(ctx context.Context, wallet uint64) *syncclient.Check {
-	if l.o.NodeHeight == nil {
+	if l.o.NodeInfo == nil {
 		return nil
 	}
 	now := l.o.Now()
@@ -629,22 +636,25 @@ func (l *Loop) walletCheck(ctx context.Context, wallet uint64) *syncclient.Check
 	stale := l.nodeAt.IsZero() || now.Sub(l.nodeAt) >= nodeHeightEvery
 	l.mu.Unlock()
 	if stale {
-		h, err := l.o.NodeHeight(ctx)
+		info, err := l.o.NodeInfo(ctx)
 		if err != nil {
 			l.o.Log.Warn("reading the node's height", "err", err)
 		}
 		l.mu.Lock()
-		l.nodeAt, l.nodeHeight, l.nodeErr = now, h, err
+		l.nodeAt, l.nodeInfo, l.nodeErr = now, info, err
 		l.mu.Unlock()
 	}
 	l.mu.Lock()
-	node, err := l.nodeHeight, l.nodeErr
+	info, err := l.nodeInfo, l.nodeErr
 	l.mu.Unlock()
 	if err != nil {
 		return &syncclient.Check{State: "unavailable", Detail: "the wallet host's node didn't answer; on the wallet host, run xmr-bridge status"}
 	}
-	detail := fmt.Sprintf("the wallet is at block %d, its node at %d", wallet, node)
-	if node > wallet+walletBehind {
+	if !info.Synchronized {
+		return &syncclient.Check{State: "syncing", Detail: "the wallet host's node is still catching up with the network (" + info.Progress() + "); payments show up once it has"}
+	}
+	detail := fmt.Sprintf("the wallet is at block %d, its node at %d", wallet, info.Height)
+	if info.Height > wallet+walletBehind {
 		return &syncclient.Check{State: "behind", Detail: detail}
 	}
 	return &syncclient.Check{State: "ok", Detail: detail}

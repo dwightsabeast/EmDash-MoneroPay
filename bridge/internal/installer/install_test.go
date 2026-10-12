@@ -155,7 +155,7 @@ func TestPromptGivesUp(t *testing.T) {
 func TestMainnetAddressSetsTheNetwork(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	tty.answers = []string{mainnetAddr}
-	st.nodes = map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 3300000}}
+	st.nodes = map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 3300000, Synchronized: true}}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestMainnetAddressSetsTheNetwork(t *testing.T) {
 
 func TestLocalNodeOnIPv6(t *testing.T) {
 	opts, sys, tty, st := harness(t)
-	st.nodes = map[string]noderpc.Info{"http://[::1]:38081": {NetType: "stagenet", Height: 1}}
+	st.nodes = map[string]noderpc.Info{"http://[::1]:38081": {NetType: "stagenet", Height: 1, Synchronized: true}}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +178,8 @@ func TestLocalNodeOnIPv6(t *testing.T) {
 func TestNodePrompt(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	st.nodes = map[string]noderpc.Info{
-		"https://wrongnet.example:18089": {NetType: "mainnet", Height: 1},
-		"https://node.example:38089":     {NetType: "stagenet", Height: 1},
+		"https://wrongnet.example:18089": {NetType: "mainnet", Height: 1, Synchronized: true},
+		"https://node.example:38089":     {NetType: "stagenet", Height: 1, Synchronized: true},
 	}
 	tty.answers = []string{stagenetAddr, "https://down.example:38089", "https://wrongnet.example:18089", "https://node.example:38089"}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
@@ -197,12 +197,59 @@ func TestNodePrompt(t *testing.T) {
 func TestNodeFlag(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	opts.Node = "https://node.example:38089"
-	st.nodes = map[string]noderpc.Info{"https://node.example:38089": {NetType: "stagenet", Height: 1}}
+	st.nodes = map[string]noderpc.Info{"https://node.example:38089": {NetType: "stagenet", Height: 1, Synchronized: true}}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
 		t.Fatal(err)
 	}
 	if st.walletCfg.Node != "https://node.example:38089" || len(tty.asked) != 2 {
 		t.Fatalf("node %s, asked %v", st.walletCfg.Node, tty.asked)
+	}
+}
+
+// A node that answers but hasn't caught up with the network (spec change 20): the installer says so, with how far
+// it has got, and goes on. No prompt is added.
+func TestSyncingNodeSaysSo(t *testing.T) {
+	syncing := noderpc.Info{NetType: "stagenet", Height: 94954, TargetHeight: 2227755}
+	cases := []struct {
+		name  string
+		setup func(opts *Options, tty *fakeTTY, st *fakeSteps)
+	}{
+		{"own node", func(_ *Options, _ *fakeTTY, st *fakeSteps) {
+			st.nodes = map[string]noderpc.Info{"http://127.0.0.1:38081": syncing}
+		}},
+		{"--node", func(opts *Options, _ *fakeTTY, st *fakeSteps) {
+			opts.Node = "https://node.example:38089"
+			st.nodes = map[string]noderpc.Info{"https://node.example:38089": syncing}
+		}},
+		{"prompt", func(_ *Options, tty *fakeTTY, st *fakeSteps) {
+			st.nodes = map[string]noderpc.Info{"https://node.example:38089": syncing}
+			tty.answers = []string{stagenetAddr, "https://node.example:38089"}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			opts, sys, tty, st := harness(t)
+			c.setup(&opts, tty, st)
+			asked := len(tty.answers)
+			if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+				t.Fatalf("%v\n%s", err, tty.said.String())
+			}
+			said := tty.said.String()
+			if !strings.Contains(said, "still catching up") || !strings.Contains(said, "block 94954 of about 2227755") || !strings.Contains(said, "xmr-bridge status") {
+				t.Fatalf("messages: %s", said)
+			}
+			if len(tty.asked) > asked+1 {
+				t.Fatalf("asked %v", tty.asked)
+			}
+		})
+	}
+	// A synced node: no such line.
+	opts, sys, tty, st := harness(t)
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(tty.said.String(), "catching up") {
+		t.Fatalf("a synced node got the syncing line: %s", tty.said.String())
 	}
 }
 
@@ -230,7 +277,7 @@ func TestSameMachine(t *testing.T) {
 	opts, sys, tty, st = harness(t)
 	opts.AllowSameMachine = true
 	tty.answers = []string{mainnetAddr}
-	st.nodes = map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1}}
+	st.nodes = map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1, Synchronized: true}}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err == nil || !strings.Contains(err.Error(), "stagenet") {
 		t.Fatalf("mainnet with the dev flag: %v", err)
 	}
@@ -255,7 +302,7 @@ func TestRunAgain(t *testing.T) {
 	}
 	// Another address: refused, pointing at uninstall.
 	tty3 := &fakeTTY{answers: []string{mainnetAddr}, secrets: []string{viewKey}}
-	st3 := &fakeSteps{nodes: map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1}}}
+	st3 := &fakeSteps{nodes: map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1, Synchronized: true}}}
 	if err := Install(context.Background(), opts, sys, tty3, st3.steps(sys)); err == nil || !strings.Contains(err.Error(), "uninstall") {
 		t.Fatalf("another address: %v", err)
 	}

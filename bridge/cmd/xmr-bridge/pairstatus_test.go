@@ -18,6 +18,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/bridgeloop"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/config"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/testaddr"
 )
@@ -195,6 +196,34 @@ func TestStatusNodeCheck(t *testing.T) {
 		code, out, _ := run(context.Background(), "status", "--config", p)
 		if code != want.code || !strings.Contains(out, "Node check: "+want.text) {
 			t.Errorf("%s: %d %q", state, code, out)
+		}
+	}
+}
+
+// The wallet check the site sees, on the wallet host too (spec change 20). Information only: the exit code stays 0.
+func TestStatusWalletCheck(t *testing.T) {
+	p, c := writeConfig(t, "https://shop.example")
+	k, _ := syncsign.NewKey()
+	syncsign.SaveKey(filepath.Join(c.DataDir, "bridge.key"), k)
+	os.MkdirAll(filepath.Join(c.DataDir, "run"), 0o700)
+	now := time.Now()
+	for _, want := range []struct {
+		check *syncclient.Check
+		text  string
+	}{
+		{nil, "Wallet:     height 94954\n"},
+		{&syncclient.Check{State: "ok", Detail: "the wallet is at block 94954, its node at 94954"}, "Wallet:     height 94954, in step with its node\n"},
+		{&syncclient.Check{State: "syncing", Detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has"},
+			"Wallet:     height 94954; the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has\n"},
+		{&syncclient.Check{State: "unavailable", Detail: "the wallet host's node didn't answer; on the wallet host, run xmr-bridge status"},
+			"Wallet:     height 94954; its node didn't answer (the reason is in: sudo journalctl -u xmr-bridge)\n"},
+		{&syncclient.Check{State: "behind", Detail: "the wallet is at block 94000, its node at 94954"}, "Wallet:     height 94954; the wallet is at block 94000, its node at 94954\n"},
+	} {
+		b, _ := json.Marshal(bridgeloop.Status{LastAttemptAt: now, LastSyncAt: now, PoolTarget: 50, PoolFree: 50, WalletHeight: 94954, WalletCheck: want.check})
+		os.WriteFile(filepath.Join(c.DataDir, "run", "status.json"), b, 0o600)
+		code, out, _ := run(context.Background(), "status", "--config", p)
+		if code != 0 || !strings.Contains(out, want.text) {
+			t.Errorf("%+v: %d %q", want.check, code, out)
 		}
 	}
 }

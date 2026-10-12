@@ -397,35 +397,44 @@ func retry(tty Prompter, ask func() error) error {
 	return fmt.Errorf("giving up after %d tries: %w", tries, last)
 }
 
-// chooseNode uses --node, else a local monerod on either loopback address, else asks.
+// chooseNode uses --node, else a local monerod on either loopback address, else asks. A node that hasn't caught up
+// with the network is used, with a line saying so (spec change 20): payments can't show up until it has.
 func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Steps) (string, error) {
+	var info noderpc.Info
 	check := func(u string) error {
 		if err := config.CheckNode(u); err != nil {
 			return err
 		}
-		info, err := st.NodeInfo(ctx, u)
+		i, err := st.NodeInfo(ctx, u)
 		if err != nil {
 			return fmt.Errorf("%s doesn't answer as a Monero node", u)
 		}
-		if info.NetType != network {
-			return fmt.Errorf("%s is a %s node, but the shop wallet is on %s", u, info.NetType, network)
+		if i.NetType != network {
+			return fmt.Errorf("%s is a %s node, but the shop wallet is on %s", u, i.NetType, network)
 		}
-		if info.Offline {
+		if i.Offline {
 			return fmt.Errorf("%s says it is offline", u)
 		}
+		info = i
 		return nil
+	}
+	chosen := func(u string) (string, error) {
+		if !info.Synchronized {
+			tty.Say("%s", syncingNote(u, info))
+		}
+		return u, nil
 	}
 	if flag != "" {
 		if err := check(flag); err != nil {
 			return "", err
 		}
-		return flag, nil
+		return chosen(flag)
 	}
 	port := defaultPorts[network]
 	for _, u := range []string{"http://127.0.0.1:" + port, "http://[::1]:" + port} {
 		if check(u) == nil {
 			tty.Say("Using your own Monero node at %s.", u)
-			return u, nil
+			return chosen(u)
 		}
 	}
 	tty.Say("No Monero node answers on this machine. Your own node is the most private choice; a remote node you trust works too.")
@@ -442,7 +451,15 @@ func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Step
 		node = u
 		return nil
 	})
-	return node, err
+	if err != nil {
+		return "", err
+	}
+	return chosen(node)
+}
+
+// syncingNote says that the node at u hasn't caught up with the network yet, and what that means.
+func syncingNote(u string, info noderpc.Info) string {
+	return fmt.Sprintf("The Monero node at %s is still catching up with the network (%s). Coffer installs now, but payments can't show up until the node has caught up, and a new node can take hours. On this machine, xmr-bridge status shows the progress.", u, info.Progress())
 }
 
 func serviceUser(sys System) (int, int, error) {

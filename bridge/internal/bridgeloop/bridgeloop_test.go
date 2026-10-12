@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/crosscheck"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/noderpc"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncclient"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/syncsign"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
@@ -715,13 +716,17 @@ func TestWalletCheck(t *testing.T) {
 	ctx := context.Background()
 	l.SyncOnce(ctx)
 	if b := s.last(); b.Checks == nil || b.Checks.Wallet != nil {
-		t.Fatalf("no NodeHeight: checks %+v", b.Checks)
+		t.Fatalf("no NodeInfo: checks %+v", b.Checks)
 	}
 	clock := time.Unix(1790000000, 0)
 	l.o.Now = func() time.Time { return clock }
 	node, calls := uint64(2222000+walletBehind), 0
 	var nodeErr error
-	l.o.NodeHeight = func(context.Context) (uint64, error) { calls++; return node, nodeErr }
+	synced, target := true, uint64(0)
+	l.o.NodeInfo = func(context.Context) (noderpc.Info, error) {
+		calls++
+		return noderpc.Info{NetType: "stagenet", Height: node, TargetHeight: target, Synchronized: synced}, nodeErr
+	}
 	check := func(state, detail string) {
 		t.Helper()
 		if err := l.SyncOnce(ctx); err != nil {
@@ -730,6 +735,10 @@ func TestWalletCheck(t *testing.T) {
 		b := s.last()
 		if b.Checks == nil || b.Checks.Wallet == nil || b.Checks.Wallet.State != state || b.Checks.Wallet.Detail != detail {
 			t.Fatalf("want %s %q, got %+v", state, detail, b.Checks.Wallet)
+		}
+		// xmr-bridge status shows the same check.
+		if st := l.Status(); st.WalletCheck == nil || *st.WalletCheck != *b.Checks.Wallet {
+			t.Fatalf("status wallet check %+v", st.WalletCheck)
 		}
 	}
 	check("ok", "the wallet is at block 2222000, its node at 2222005")
@@ -751,7 +760,16 @@ func TestWalletCheck(t *testing.T) {
 	// The node's error stays in the bridge's log: it can hold the node's address, which the site has no need for.
 	nodeErr, clock = errors.New("dial tcp 192.0.2.7:18081: connection refused"), clock.Add(time.Minute)
 	check("unavailable", "the wallet host's node didn't answer; on the wallet host, run xmr-bridge status")
-	if w.height != 2222000 {
+	// Spec change 20: a node that hasn't caught up with the network. The wallet is level with it, so the old check
+	// read ok, yet a payment on the real chain can't show up until the node catches up.
+	nodeErr, node, synced, target, clock = nil, 94954, false, 2227755, clock.Add(time.Minute)
+	w.height = 94954
+	check("syncing", "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has")
+	// Behind its node too: syncing still comes first, since the wallet can't do better than its node.
+	w.height = 94000
+	clock = clock.Add(time.Minute)
+	check("syncing", "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has")
+	if w.height != 94000 {
 		t.Fatal("wallet height changed")
 	}
 }

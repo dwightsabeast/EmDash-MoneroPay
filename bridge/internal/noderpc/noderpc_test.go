@@ -46,6 +46,28 @@ func TestGetInfo(t *testing.T) {
 	}
 }
 
+// Shaped like a monerod 0.18.5.3 stagenet node still syncing, over restricted RPC (run A's new node, 2026-10-12):
+// version is empty there, and target_height is the network's height as its peers report it.
+func TestGetInfoSyncing(t *testing.T) {
+	srv, _ := node(t, `{"jsonrpc":"2.0","id":"0","result":{"nettype":"stagenet","height":94954,"target_height":2227755,
+ "synchronized":false,"busy_syncing":true,"offline":false,"restricted":true,"version":"","status":"OK"}}`, 200)
+	info, err := GetInfo(context.Background(), srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Info{NetType: "stagenet", Height: 94954, TargetHeight: 2227755}
+	if info != want {
+		t.Fatalf("got %+v", info)
+	}
+	if p := info.Progress(); p != "block 94954 of about 2227755" {
+		t.Fatalf("progress %q", p)
+	}
+	// A synced node reports target_height 0.
+	if p := (Info{Height: 2222128, Synchronized: true}).Progress(); p != "block 2222128" {
+		t.Fatalf("progress %q", p)
+	}
+}
+
 func TestGetInfoRefuses(t *testing.T) {
 	cases := map[string]struct {
 		body   string

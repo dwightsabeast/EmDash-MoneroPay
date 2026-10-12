@@ -100,11 +100,10 @@ func defaultStartBridge(ctx context.Context, cfg config.Config, log *slog.Logger
 		DataDir: cfg.DataDir,
 		Log:     log,
 		Extra:   func() any { return sup.Status() },
-		NodeHeight: func(ctx context.Context) (uint64, error) {
+		NodeInfo: func(ctx context.Context) (noderpc.Info, error) {
 			c, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			info, err := noderpc.GetInfo(c, cfg.Node, nil)
-			return info.Height, err
+			return noderpc.GetInfo(c, cfg.Node, nil)
 		},
 	})
 	if err != nil {

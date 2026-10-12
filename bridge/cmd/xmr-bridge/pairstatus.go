@@ -170,7 +170,16 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		healthy = false
 		fmt.Fprintf(stdout, "Node check: MISMATCH: %s\n", nc.Detail)
 	}
-	fmt.Fprintf(stdout, "Wallet:     height %d\n", st.WalletHeight)
+	switch wc := st.WalletCheck; {
+	case wc == nil:
+		fmt.Fprintf(stdout, "Wallet:     height %d\n", st.WalletHeight)
+	case wc.State == "ok":
+		fmt.Fprintf(stdout, "Wallet:     height %d, in step with its node\n", st.WalletHeight)
+	case wc.State == "unavailable":
+		fmt.Fprintf(stdout, "Wallet:     height %d; its node didn't answer (the reason is in: sudo journalctl -u xmr-bridge)\n", st.WalletHeight)
+	default:
+		fmt.Fprintf(stdout, "Wallet:     height %d; %s\n", st.WalletHeight, wc.Detail)
+	}
 	fmt.Fprintf(stdout, "Addresses:  %d of %d ready on the site", st.PoolFree, st.PoolTarget)
 	if st.Pending > 0 {
 		fmt.Fprintf(stdout, " (%d more waiting to be sent)", st.Pending)

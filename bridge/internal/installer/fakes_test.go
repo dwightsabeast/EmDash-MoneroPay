@@ -161,7 +161,7 @@ func (s *fakeSteps) steps(sys *fakeSystem) Steps {
 }
 
 func stagenetNode() map[string]noderpc.Info {
-	return map[string]noderpc.Info{"http://127.0.0.1:38081": {NetType: "stagenet", Height: 2222000}}
+	return map[string]noderpc.Info{"http://127.0.0.1:38081": {NetType: "stagenet", Height: 2222000, Synchronized: true}}
 }
 
 // harness: a fake root with this test binary standing in for the bridge executable.
