@@ -1604,3 +1604,56 @@ Next steps:
 1. **Wyatt:** say whether to push, then decide item 5 (it doesn't block the test).
 2. **Claude:** after the push, check CI. When Wyatt says the node is near the top, run the "Node caught up" check.
 3. **Once it passes:** section B (reset, `build-dev-release.sh --base`, Wyatt signs, serve, `setup-test-plugin.sh`, build and start `built`). Then Wyatt's reachability check, run A, section D, run B, section E.
+
+## 2026-10-12 · Phase 05 · Update 2: wget fallback (spec change 21), organizer sheet, sign-in plan
+
+Wyatt's update 2 (`~/xmr-pay-dev-data/05-setup/update-2.md`, local) and his decisions:
+- Runs A then B, both after `debian-monerod-stagenet` is synchronized (14% this afternoon).
+- Wyatt is the tester. The buyer and shop wallets are both in Feather on his PC. The dev-box buyer wallet is empty.
+- The wget path refuses redirects. That is logged as an open item for phase 09's install host.
+- Push everything together.
+- Spec change 20 item 5 when convenient.
+- New: with neither curl nor wget, both the command and `install.sh` say plainly what to install, and to paste the command again.
+
+Done:
+- `5380e2f`, **spec change 21 (accepted):** the install command works without curl. Also a setup-friction row and lesson, and two open items in phase 09's step 3:
+  - the bridge binaries must be served from `RELEASE_BASE` without a redirect (GitHub Releases asset URLs redirect)
+  - the install docs list what the wallet host needs
+- `a018538`, **plugin:** `installCommand()` gives one line, curl, else `wget -nv -O-`, else the message. One downloader is chosen before anything is fetched. `setup-test-plugin.sh` now checks the swapped constant and the new command (the bundler no longer inlines the URL). `setup-test.md` step text updated.
+- `6870499`, **installer:** `install.sh` uses curl with `--proto`, else `wget -q --max-redirect=0`, else the message. The checksum and version checks are unchanged.
+- **Organizer sheet** (local):
+  - the machine table, the Access apps, and a keep-the-live-site-out section
+  - the wallets, the tip sent from Feather, and the invite step at section B
+  - the container's reachability check rewritten with `wget` (`coffer-test` has no curl; checked locally)
+
+Checked before the change (GNU Wget 1.25, a local server):
+- `wget -q -O-` prints nothing on a 404.
+- `-nv` prints `ERROR 404`.
+- `--max-redirect=0` refuses a redirect.
+
+Tests:
+- **Bridge:** gofmt, vet, all tests, static build. New tests:
+  - `install.sh` with wget only (installs; refuses a tampered, missing or redirected download)
+  - curl only (still follows a redirect)
+  - neither (says what to install)
+  - `TestAdminInstallCommand`: runs the exact line from `admin.ts` under `sh` with curl only, wget only and neither, against a test server. Each case uses a `PATH` of links to only the allowed tools.
+- **Plugin:** 207 tests pass. One asserts the exact line. Typecheck, validate and the bundle check pass (49.7 KB).
+- **`setup-test-plugin.sh`:** run with 192.0.2.1, then a plain build restored the placeholder.
+- **Not covered:**
+  - The command on a real machine without curl. That's run A on `coffer-test`.
+  - The fish shell (the line uses `if … fi`).
+
+Sign-in plan (item 5, agreed; the script is written at section B):
+- With the dev site in `astro dev` on localhost, a script creates an Admin invite for `tester@coffer-test.invalid` through EmDash's local dev sign-in.
+- It reads the link from `/_emdash/api/dev/emails` and rewrites only the origin to `https://dev.wyattdilley.com`.
+- It writes the link to a mode-600 file. The token is never printed.
+- Wyatt registers a passkey there before the clock starts. The passkey's rpId follows `siteUrl` (EmDash 1.1.0, `getPasskeyConfig`).
+
+Open for Wyatt:
+- **Spec change 20, item 5:** checkout during a node sync.
+- **Phase 09:** an install host that serves the binaries without redirects.
+
+Next steps:
+1. **Claude:** push `7e26f67..` (this morning's 7 commits, this entry, and spec change 21), then check CI.
+2. **Wyatt:** says when the node is near 100%.
+3. **Claude:** the "Node caught up" check, then section B with the invite step. Then Wyatt's reachability check (wget), run A, section D, run B, section E.
