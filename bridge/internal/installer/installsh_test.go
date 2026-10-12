@@ -25,6 +25,30 @@ type shCase struct {
 	served           map[string][]byte // path -> body
 	template         bool              // leave the placeholders
 	noexecTmp        bool
+	redirect         bool   // the server answers each download with a redirect to the file
+	tools            string // "": the system PATH; "curl", "wget" or "none": only that downloader (see toolPath)
+}
+
+// toolPath returns a folder holding links to the programs install.sh and the admin page's command use, plus the
+// named downloader ("curl", "wget", or "none" for neither), so a test can stand in for a machine without curl.
+func toolPath(t *testing.T, downloader string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "tools")
+	os.MkdirAll(dir, 0o755)
+	names := []string{"sh", "mktemp", "rm", "sha256sum", "cut", "chmod", "cp", "cat"}
+	if downloader != "none" {
+		names = append(names, downloader)
+	}
+	for _, n := range names {
+		p, err := exec.LookPath(n)
+		if err != nil {
+			t.Skipf("%s isn't on this machine", n)
+		}
+		if err := os.Symlink(p, filepath.Join(dir, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 func runInstallSh(t *testing.T, c shCase) (code int, out, record, sudoLog string, tmp string) {
@@ -40,7 +64,11 @@ func runInstallSh(t *testing.T, c shCase) (code int, out, record, sudoLog string
 		files = map[string][]byte{"/xmr-bridge-0.0.0-test-linux-amd64": amd, "/xmr-bridge-0.0.0-test-linux-arm64": arm}
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, ok := files[r.URL.Path]
+		if c.redirect && !strings.HasPrefix(r.URL.Path, "/moved/") {
+			http.Redirect(w, r, "/moved"+r.URL.Path, http.StatusFound)
+			return
+		}
+		b, ok := files[strings.TrimPrefix(r.URL.Path, "/moved")]
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -70,7 +98,11 @@ func runInstallSh(t *testing.T, c shCase) (code int, out, record, sudoLog string
 	os.WriteFile(scriptPath, []byte(script), 0o644)
 	recordPath, sudoPath := filepath.Join(dir, "record"), filepath.Join(dir, "sudo.log")
 	cmd := exec.Command("/bin/sh", scriptPath, "--site", "https://shop.example", "--pair", "AbCdEfGhIjKlMnOpQrSt_-")
-	cmd.Env = []string{"PATH=" + fake + ":/usr/bin:/bin", "HOME=" + home, "TMPDIR=" + tmp, "RECORD=" + recordPath, "SUDO_LOG=" + sudoPath,
+	path := fake + ":/usr/bin:/bin"
+	if c.tools != "" {
+		path = fake + ":" + toolPath(t, c.tools)
+	}
+	cmd.Env = []string{"PATH=" + path, "HOME=" + home, "TMPDIR=" + tmp, "RECORD=" + recordPath, "SUDO_LOG=" + sudoPath,
 		"FAKE_S=" + c.uname, "FAKE_M=" + c.arch, "FAKE_UID=" + c.uid}
 	if c.noexecTmp {
 		cmd.Env = append(cmd.Env, "FAKE_NOEXEC="+tmp)
@@ -156,5 +188,53 @@ func TestInstallShNoexecTmp(t *testing.T) {
 	}
 	if e, _ := os.ReadDir(tmp); len(e) != 0 {
 		t.Fatalf("the /tmp download folder was left behind: %v", e)
+	}
+}
+
+// A wallet host without curl (a clean Ubuntu 24.04 container, phase 05): wget does the download, and the checksum
+// check is the same.
+func TestInstallShWget(t *testing.T) {
+	c := linuxAmd64()
+	c.tools = "wget"
+	code, out, rec, _, tmp := runInstallSh(t, c)
+	if code != 0 || !strings.HasSuffix(rec, "/xmr-bridge install --site https://shop.example --pair AbCdEfGhIjKlMnOpQrSt_-") || !strings.Contains(out, "SHA-256 matches") {
+		t.Fatalf("exit %d, record %q: %s", code, rec, out)
+	}
+	if e, _ := os.ReadDir(tmp); len(e) != 0 {
+		t.Fatalf("download folder left behind: %v", e)
+	}
+	c.tools = "curl"
+	if code, out, rec, _, _ := runInstallSh(t, c); code != 0 || rec == "" {
+		t.Fatalf("curl only: exit %d: %s", code, out)
+	}
+}
+
+func TestInstallShWgetRefuses(t *testing.T) {
+	bad := map[string][]byte{"/xmr-bridge-0.0.0-test-linux-amd64": []byte(fakeBridge + "# tampered\n")}
+	for name, c := range map[string]struct {
+		c    shCase
+		want string
+	}{
+		"tampered download": {shCase{uname: "Linux", arch: "x86_64", uid: "1000", served: bad, tools: "wget"}, "doesn't match"},
+		"missing download":  {shCase{uname: "Linux", arch: "x86_64", uid: "1000", served: map[string][]byte{}, tools: "wget"}, "download failed"},
+		// GNU wget can't limit a redirect's protocol the way curl's --proto does, so it follows none (Wyatt, 2026-10-12).
+		"redirect": {shCase{uname: "Linux", arch: "x86_64", uid: "1000", redirect: true, tools: "wget"}, "download failed"},
+		"neither":  {shCase{uname: "Linux", arch: "x86_64", uid: "1000", tools: "none"}, "needs curl or wget"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, out, rec, _, _ := runInstallSh(t, c.c)
+			if code == 0 || rec != "" || !strings.Contains(out, "xmr-bridge installer: ") || !strings.Contains(out, c.want) {
+				t.Fatalf("exit %d, record %q: %s", code, rec, out)
+			}
+			if name == "neither" && (!strings.Contains(out, "sudo apt install curl") || !strings.Contains(out, "paste the install command again")) {
+				t.Fatalf("doesn't say what to install: %s", out)
+			}
+		})
+	}
+	// curl follows a redirect within the protocols the release allows, as before.
+	c := linuxAmd64()
+	c.redirect, c.tools = true, "curl"
+	if code, out, rec, _, _ := runInstallSh(t, c); code != 0 || rec == "" {
+		t.Fatalf("curl and a redirect: exit %d: %s", code, out)
 	}
 }

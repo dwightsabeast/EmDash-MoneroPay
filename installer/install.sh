@@ -3,7 +3,7 @@
 #
 #   curl -fsSL <release host>/install.sh | sh -s -- --site https://your-site.example --pair <one-time code>
 #
-# It downloads the xmr-bridge program for this machine's CPU, checks it against the SHA-256 written into this file
+# (The site's admin page shows the same command with a wget fallback, for machines without curl.) It downloads the xmr-bridge program for this machine's CPU, checks it against the SHA-256 written into this file
 # for this release, and runs `xmr-bridge install` with sudo. That program asks for the shop wallet's address and
 # private view key on the terminal (never on the command line), checks this machine isn't serving the site, sets up
 # a background service and pairs with the site. The cautious path does the same by hand: download xmr-bridge,
@@ -32,7 +32,13 @@ x86_64 | amd64) arch=amd64 sum=$SHA256_AMD64 ;;
 aarch64 | arm64) arch=arm64 sum=$SHA256_ARM64 ;;
 *) fail "no xmr-bridge for this CPU ($(uname -m)); x86-64 and 64-bit ARM are supported" ;;
 esac
-command -v curl >/dev/null 2>&1 || fail "curl is needed"
+if command -v curl >/dev/null 2>&1; then
+	fetch=curl
+elif command -v wget >/dev/null 2>&1; then
+	fetch=wget
+else
+	fail "this needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste the install command again"
+fi
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is needed (coreutils)"
 if [ "$(id -u)" -eq 0 ]; then
 	as_root=""
@@ -47,7 +53,14 @@ trap 'rm -rf "$dir"' EXIT INT TERM
 bin="$dir/xmr-bridge"
 
 printf 'Downloading xmr-bridge %s for %s...\n' "$VERSION" "$arch"
-curl -fsSL --proto "$CURL_PROTO" -o "$bin" "$RELEASE_BASE/xmr-bridge-$VERSION-linux-$arch" || fail "the download failed"
+url="$RELEASE_BASE/xmr-bridge-$VERSION-linux-$arch"
+if [ "$fetch" = curl ]; then
+	curl -fsSL --proto "$CURL_PROTO" -o "$bin" "$url" || fail "the download failed"
+else
+	# wget can't limit the protocol a redirect goes to (curl's --proto), so it follows none: the release URL keeps the
+	# protocol the build allows. The checksum below is the same either way.
+	wget -q --max-redirect=0 -O "$bin" "$url" || fail "the download failed"
+fi
 got=$(sha256sum "$bin" | cut -d ' ' -f 1)
 [ "$got" = "$sum" ] || fail "the download doesn't match this release's checksum; nothing was installed"
 chmod 755 "$bin"
