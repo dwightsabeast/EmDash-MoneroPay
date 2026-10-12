@@ -437,3 +437,31 @@ Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
 - Configuration, Monero node row: "… otherwise asks for a remote node you trust. If the node is still catching up with the network, the installer says so and goes on."
 - Bridge service, duty 6: "… with a second node from a built-in list: never the configured node's own host, and only one that has caught up with the network."
 - Admin page, health: "The wallet's height against its node's, and whether that node has caught up with the network."
+
+## 21. The install command works without curl  (status: accepted, 2026-10-12)
+Found in: phase 05, preparing the wallet-host container `coffer-test` (Wyatt's update 2).
+Spec says: Bridge service, The install command: `curl -fsSL https://<release host>/install.sh | sh -s -- --site … --pair …`. The admin budget: "no software to install first".
+Evidence:
+- `command -v` on a clean container from Proxmox's plain Ubuntu 24.04 template: `sha256sum`, `sudo`, `wget` and `python3` are there; `curl` is not. A minimal Debian 12 container has no `curl` either (phase 05 prep).
+- Both the admin page's command and `installer/install.sh` (its own check, then the bridge download) needed curl, so fixing only one would fail one step later.
+- Proxmox containers are a likely home for a wallet host, so this is the common case, not an edge case.
+
+Decision (Wyatt, 2026-10-12):
+1. **The admin page's command** picks one downloader before fetching anything: curl, else wget, else a plain message saying what to install and to paste the command again. Still one line, no added step:
+   `if command -v curl >/dev/null; then curl -fsSL <URL>; elif command -v wget >/dev/null; then wget -nv -O- <URL>; else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi | sh -s -- --site … --pair …`
+   - Not `curl … || wget …`: a curl that fails part way would send its partial output and then wget's whole copy into `sh`.
+   - `-nv`, not `-q`: `wget -q` prints nothing on a 404, so the command would end silently.
+   - It no longer runs in fish; bash, dash and zsh are fine.
+2. **`install.sh`** uses curl with `--proto` as before, else `wget --max-redirect=0`, else the same plain message. The SHA-256 check and everything after it are unchanged.
+3. **What stands in for `--proto` on the wget path: no redirects at all.** GNU wget can't limit the protocol a redirect goes to (`--https-only` applies only to recursive downloads), so it follows none, and the release URL keeps the protocol the build allows. Integrity never depended on it: the binary must match the SHA-256 written into `install.sh`. Open item for phase 09's install host: the binaries must be served from `RELEASE_BASE` without a redirect (GitHub Releases asset URLs redirect).
+
+Effect on the admin budget: better. A machine without curl no longer needs software installed first; a machine with neither curl nor wget is told plainly what to install.
+Effect on the trust contract: none.
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Bridge service, The install command, the code block:
+  ```sh
+  # Linux, the only supported platform at launch; curl or wget
+  if command -v curl >/dev/null; then curl -fsSL https://<release host>/install.sh; elif command -v wget >/dev/null; then wget -nv -O- https://<release host>/install.sh; else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi | sh -s -- --site https://example.com --pair <one-time code>
+  ```
+- After it: "The command uses curl, or wget where curl isn't installed (as on a clean Ubuntu or Debian container). With neither, it says what to install."
+

@@ -39,6 +39,9 @@ Phase 09, release. Read docs/phases/09-release.md and docs/progress.md, then pla
 
 **3. Install host:** (before writing any admin-facing install text, reread `docs/setup-friction.md`) the static `install.sh` for this release, verifying the bridge the way phase 03 decided, published to the install host. Replace the placeholder install URL in the plugin with the real one.
 
+- **Open item (spec change 21, 2026-10-12): no redirects on the wget path.** On a machine without curl, `install.sh` downloads the bridge with `wget --max-redirect=0`, because wget can't limit a redirect's protocol the way curl's `--proto` does. The bridge binaries must therefore be served from `RELEASE_BASE` without a redirect. GitHub Releases asset URLs redirect, so either the install host serves the binaries itself, or `RELEASE_BASE` points at an address that answers directly. Test the published install command on a machine with wget and no curl.
+- **The install docs list what the wallet host needs:** Linux with systemd, `sh`, curl or wget, `sha256sum`, and `sudo` or a root login.
+
 **4. Registry:** set `publisher` to Wyatt's DID, pin `@emdash-cms/plugin-cli` exactly, fill `license`, `author`, `security`, `repo`, and the listing sections (description, installation snippet from phase 06, FAQ, security). Wyatt runs `emdash-plugin login`, then either `emdash-plugin publish` or the delegated GitHub release flow (`release setup`, which needs the public repo). Watch the listing checks with `emdash-plugin info … --watch`.
 
 **5. Theme package:** publish to npm after Wyatt logs in, or document installing from GitHub.
