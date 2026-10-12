@@ -30,8 +30,9 @@ tmp="$entry.tmp.$$"
 # The address passed the check above (no | & \ or spaces), so it's safe as a sed replacement.
 sed "s|$placeholder|$base/install.sh|" "$entry" >"$tmp"
 mv "$tmp" "$entry"
-# The bundler inlines the constant into the command's template string.
-grep -qF "curl -fsSL $base/install.sh | sh -s -- --site" "$entry" || { echo "the install URL didn't land in the install command in dist/plugin.mjs" >&2; exit 1; }
+# The constant now holds the address, and the command (installCommand, curl else wget) is built from it.
+grep -qF -e "\"$base/install.sh\"" -e "\`$base/install.sh\`" "$entry" || { echo "the install URL didn't land in dist/plugin.mjs" >&2; exit 1; }
+grep -qF 'if command -v curl >/dev/null; then curl -fsSL ${' "$entry" || { echo "the install command in dist/plugin.mjs isn't the curl-else-wget one" >&2; exit 1; }
 ! grep -qF "$placeholder" "$entry" || { echo "the placeholder is still in dist/plugin.mjs" >&2; exit 1; }
 echo "plugin built for the setup test: the admin page's install command fetches $base/install.sh"
 echo "a plain 'pnpm run build' restores the placeholder"

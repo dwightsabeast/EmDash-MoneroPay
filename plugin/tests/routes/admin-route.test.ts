@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createPluginRuntimeTestHost, type PluginRuntimeTestHost } from "@emdash-cms/plugin-test";
 
-import { INSTALL_URL } from "../../src/admin";
+import { INSTALL_URL, installCommand } from "../../src/admin";
 import { PAIRING_TTL_MS, hashPairingCode } from "../../src/sync/pairing";
 import { PUBLIC_KEYS, bytesOf, signedHeaders } from "../sync/helpers";
 
@@ -26,7 +26,7 @@ type B = Record<string, any>;
 const find = (blocks: B[], pred: (b: B) => boolean) => blocks.find(pred);
 const texts = (blocks: B[]) => JSON.stringify(blocks);
 const codeFrom = (blocks: B[]) => {
-	const cmd = find(blocks, (b) => b.type === "code" && String(b.code).startsWith("curl"))?.code as string | undefined;
+	const cmd = find(blocks, (b) => b.type === "code" && String(b.code).includes("/install.sh"))?.code as string | undefined;
 	return cmd?.match(/--pair ([A-Za-z0-9_-]{22})$/)?.[1];
 };
 
@@ -76,8 +76,16 @@ describe("admin page", () => {
 		Object.assign(task.meta, { blocks });
 		const code = codeFrom(blocks);
 		expect(code).toMatch(/^[A-Za-z0-9_-]{22}$/);
-		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).startsWith("curl")) as B).code as string;
-		expect(cmd).toBe(`curl -fsSL ${INSTALL_URL} | sh -s -- --site ${cmd.split("--site ")[1].split(" ")[0]} --pair ${code}`);
+		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).includes("/install.sh")) as B).code as string;
+		const site = cmd.split("--site ")[1].split(" ")[0];
+		expect(cmd).toBe(installCommand(site, code as string));
+		// curl, else wget (a clean Ubuntu 24.04 container has no curl), else a plain message; one line, no extra step.
+		// The bridge's installer tests run this exact line under sh with each (bridge/internal/installer/installcmd_test.go).
+		expect(cmd).toBe(
+			`if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}; elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}; ` +
+				`else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi` +
+				` | sh -s -- --site ${site} --pair ${code}`,
+		);
 		expect(texts(blocks)).toContain(`xmr-bridge install --site`);
 		const state = (await host.inspect.kv.get<{ codeHash: string; expiresAt: number; used: boolean }>("state:pairing")) as { codeHash: string; expiresAt: number; used: boolean };
 		expect(state.codeHash).toBe(await hashPairingCode(code as string));
@@ -154,7 +162,7 @@ describe("pairing codes and the site URL", () => {
 	it("the install command uses the configured site URL, not the request's host, and says which address it is", async () => {
 		host = await createPluginRuntimeTestHost({ site: { url: "https://shop.example" } });
 		const blocks = (await host.admin.act("/payments", "connect_wallet_host")).blocks as B[];
-		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).startsWith("curl")) as B).code as string;
+		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).includes("/install.sh")) as B).code as string;
 		expect(cmd).toContain("--site https://shop.example --pair ");
 		expect(texts(blocks)).toContain("The wallet host will connect to https://shop.example.");
 	});

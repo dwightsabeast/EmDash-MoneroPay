@@ -264,12 +264,22 @@ async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 	return { type: "success", message: "Test address ready. Send the test tip from any wallet." };
 }
 
+/**
+ * The one-line install command for the wallet host: curl, else wget (a clean Ubuntu 24.04 container has no curl), else
+ * a plain message saying what to install. One tool is chosen before anything downloads, so a half-finished curl can't
+ * be followed by a second copy. Kept as one template literal: the bridge's tests run it under sh
+ * (bridge/internal/installer/installcmd_test.go).
+ */
+export function installCommand(siteUrl: string, code: string): string {
+	return `if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}; elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}; else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi | sh -s -- --site ${siteUrl} --pair ${code}`;
+}
+
 const minutesLeft = (expiresAt: number, now: number) => Math.max(0, Math.floor((expiresAt - now) / 60_000));
 
 function installBlocks(siteUrl: string, code: string, expiresAt: number, now: number): Block[] {
 	return [
 		{ type: "banner", variant: "default", title: "Pairing code ready", description: `It works once, until ${utc(expiresAt)} (${minutesLeft(expiresAt, now)} min left). Run one of these on your wallet host (a Linux machine, not your site's server).` },
-		{ type: "code", language: "bash", code: `curl -fsSL ${INSTALL_URL} | sh -s -- --site ${siteUrl} --pair ${code}` },
+		{ type: "code", language: "bash", code: installCommand(siteUrl, code) },
 		{ type: "context", text: "Cautious path, if the bridge is already installed: download and verify it first, then run:" },
 		{ type: "code", language: "bash", code: `xmr-bridge install --site ${siteUrl} --pair ${code}` },
 	];

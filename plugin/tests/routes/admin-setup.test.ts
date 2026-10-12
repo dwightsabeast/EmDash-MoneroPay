@@ -39,7 +39,7 @@ const tips = async () => (await (host as PluginRuntimeTestHost).inspect.storage.
 
 async function pair(h: PluginRuntimeTestHost, key: "test1" | "test2") {
 	const r = await h.admin.act("/payments", "connect_wallet_host");
-	const cmd = (r.blocks as B[]).find((b) => b.type === "code" && String(b.code).startsWith("curl"))?.code as string;
+	const cmd = (r.blocks as B[]).find((b) => b.type === "code" && String(b.code).includes("/install.sh"))?.code as string;
 	const code = cmd.match(/--pair ([A-Za-z0-9_-]{22})$/)?.[1];
 	const now = Date.now();
 	const bytes = bytesOf({ v: 1, seq: now, height: H0, addresses: [], snapshots: [], pair: { code, publicKey: PUBLIC_KEYS[key] } });

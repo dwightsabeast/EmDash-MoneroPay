@@ -48,7 +48,7 @@ In your browser, open your site's admin and sign in. In the menu, open **Monero 
 
 Under **Connect wallet host**, press **Connect wallet host**.
 
-**Check:** a box says **Pairing code ready**, with the time it works until, and below it a command that starts with `curl -fsSL`. The code in it works once, for 15 minutes.
+**Check:** a box says **Pairing code ready**, with the time it works until, and below it a command that starts with `if command -v curl`. The code in it works once, for 15 minutes.
 
 Copy the whole command: it's one line.
 

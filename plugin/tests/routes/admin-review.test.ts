@@ -223,7 +223,7 @@ describe("limits", () => {
 		const blocks = page.blocks as B[];
 		expect(reviewBanners(blocks)).toHaveLength(12);
 		expect(blocks.filter((x) => x.type === "accordion" && String(x.block_id).startsWith("invoice_"))).toHaveLength(10);
-		expect(blocks.some((x) => x.type === "code" && String(x.code).startsWith("curl"))).toBe(true);
+		expect(blocks.some((x) => x.type === "code" && String(x.code).includes("/install.sh"))).toBe(true);
 		expect(nodes(page)).toBeLessThan(2000);
 		expect(JSON.stringify(page).length).toBeLessThan(256 * 1024);
 	});
