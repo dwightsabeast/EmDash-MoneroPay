@@ -1540,3 +1540,67 @@ Carried over for Wyatt (unchanged from the phase 04 close-out):
 - **The self-update admin-copy question:** before phase 09.
 - **Upstream notes:** the confirm dialog's padding, no copy-to-clipboard element, no wrapping for long values.
 - **Review advice "find it under All invoices below":** may need Load more.
+
+## 2026-10-12 · Phase 05 · Run A's node container, two bridge fixes (section B waits for the node)
+
+Pushed at the start: `aac82bb` (the 10-09 handoff). CI run 38276652301 passed (plugin, bridge, race detector).
+
+Wyatt's notes (`~/xmr-pay-dev-data/05-setup/node-notes.md`, local) changed the plan:
+- **Run A's node:** a separate pruned stagenet container on the LAN, with restricted RPC on 38089. It replaces the dev-box LAN listener, and the dev box's node is untouched.
+- **Run order (Wyatt's choice (b)):** both runs after that node has caught up, run A then run B.
+- **Two bridge fixes** go in before section B builds the release.
+
+Done (local commits, not pushed yet):
+- `7e26f67`, **phase file:** the own-node prerequisite allows a separate node machine. The wallet-host container comes from Proxmox's plain Ubuntu 24.04 template, not a community-scripts helper.
+- **Organizer sheet** (local): run A's node address, a section 0 for the run order, the container-source rule, and a "Node caught up" check run from the dev box. Run today, it printed `FAIL … syncing`, as expected.
+- `dd7aefc`, **cross-check:**
+  - It never uses a second node on the configured node's host (any scheme or port, case-insensitive, trailing dot ignored).
+  - It uses only a second node that says it is `synchronized`.
+- `a4459af` and `9ef7118`, **spec change 20 (accepted with the plan):** a node that's still syncing passed every check. There is also a setup-friction row and a lesson.
+- `6fd4bed`, **bridge:**
+  - `noderpc.Info` carries `target_height` and a `Progress()` text.
+  - The installer prints one line when the chosen node is still syncing. It adds no prompt and doesn't refuse.
+  - The wallet check gets a `syncing` state, ahead of `ok` and `behind`.
+  - The status file carries the wallet check, and `xmr-bridge status` prints it on the Wallet line. The exit code is unchanged.
+- `f989a62`, **plugin:**
+  - It accepts `syncing`, with no protocol version change: an older plugin drops unknown states.
+  - A red health line, which the widget also shows.
+  - The Wallet height text.
+  - Wallet synced stays to do, so Get a test address waits.
+
+Tests:
+- **Bridge:** gofmt, vet, `go test ./...` all pass, and the static build works.
+- **New bridge tests:**
+  - crosscheck: the configured node on the list, the same host on another scheme or port, a syncing second node
+  - noderpc: a syncing `get_info`, and the progress text
+  - installer: own node, `--node` and prompt, plus no line for a synced node
+  - the wallet check's `syncing` state
+  - status output for each state
+- **Mutation checks:**
+  - With the host filter removed, 2 tests fail.
+  - With the synchronized check removed, 1 test fails (3 of 3 runs).
+  - With the syncing branch removed, the wallet check reads "ok" on the half-synced node.
+- **Plugin:** 207 tests pass (3 new, each red first). Typecheck, validate and the bundle check pass (49.4 KB).
+- **Live, read-only:** the bridge's `noderpc` read run A's node (`Synchronized:false`, block 128,191 of about 2,227,761) and the dev box's node (`Synchronized:true`, `target_height` 0). This used a throwaway test file, deleted afterwards. The address came from an environment variable.
+
+Not covered:
+- **The admin page with `syncing`:** not looked at on the dev site yet. It is covered by the runtime-host tests only.
+- **The installer line on a real install:** run A uses a caught-up node, so it must show no line there.
+
+Open for Wyatt:
+- **Spec change 20, item 5, checkout during a node sync** (corrected this session; the plan said it was safe, and it isn't).
+  - An invoice made while the node syncs takes its deadline from the node's low height, so a payment on the real chain goes to review as late.
+  - Options: (a) refuse checkout while `syncing`, recommended; this is a checkout error code, so an API contract change. (b) Treat `expiresHeight` as unknown for those invoices.
+  - The setup test isn't affected.
+- **The installer's default restore height on a syncing node** is that node's low height. The scan is safe (it scans more) but slow once the node catches up. Worth a line in phase 09's docs, or use `target_height`, which comes from unverified peers. For Wyatt to decide; not changed.
+- **Push** `7e26f67..9ef7118`. CI has to pass before section B's release build.
+
+State left:
+- **Dev site, built copy, release server:** stopped. Ports 4321, 4322 and 8099 are free.
+- **Services:** `monerod-stagenet` and the installed bridge are active, unchanged.
+- **Dev database:** untouched. The setup-test reset hasn't run.
+
+Next steps:
+1. **Wyatt:** say whether to push, then decide item 5 (it doesn't block the test).
+2. **Claude:** after the push, check CI. When Wyatt says the node is near the top, run the "Node caught up" check.
+3. **Once it passes:** section B (reset, `build-dev-release.sh --base`, Wyatt signs, serve, `setup-test-plugin.sh`, build and start `built`). Then Wyatt's reachability check, run A, section D, run B, section E.
