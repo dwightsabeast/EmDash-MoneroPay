@@ -96,7 +96,8 @@ export interface RawTransfer {
 /** The wallet host's own checks, shown on the admin page (spec change 13 and the phase 04 wallet-height check). */
 export interface BridgeChecks {
 	node?: { state: "off" | "ok" | "unavailable" | "mismatch"; detail?: string };
-	wallet?: { state: "ok" | "behind" | "unavailable"; detail?: string };
+	/** "syncing": the wallet host's node hasn't caught up with the network (spec change 20). */
+	wallet?: { state: "ok" | "behind" | "unavailable" | "syncing"; detail?: string };
 }
 
 export interface SyncBody {
@@ -136,7 +137,7 @@ function parseTransfer(t: unknown): RawTransfer | null {
 }
 
 const NODE_STATES: ReadonlySet<string> = new Set(["off", "ok", "unavailable", "mismatch"]);
-const WALLET_STATES: ReadonlySet<string> = new Set(["ok", "behind", "unavailable"]);
+const WALLET_STATES: ReadonlySet<string> = new Set(["ok", "behind", "unavailable", "syncing"]);
 const MAX_DETAIL = 300;
 
 function parseCheck<S extends string>(c: unknown, states: ReadonlySet<string>): { state: S; detail?: string } | undefined {

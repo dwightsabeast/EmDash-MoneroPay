@@ -127,6 +127,14 @@ describe("health panel", () => {
 		expect(banners(b)).toEqual([]);
 	});
 
+	it("a node still catching up with the network (spec change 20): red, with the bridge's progress, ahead of the height", async () => {
+		await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
+		const b = await load();
+		expect(field(b, "Wallet height")).toBe("3000000: the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has");
+		expect(banners(b)).toContainEqual({ variant: "error", title: "The wallet host's node is still syncing", description: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress." });
+		expect(await widgetText()).toContain("The wallet host's node is still syncing");
+	});
+
 	it("the remote-node cross-check: mismatch red, unavailable amber, ok green, each with the bridge's detail", async () => {
 		const mismatch = "the configured node's block at height 5 differs from node.example's: payments in it are held at 0 confirmations. Use your own node, or one you trust";
 		await setup({ checks: { node: { state: "mismatch", detail: mismatch } } });

@@ -19,12 +19,12 @@ const KRAKEN = "https://api.kraken.com/0/public/Ticker?pair=XMRUSD";
 const krakenOk = () => new Response(JSON.stringify({ error: [], result: { XXMRZUSD: { c: ["150.00", "1.0"] } } }));
 const ADDR = (i: number) => `7${String(i).padStart(94, "E")}`;
 
-async function setup(o: { paired?: boolean; lastSyncAgo?: number | null; free?: number; price?: boolean } = {}) {
+async function setup(o: { paired?: boolean; lastSyncAgo?: number | null; free?: number; price?: boolean; checks?: unknown } = {}) {
 	const h = await createPluginRuntimeTestHost();
 	host = h;
 	if (o.paired !== false) await h.fixtures.plugin.setting("bridgePublicKey", PUBLIC_KEYS.test1);
 	const ago = o.lastSyncAgo === undefined ? 30_000 : o.lastSyncAgo;
-	if (ago !== null) await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - ago, version: 1, outdated: false });
+	if (ago !== null) await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - ago, version: 1, outdated: false, ...(o.checks ? { checks: o.checks } : {}) });
 	for (let i = 1; i <= (o.free ?? 3); i++) await h.fixtures.plugin.storage("pool", String(i), { addrIndex: i, address: ADDR(i), status: "free" });
 	if (o.price !== false) await h.http.respond(KRAKEN, krakenOk());
 	else for (const url of [KRAKEN, "https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd"]) await h.http.respond(url, new Response("down", { status: 502 }));
@@ -74,6 +74,13 @@ describe("setup checklist", () => {
 	it("a silent wallet host: synced is to do again", async () => {
 		await setup({ lastSyncAgo: 12 * 60_000 });
 		expect(items(await load())[1]).toEqual({ label: "Wallet synced", value: "To do: the wallet host is silent. On the wallet host, run: xmr-bridge status" });
+	});
+
+	it("a node still catching up with the network: synced is to do, with the bridge's progress, and no test address yet", async () => {
+		await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
+		const b = await load();
+		expect(items(b)[1]).toEqual({ label: "Wallet synced", value: "To do: the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. A new node can take hours." });
+		expect(text(b)).not.toContain("get_test_address");
 	});
 
 	it("Get a test address: an open tip invoice on a pool address, shown as copyable text; pressing again reuses it", async () => {

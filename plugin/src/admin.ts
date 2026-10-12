@@ -119,6 +119,9 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 	const checks = h.bridge?.checks;
 	if (h.silentFor !== null) out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
 	if (h.paired && !h.bridge) out.push({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
+	if (checks?.wallet?.state === "syncing") {
+		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
+	}
 	if (checks?.wallet?.state === "behind") {
 		out.push({ variant: "error", title: "The wallet is behind its node", description: `${checks.wallet.detail ?? "The wallet is behind its node"}. It catches up by itself after a restart or an outage; if this stays, run xmr-bridge status on the wallet host.` });
 	}
@@ -144,6 +147,7 @@ function walletHeightText(h: Health): string {
 	const w = h.bridge.checks?.wallet;
 	if (w?.state === "ok") return `${h.bridge.height}, in step with its node`;
 	if (w?.state === "behind") return `${h.bridge.height}: ${w.detail ?? "behind its node"}`;
+	if (w?.state === "syncing") return `${h.bridge.height}: ${w.detail ?? "its node is still catching up with the network"}`;
 	if (w?.state === "unavailable") return `${h.bridge.height} (its node's height is unknown${w.detail ? `: ${w.detail}` : ""})`;
 	return String(h.bridge.height);
 }
@@ -207,7 +211,7 @@ async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: bool
 		await ctx.kv.set(KV.setupDone, true);
 	}
 	const wallet = h.bridge?.checks?.wallet;
-	const synced = h.bridge !== null && h.silentFor === null && wallet?.state !== "behind";
+	const synced = h.bridge !== null && h.silentFor === null && wallet?.state !== "behind" && wallet?.state !== "syncing";
 	const rows: Array<[string, boolean, string]> = [
 		["Wallet host paired", h.paired, "press Connect wallet host below and run the command on your wallet host."],
 		[
@@ -215,9 +219,11 @@ async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: bool
 			synced,
 			h.silentFor !== null
 				? "the wallet host is silent. On the wallet host, run: xmr-bridge status"
-				: wallet?.state === "behind"
-					? `the wallet is catching up with its node (${wallet.detail ?? "behind"}).`
-					: "the wallet host syncs within a minute of pairing.",
+				: wallet?.state === "syncing"
+					? `${wallet.detail ?? "the wallet host's node is still catching up with the network"}. A new node can take hours.`
+					: wallet?.state === "behind"
+						? `the wallet is catching up with its node (${wallet.detail ?? "behind"}).`
+						: "the wallet host syncs within a minute of pairing.",
 		],
 		["Payment addresses ready", h.free > 0, "the wallet host adds them at its first sync."],
 		["Price feed answering", Boolean(h.rate), "both price services failed just now; this page checks again when it loads."],
