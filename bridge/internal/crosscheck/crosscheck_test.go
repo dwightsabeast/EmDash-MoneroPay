@@ -16,13 +16,14 @@ import (
 
 // node is a fake monerod: a chain of block hashes (with the transactions in each) and a network.
 type node struct {
-	net    string
-	height uint64 // block count
-	hashes map[uint64]string
-	txs    map[uint64][]string
-	calls  atomic.Int32
-	blocks atomic.Int32
-	down   bool
+	net     string
+	height  uint64 // block count
+	hashes  map[uint64]string
+	txs     map[uint64][]string
+	calls   atomic.Int32
+	blocks  atomic.Int32
+	down    bool
+	syncing bool // get_info says it hasn't caught up with the network
 }
 
 func (n *node) serve(t *testing.T) *httptest.Server {
@@ -41,7 +42,7 @@ func (n *node) serve(t *testing.T) *httptest.Server {
 		h := req.Params.Height
 		switch req.Method {
 		case "get_info":
-			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":"0","result":{"status":"OK","nettype":"%s","height":%d}}`, n.net, n.height)
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":"0","result":{"status":"OK","nettype":"%s","height":%d,"synchronized":%t}}`, n.net, n.height, !n.syncing)
 		case "get_block_header_by_height", "get_block":
 			if req.Method == "get_block" {
 				n.blocks.Add(1)
@@ -79,7 +80,13 @@ func checker(t *testing.T, primary *node, seconds ...*node) *Checker {
 	for _, s := range seconds {
 		urls = append(urls, s.serve(t).URL)
 	}
-	return New(primary.serve(t).URL, "stagenet", urls, nil)
+	return New(asLocalhost(primary.serve(t).URL), "stagenet", urls, nil)
+}
+
+// asLocalhost names a test server by localhost: every test server is on 127.0.0.1, and the checker never uses a
+// second node on the configured node's host.
+func asLocalhost(u string) string {
+	return strings.Replace(u, "127.0.0.1", "localhost", 1)
 }
 
 func TestHonestNodes(t *testing.T) {
@@ -167,9 +174,50 @@ func TestVerifiedOnceThenCached(t *testing.T) {
 	}
 }
 
+// The configured node is on the built-in list: it must never stand in as its own second node.
+func TestNeverItsOwnSecondNode(t *testing.T) {
+	primary, down := chain(110), chain(110)
+	down.down = true
+	u := primary.serve(t).URL
+	c := New(u, "stagenet", []string{u, down.serve(t).URL}, nil)
+	got, rep := c.Check(context.Background(), []walletrpc.Transfer{transfer(tx1, 100, 10)})
+	if rep.State != Unavailable || got[0].Confirmations != 10 {
+		t.Fatalf("report %+v, confirmations %d", rep, got[0].Confirmations)
+	}
+	if n := primary.calls.Load(); n != 0 {
+		t.Fatalf("the configured node was asked %d times", n)
+	}
+}
+
+// The same host over another scheme or port is the same node (stagenet.xmr.kernal.eu answers on http and https).
+func TestSameHostIsNotASecondNode(t *testing.T) {
+	c := New("https://Node.Example.:38089", "stagenet", []string{
+		"http://node.example:38089", "http://NODE.example:38081", "https://node.example", "http://other.example:38089",
+	}, nil)
+	if len(c.seconds) != 1 || c.seconds[0] != "http://other.example:38089" {
+		t.Fatalf("second nodes %v", c.seconds)
+	}
+}
+
+func TestSyncingSecondNodeSkipped(t *testing.T) {
+	syncing := chain(110)
+	syncing.syncing = true
+	c := checker(t, chain(110), syncing, chain(109))
+	got, rep := c.Check(context.Background(), []walletrpc.Transfer{transfer(tx1, 100, 10)})
+	if rep.State != OK || got[0].Confirmations != 9 || syncing.blocks.Load() != 0 {
+		t.Fatalf("report %+v, confirmations %d, syncing node fetches %d", rep, got[0].Confirmations, syncing.blocks.Load())
+	}
+	only := chain(110)
+	only.syncing = true
+	c = checker(t, chain(110), only)
+	if got, rep := c.Check(context.Background(), []walletrpc.Transfer{transfer(tx1, 100, 10)}); rep.State != Unavailable || got[0].Confirmations != 10 {
+		t.Fatalf("only a syncing second node: report %+v, confirmations %d", rep, got[0].Confirmations)
+	}
+}
+
 func TestNothingMinedNoQueries(t *testing.T) {
 	primary, second := chain(110), chain(110)
-	c := New(primary.serve(t).URL, "stagenet", []string{second.serve(t).URL}, nil)
+	c := New(asLocalhost(primary.serve(t).URL), "stagenet", []string{second.serve(t).URL}, nil)
 	if _, rep := c.Check(context.Background(), []walletrpc.Transfer{transfer(tx1, 0, 0)}); rep.State != OK {
 		t.Fatalf("report %+v", rep)
 	}

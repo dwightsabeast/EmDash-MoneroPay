@@ -3,7 +3,9 @@
 // asks a second node for the whole block at the transfer's height: that block's hash must equal the configured
 // node's, and the txid must be in its transaction list. The second node learns a height, never a txid.
 // Confirmations become the smaller of the two nodes' counts. A mismatch holds the transfer at 0 confirmations; no
-// second node answering leaves confirmations as they are and reports the check as unavailable.
+// second node answering leaves confirmations as they are and reports the check as unavailable. A second node is
+// never on the configured node's host (any scheme or port), and is used only while it says it has caught up with
+// the network.
 package crosscheck
 
 import (
@@ -13,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,12 +108,29 @@ type Checker struct {
 	verified map[string]bool // txid + "@" + height
 }
 
-// New returns a checker for transfers reported through primary.
+// New returns a checker for transfers reported through primary. Second nodes on primary's host are left out: the
+// configured node can be on the built-in list, and a node can't vouch for itself.
 func New(primary, network string, seconds []string, hc *http.Client) *Checker {
 	if hc == nil {
 		hc = &http.Client{Timeout: 20 * time.Second}
 	}
-	return &Checker{primary: primary, network: network, seconds: seconds, hc: hc, verified: map[string]bool{}}
+	own := hostName(primary)
+	var others []string
+	for _, s := range seconds {
+		if own == "" || hostName(s) != own {
+			others = append(others, s)
+		}
+	}
+	return &Checker{primary: primary, network: network, seconds: others, hc: hc, verified: map[string]bool{}}
+}
+
+// hostName is nodeURL's host without port, lower-cased and without a trailing dot ("" if it doesn't parse).
+func hostName(nodeURL string) string {
+	u, err := url.Parse(nodeURL)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 }
 
 // Check returns the transfers with confirmations adjusted, and the outcome.
@@ -179,7 +199,8 @@ func (c *Checker) Check(ctx context.Context, ts []walletrpc.Transfer) ([]walletr
 	return out, rep
 }
 
-// pickSecond returns the first second node, in random order, that answers on the right network.
+// pickSecond returns the first second node, in random order, that answers on the right network and has caught up
+// (a node still syncing would hold every payment at 0 confirmations).
 func (c *Checker) pickSecond(ctx context.Context) (string, uint64, bool) {
 	order := append([]string{}, c.seconds...)
 	rand.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
@@ -187,7 +208,7 @@ func (c *Checker) pickSecond(ctx context.Context) (string, uint64, bool) {
 		ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		info, err := noderpc.GetInfo(ictx, n, c.hc)
 		cancel()
-		if err == nil && info.NetType == c.network && !info.Offline && info.Height > 0 {
+		if err == nil && info.NetType == c.network && !info.Offline && info.Synchronized && info.Height > 0 {
 			return n, info.Height, true
 		}
 	}
