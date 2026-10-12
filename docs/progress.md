@@ -1657,3 +1657,31 @@ Next steps:
 1. **Claude:** push `7e26f67..` (this morning's 7 commits, this entry, and spec change 21), then check CI.
 2. **Wyatt:** says when the node is near 100%.
 3. **Claude:** the "Node caught up" check, then section B with the invite step. Then Wyatt's reachability check (wget), run A, section D, run B, section E.
+
+## 2026-10-12 · Phase 05 · Spec change 20 item 5: checkout refuses while the node syncs
+
+Node check at 19:35 UTC: run A's node at 409,633 of 2,227,841 (about 18%). That's roughly 90,000 blocks an hour since 16:27, so probably 20 hours or more to go. Section B still waits.
+
+Wyatt's decision: option (a), refuse, with a new code. `cc226b4`:
+- **`checkoutHeight()`** returns the height, or the reason to refuse:
+  - `WALLET_HOST_SILENT`, checked first, since a silent host's last check is stale
+  - `WALLET_HOST_SYNCING`, while the last sync's wallet check is `syncing`
+- **Checkout** refuses before the price request, so nothing is claimed.
+- **Get a test address** refuses with a message saying the node is still catching up.
+- **The admin page's red line** adds "Checkout is paused until then."
+- **Spec change 20** records the decision and the spec text to fold in: the checkout error list gains `WALLET_HOST_SYNCING`.
+
+Tests:
+- **Plugin:** 209 pass. New:
+  - checkout returns the code, with no price request and nothing claimed
+  - the other wallet states don't stop checkout
+  - `checkoutHeight`'s reasons and their order
+  - the test-address refusal
+  - each failed before the change
+- **Typecheck, validate, bundle check (50.0 KB):** pass.
+- **No change outside the plugin:** nothing else in the repo lists the checkout codes; the theme (phase 06) and the contract tests (phase 08) aren't built yet. Phase 06's pay page should show `WALLET_HOST_SYNCING` the same way as `WALLET_HOST_SILENT`.
+
+Carried over for Wyatt:
+- **Spec text to fold in:** changes 20 (including item 5's checkout code) and 21, added to the earlier list.
+
+Next step: unchanged. Wyatt says when the node is near 100%. Then the "Node caught up" check and section B.
