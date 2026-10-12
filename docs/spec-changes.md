@@ -411,3 +411,26 @@ Wyatt's decision (2026-10-09): (a), drop the fallback. Also, `xmr-bridge status`
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
 - Configuration, the Bridge public key row: "| Bridge public key | filled in by pairing | none | Shown read-only; pairing is the only way to set it. `xmr-bridge status` on the wallet host prints the same key, so the two can be compared. Not a secret. |"
 - No other line of the spec mentions pasting a key. Key design decisions ("…instead of a key to copy by hand") already says pairing replaces copying a key.
+
+## 20. A node that's still syncing passes every check  (status: accepted, 2026-10-12, as part of Wyatt's approved phase 05 plan)
+Found in: phase 05, preparing run A on a newly started node (Wyatt's notes, 2026-10-12).
+Spec says: Configuration, Monero node: "Defaults to a local `monerod` if one answers (recommended); otherwise asks for a remote node you trust." Bridge service, duty 6 (and spec change 13, item 3): a second node from a built-in list. Phase 04's wallet check (`checks.wallet`) compares the wallet's height with its node's: `ok`, `behind`, `unavailable`.
+Evidence:
+- `get_info` from run A's new node over restricted RPC, from the dev box, on 2026-10-12: `nettype` stagenet, `height` 94,954, `target_height` 2,227,755, `synchronized: false`, `busy_syncing: true`, `restricted: true`. So `synchronized` and `target_height` do come through restricted RPC; `version` comes back empty there.
+- The installer's node check (`chooseNode`) tests the network and `offline`, not `synchronized`, so it accepts that node.
+- The wallet check compares the wallet only with its own node's height. A wallet on a half-synced node reads `ok`, and the admin page's checklist shows Wallet synced, while a payment on the real chain can't appear until the node catches up. That is exactly an admin who has just started their own node.
+- The cross-check's second node had the same gap: a syncing second node gives a low height, so every payment is held at 0 confirmations. It could also pick the configured node itself, since every stagenet node listed as online today is on the built-in list.
+
+Proposal (accepted):
+1. **Installer:** when the chosen node isn't synchronized, it says so in one line (block N of about M, payments can't show until it has caught up, a new node can take hours, `xmr-bridge status` shows progress) and goes on. No new prompt, no refusal.
+2. **Wallet check:** a new state, `syncing`, when the wallet host's node says it isn't synchronized. It takes precedence over `ok` and `behind`. `xmr-bridge status` shows the wallet check too.
+3. **Admin page:** Wallet synced is not done while the state is `syncing`; a red health line says the node is still syncing, with one action (wait; check with `xmr-bridge status`). The plugin accepts the new state; an older plugin drops unknown states, so no protocol version change.
+4. **Second node:** never on the configured node's host (any scheme or port), and only one that says it is synchronized.
+5. **Checkout is unchanged** while the node syncs: invoices expire on evidence (heights from the bridge), so a half-synced node can't expire anything early, and a payment waits until the node catches up. Pausing checkout too, like spec change 16's silent-bridge rule, is open for Wyatt.
+
+Effect on the admin budget: none (one installer line, no prompt or step). A new node's sync time is outside the 15 minutes; the message makes the wait visible instead of silent.
+Effect on the trust contract: none (the `checks` field is optional information in the sync body; no new route, capability, host or storage).
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Configuration, Monero node row: "… otherwise asks for a remote node you trust. If the node is still catching up with the network, the installer says so and goes on."
+- Bridge service, duty 6: "… with a second node from a built-in list: never the configured node's own host, and only one that has caught up with the network."
+- Admin page, health: "The wallet's height against its node's, and whether that node has caught up with the network."
