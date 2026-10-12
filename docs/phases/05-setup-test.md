@@ -9,8 +9,12 @@
 **Before the prep session**
 
 - [ ] Phases 02–04 are done.
-- [ ] A second container on Proxmox to be the wallet host: Debian 12 or Ubuntu 24.04, 1 core, 1–2 GB RAM, 16 GB disk, nothing else installed. Snapshot it as `blank` so each run starts clean.
-- [ ] For the own-node run: a stagenet node the wallet host can reach on your LAN. Simplest is the dev box's node with a second, restricted RPC listener on the LAN, keeping the localhost one everything else uses: add `--rpc-restricted-bind-ip`, set to the dev box's LAN address (in the Machine table of `docs/dev-environment.md`), plus `--rpc-restricted-bind-port 38089 --confirm-external-bind` to the `monerod-stagenet` service (check `monerod --help` for the exact names), then `sudo systemctl daemon-reload && sudo systemctl restart monerod-stagenet`. When the installer asks for the node address, give that LAN address with port `38089`.
+- [ ] A second container on Proxmox to be the wallet host: Ubuntu 24.04 from Proxmox's plain template (Create CT), not a community-scripts helper, which preinstalls `curl`, `sudo` and `gnupg` and would hide what a bare machine lacks. 1 core, 1–2 GB RAM, 16 GB disk, nothing else installed. Snapshot it as `blank` so each run starts clean. (A minimal Debian 12 container has no `curl`, which the install command needs.)
+- [ ] For the own-node run: a stagenet node the wallet host can reach on your LAN, with restricted RPC on port `38089`. Either works:
+  - **A separate node machine** (for example its own container, pruned), with restricted RPC on its LAN address. It must be caught up before the run: the organizer sheet's "Node caught up" check compares it with the dev box's node.
+  - **The dev box's node** with a second, restricted RPC listener on the LAN, keeping the localhost one everything else uses: add `--rpc-restricted-bind-ip`, set to the dev box's LAN address (in the Machine table of `docs/dev-environment.md`), plus `--rpc-restricted-bind-port 38089 --confirm-external-bind` to the `monerod-stagenet` service (check `monerod --help` for the exact names), then `sudo systemctl daemon-reload && sudo systemctl restart monerod-stagenet`.
+
+  When the installer asks for the node address, give that machine's LAN address with port `38089`. The addresses go in the organizer sheet (`~/xmr-pay-dev-data/05-setup/organizer.md`), never in git.
 - [ ] The public test hostname from phase 01 (built copy of the dev site, Cloudflare Access with the plugin-route bypass), up for the duration of the test.
 - [ ] For the remote-node run: a public stagenet node from a current node list.
 - [ ] A tester who hasn't seen the project, if you can find one. If not, run it yourself using only the admin-facing instructions, and write down every pause.
