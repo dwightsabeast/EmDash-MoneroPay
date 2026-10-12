@@ -431,6 +431,12 @@ Proposal (accepted):
    - **(b):** keep checkout and treat `expiresHeight` as unknown for invoices created during a sync, so only the time-based rules apply.
    Until Wyatt decides, the setup test is unaffected: run A starts only after the node has caught up, and run B uses a synced public node.
 
+   **Wyatt's decision (2026-10-12): (a), with a new code.** Implemented the same day:
+   - Checkout refuses with `WALLET_HOST_SYNCING` while the last sync's wallet check is `syncing`. As with `WALLET_HOST_SILENT`, it refuses before the price request, so nothing is claimed. A silent host is reported as silent, since its last check is stale.
+   - Get a test address refuses with a message saying the node is still catching up.
+   - The admin page's red line adds "Checkout is paused until then."
+   - Spec text to fold in, API contracts, checkout errors: add `WALLET_HOST_SYNCING` to the code list (`… | WALLET_HOST_SILENT | WALLET_HOST_SYNCING`), with: "`WALLET_HOST_SYNCING`: the wallet host's node is still catching up with the network (the admin page shows the same alert), so the chain height an invoice's deadline is set from would be far too low. Pages treat it like `WALLET_HOST_SILENT`: payments are temporarily unavailable."
+
 Effect on the admin budget: none (one installer line, no prompt or step). A new node's sync time is outside the 15 minutes; the message makes the wait visible instead of silent.
 Effect on the trust contract: none (the `checks` field is optional information in the sync body; no new route, capability, host or storage).
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):

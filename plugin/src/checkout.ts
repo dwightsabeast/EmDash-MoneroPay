@@ -11,7 +11,7 @@ import { type Currency, getRate, isCurrency } from "./rates";
 import { KV, SETTING, invoices, pool } from "./store";
 import type { BridgeState } from "./sync/handle";
 
-export type CheckoutErrorCode = "INVALID_REQUEST" | "PRODUCT_NOT_FOUND" | "RATE_UNAVAILABLE" | "NO_ADDRESS_AVAILABLE" | "TOO_MANY_OPEN" | "WALLET_HOST_SILENT";
+export type CheckoutErrorCode = "INVALID_REQUEST" | "PRODUCT_NOT_FOUND" | "RATE_UNAVAILABLE" | "NO_ADDRESS_AVAILABLE" | "TOO_MANY_OPEN" | "WALLET_HOST_SILENT" | "WALLET_HOST_SYNCING";
 export type CheckoutResponse =
 	| { token: string; address: string; amountAtomic: string; amountXmr: string; uri: string; expiresAt: string; status: "new" }
 	| { error: { code: CheckoutErrorCode } };
@@ -25,12 +25,15 @@ const MAX_BUCKETS = 500;
 const CLAIM_ATTEMPTS = 10;
 
 /**
- * The chain height an invoice is made at: the last sync's, while the wallet host is not silent. null otherwise, and
- * checkout refuses: an estimate after a silence was 35 blocks low in 3i, and an expiresHeight that is too low can turn
- * a payment made in time into a late one (spec change 16).
+ * The chain height an invoice is made at: the last sync's, while the wallet host is not silent and its node has caught
+ * up with the network. Otherwise the reason checkout refuses. An expiresHeight that is too low can turn a payment made
+ * in time into a late one: an estimate after a silence was 35 blocks low in 3i (spec change 16), and a wallet on a
+ * node that's still syncing reports a height far below the real chain (spec change 20).
  */
-export function checkoutHeight(bridge: BridgeState | null, now: number): number | null {
-	return bridge && now - bridge.lastSyncAt <= SILENT_MS ? bridge.height : null;
+export function checkoutHeight(bridge: BridgeState | null, now: number): number | "WALLET_HOST_SILENT" | "WALLET_HOST_SYNCING" {
+	if (!bridge || now - bridge.lastSyncAt > SILENT_MS) return "WALLET_HOST_SILENT";
+	if (bridge.checks?.wallet?.state === "syncing") return "WALLET_HOST_SYNCING";
+	return bridge.height;
 }
 
 const fail = (code: CheckoutErrorCode): CheckoutResponse => ({ error: { code } });
@@ -142,7 +145,7 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 	if (!entry || fiatMinor === null) return fail("PRODUCT_NOT_FOUND");
 
 	const chainHeight = checkoutHeight(await ctx.kv.get<BridgeState>(KV.bridge), now);
-	if (chainHeight === null) return fail("WALLET_HOST_SILENT");
+	if (typeof chainHeight !== "number") return fail(chainHeight);
 
 	const currencySetting = await ctx.settings.get<string>(SETTING.currency);
 	const currency: Currency = isCurrency(currencySetting) ? currencySetting : "USD";

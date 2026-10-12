@@ -77,10 +77,13 @@ describe("setup checklist", () => {
 	});
 
 	it("a node still catching up with the network: synced is to do, with the bridge's progress, and no test address yet", async () => {
-		await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
+		const h = await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
 		const b = await load();
 		expect(items(b)[1]).toEqual({ label: "Wallet synced", value: "To do: the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. A new node can take hours." });
 		expect(text(b)).not.toContain("get_test_address");
+		// Pressed anyway (a page loaded before the node fell behind): refused, nothing claimed (spec change 20).
+		expect((await h.admin.act("/payments", "get_test_address")).toast).toEqual({ type: "error", message: "The wallet host's node is still catching up with the network, so a test payment can't show up yet. On the wallet host, xmr-bridge status shows the progress." });
+		expect(await tips()).toEqual([]);
 	});
 
 	it("Get a test address: an open tip invoice on a pool address, shown as copyable text; pressing again reuses it", async () => {

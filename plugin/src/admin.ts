@@ -120,7 +120,7 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 	if (h.silentFor !== null) out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
 	if (h.paired && !h.bridge) out.push({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
 	if (checks?.wallet?.state === "syncing") {
-		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
+		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. Checkout is paused until then. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
 	}
 	if (checks?.wallet?.state === "behind") {
 		out.push({ variant: "error", title: "The wallet is behind its node", description: `${checks.wallet.detail ?? "The wallet is behind its node"}. It catches up by itself after a restart or an outage; if this stays, run xmr-bridge status on the wallet host.` });
@@ -252,7 +252,8 @@ async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: bool
 async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 	if (!(await ctx.settings.get<string>(SETTING.publicKey))) return { type: "error", message: "Connect a wallet host first." };
 	const chainHeight = checkoutHeight(await ctx.kv.get<BridgeState>(KV.bridge), now);
-	if (chainHeight === null) return { type: "error", message: "The wallet host must be syncing first. On the wallet host, run: xmr-bridge status" };
+	if (chainHeight === "WALLET_HOST_SILENT") return { type: "error", message: "The wallet host must be syncing first. On the wallet host, run: xmr-bridge status" };
+	if (chainHeight === "WALLET_HOST_SYNCING") return { type: "error", message: "The wallet host's node is still catching up with the network, so a test payment can't show up yet. On the wallet host, xmr-bridge status shows the progress." };
 	if ((await testTips(ctx)).some((t) => isOpen(t))) return { type: "info", message: "Your test address is below." };
 	const speedSetting = await ctx.settings.get<string>(SETTING.speed);
 	const speed: Speed = isSpeed(speedSetting) ? speedSetting : "standard";

@@ -131,7 +131,7 @@ describe("health panel", () => {
 		await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
 		const b = await load();
 		expect(field(b, "Wallet height")).toBe("3000000: the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has");
-		expect(banners(b)).toContainEqual({ variant: "error", title: "The wallet host's node is still syncing", description: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress." });
+		expect(banners(b)).toContainEqual({ variant: "error", title: "The wallet host's node is still syncing", description: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. Checkout is paused until then. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress." });
 		expect(await widgetText()).toContain("The wallet host's node is still syncing");
 	});
 
