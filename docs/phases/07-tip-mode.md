@@ -19,6 +19,7 @@ Phase 07, tip mode. Read docs/phases/07-tip-mode.md and docs/progress.md, then g
 
 **Plugin**
 
+- **Decided (Wyatt, 2026-10-12):** tips stay open whatever the wallet host's state, while orders keep refusing (`WALLET_HOST_SILENT`, `WALLET_HOST_SYNCING`). Read the row in `docs/decisions.md` first: it lists what this phase must settle (empty pool, no late review for tips, watch length, tip-page wording). The setup-test tip on the admin page doesn't change.
 - `checkout` accepts `kind: "tip"` with optional `contentRef` (collection and entry id, checked to exist through `ctx.content`), optional `amount` (fiat minor units or XMR atomic units, clearly typed), and optional `note` (plain text, length-limited, control characters stripped).
 - No amount: an open tip that settles on any counted amount at or above `minAtomic` (proposed 0.0001 XMR = 10^8 atomic units). With an amount: settles like a product at tolerance.
 - Confirmations: the lowest tier of the chosen speed preset.
