@@ -1839,3 +1839,81 @@ Next steps:
    - open and sync both Feather wallets
    - run A
 2. **Claude:** section D (stop `built`, reset, start `built`). Then Wyatt does run B. Then Claude does section E and the triage session.
+
+## 2026-10-13 · Phase 05 · Run A attempt 1 stopped; fixes before the rerun (spec change 23)
+
+Pushed before this: `0e58022` (the tips-first docs). CI run 38492672200 passed (plugin, bridge, race detector).
+
+**Run A, attempt 1** (Wyatt's notes: `~/xmr-pay-dev-data/05-setup/run-a-attempt-1.md`, local). It stopped before the install, and is recorded on `run-A.md`.
+- The passkey invite was remade once: the first registration attempt hadn't created the account.
+- **Tester error:** the command was pasted on run A's node container. The installer asked for the address and view key, then refused (same machine).
+- **Product bug:** the command said `--site http://localhost:4321`.
+- **Friction:** the one-line command widened the admin page.
+
+Why localhost:
+- EmDash 1.1.0 gives a sandboxed plugin only `emdash:site_url`. Site setup writes it once, and this site was set up under `astro dev`.
+- `EMDASH_SITE_URL` and `siteUrl` don't change it; sign-in reads them first, which is why the passkey worked.
+- EmDash has no settings field for it.
+- Details and evidence: spec change 23.
+
+**Where Coffer uses `ctx.site.url`** (Wyatt asked), and what localhost breaks:
+1. **`admin.ts`, the install command and its site line:** broken, and now fixed by the address rule below.
+2. **`admin.ts`, the Connect wallet host guard:** it only checked that some address existed, so localhost passed. It now refuses when the rule finds no usable address.
+3. **Nothing else today.** Checkout, status, sync, the cron and the widget don't use it.
+4. **Later:** phase 08's `returnUrl` must be on the site's own origin. A saved localhost address would refuse every real `returnUrl` (it fails closed). Phase 08 must use the same rule, or another source.
+
+Wyatt's decision (spec change 23), with his five conditions. `37c9cab`, plugin:
+- **A saved public https address** is always used. A different https browser origin only adds an alert naming both.
+- **Otherwise,** the admin's browser `Origin` is used when it's a bare, public https origin, read on the private admin route only.
+- **Anything else:** a red line and no command, and Connect refuses.
+- **The page says which address it uses, and where it came from.**
+- **The old hint is gone.**
+- **The command is four short lines,** and the page says to copy all four.
+
+`5ab0dec`, installer:
+- Without `--allow-same-machine`, a loopback `--site` and a same-machine install are refused before any prompt.
+- The dev flag still installs beside the site, on stagenet only.
+
+Tests:
+- **Plugin:** 218 pass. 9 are new in `admin-site.test.ts`, red first:
+  - the rule's cases
+  - the route with real `Origin` headers, on page load and on the button
+  - F06: spoofed `Origin`, `Host` and `X-Forwarded-Host` leave the `status`, `checkout` and `bridge/sync` replies unchanged
+- **Plugin:** two older tests were updated for the new wording and the four lines.
+- **Plugin checks:** typecheck, validate and the bundle check pass (51.4 KB).
+- **Live proof** (condition 1) on the dev site, Node runner, saved address localhost:
+  - `Origin` reaches the admin route, and the page uses `https://dev.wyattdilley.com` "from your browser".
+  - Without `Origin`, the red line.
+  - Output: `~/xmr-pay-dev-data/05-setup/origin-probe-output.txt`.
+- **Bridge:** gofmt, vet, and all 20 packages pass. New tests, red first:
+  - three loopback sites refused with nothing asked
+  - the same-machine refusal asks nothing
+  - the dev flag with a loopback site
+  - the four-line command fed to `sh` on stdin, as a paste arrives
+- **Script tests:** 16 pass.
+- **Not covered yet:** the built copy (its sandbox runs on workerd) in a real browser. EmDash's runtime filters headers the same way for both runners (`handleSandboxedRoute`), but only Wyatt's check of the page before the clock proves it there.
+
+Docs:
+- spec change 23, with the matrix note for F06 and an upstream note draft
+- three `docs/setup-friction.md` rows and a lesson; two lessons now say "one install command" instead of "one line"
+- `docs/setup-test.md` steps 2 and 3 (four lines)
+- local: attempt 1 on `run-A.md`, and the organizer sheet's B7 note
+
+**For Wyatt (the node container):**
+- Nothing should be there.
+- His read-only check command is in the chat.
+- No need to clear the shell history: the code in it has expired, and the reset removes it.
+
+Next steps:
+1. **Push** these commits and wait for CI (Wyatt's rule: CI passes before the release rebuild).
+2. **Rebuild:**
+   - stop `built`
+   - `build-dev-release.sh --base http://192.168.8.249:8099`; Wyatt signs it
+   - `setup-test-plugin.sh`, then the site build
+   - reset (it clears the stale code; the tester account stays)
+   - start `built`
+3. **Wyatt:**
+   - the node-container check
+   - roll `coffer-test` back to `blank`
+   - check the page's site line on the built copy
+   - rerun A (the clock starts at a fresh reload)

@@ -488,3 +488,31 @@ Effect on the admin budget: none.
 Effect on the trust contract: none (item 4). The icon is an admin-page change, not part of the trust contract.
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
 - Build plan and testing: after step 7, "7b. **Adversarial testing, pass 1.** A fresh session that didn't write the code attacks everything a tips-only install exposes, and proves no order path is reachable." Step 9 becomes "**Release 1 (tips).**" with the mainnet tips trial. After it: "8b. **Adversarial testing, pass 2** (orders, products, the store adapter, and a retest of pass 1 on changed code)" and "9b. **Release 2 (orders).**" Step 8 is marked as release 2.
+
+## 23. The site address a sandboxed plugin gets can be localhost for good  (status: accepted, 2026-10-13)
+Found in: phase 05, run A attempt 1 (`~/xmr-pay-dev-data/05-setup/run-a-attempt-1.md`, local).
+Spec says: Admin setup and upkeep, the install flow: the admin page shows the install command with the site's own address. The plugin's address was assumed to follow the site's configured `siteUrl` (or `EMDASH_SITE_URL`), as the old admin hint said.
+Evidence (EmDash 1.1.0, from its source):
+- A sandboxed plugin's `ctx.site.url` is the `emdash:site_url` option and nothing else (`emdash-runtime`, `readSiteInfo`; the Node runtime sets no `deps.siteInfo`).
+- That option is written once, at site setup (`setIfAbsent`). Setup under `astro dev` on localhost saves the request's own origin, so this dev site holds `http://localhost:4321`. The dev setup bypass also overwrites it with the request's origin.
+- `siteUrl` and `EMDASH_SITE_URL` never update it. EmDash's own sign-in reads those first (`getPublicOrigin`), which is why the passkey worked at `https://dev.wyattdilley.com` while Coffer's command said localhost.
+- EmDash's settings page has no field for it: its "url" setting writes `site:url`, a different key. Nothing in the CLI writes it either.
+- So a real admin who first set their site up under `npm run dev`, or who later moved domains, gets a command aimed at the wrong address, and can only fix it in the database.
+- On the Node runner, a route that declares no `request` block gets every request header except EmDash's strip list (cookies, authorization, Cloudflare Access headers, `x-emdash-request`). The admin route declares none, so the browser's `Origin` reaches it. The phase 01 stripping applies to routes with a `request` block, such as `bridge/sync`. Proved live on the dev site (saved address localhost): with `Origin: https://dev.wyattdilley.com` the page used that address; without it, the red line.
+
+Decision (Wyatt, 2026-10-13), with his five conditions:
+1. **A saved public https address is always used.** When the admin's browser is on a different https origin, an alert names both and the command keeps the saved one: no silent switch after a domain move (condition 5).
+2. **Otherwise the admin's own browser Origin is used,** when it is a bare https origin that isn't loopback (condition 2). This covers a saved address that is loopback, plain http or missing.
+3. **Anything else:** a red line naming the saved address, no command, and Connect wallet host refuses.
+4. **Origin is read only on the private admin route** (signed in, `plugins:manage`), never on a public route (condition 3). Tests show spoofed `Origin`, `Host` and `X-Forwarded-Host` change nothing in the `status`, `checkout` and `bridge/sync` replies.
+5. **The page says which address the command uses and where it came from** (condition 4): "(from your browser, because EmDash's saved address for this site is http://localhost:4321)" or "(EmDash's saved address for this site)".
+6. **Proven before building on it** (condition 1): the runtime test host with real headers, and the live probe above.
+7. **The installer** refuses a `--site` on localhost, 127.0.0.0/8 or ::1 without `--allow-same-machine`, before any prompt. Its same-machine check also moved ahead of the address and view-key prompts.
+
+Effect on the admin budget: better. An admin whose EmDash saved a wrong address no longer needs a database edit; one opening the page at an address the wallet host can't use is told so, with no command.
+Effect on the trust contract: none. No new route, header declaration, capability or setting.
+Matrix note (for `docs/security-matrix.md`, row F06; Wyatt copies it into the Claude Doc): "The admin page reads the request's `Origin` header, on the private admin route only, and only to fill in the wallet host's site address when EmDash's saved one is loopback, plain http or missing; https only, never loopback. Public routes build no URL from any request header. Tests: `plugin/tests/routes/admin-site.test.ts`."
+Upstream note (draft for Wyatt to post to EmDash): "`ctx.site.url` for sandboxed plugins comes only from the `emdash:site_url` option, which setup writes once (under `astro dev`, as the loopback origin) and nothing else updates. `siteUrl` and `EMDASH_SITE_URL` are ignored for it, though sign-in and invites prefer them (`getPublicOrigin`). Could plugin site info prefer the configured origin, as `getSiteBaseUrl` does, or could the admin settings expose the saved address?"
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Admin setup and upkeep, the install flow: "The command carries the site's address: EmDash's saved address when it is a public https one; otherwise the address the admin has the page open at, when that is https. The page says which, and shows no command when neither will do."
+- Bridge service, the install command: the four-line form (spec change 21's command, split at `if` / `elif` / `else` / `fi`, with the shorter message "This needs curl or wget: sudo apt install curl, then paste again.").
