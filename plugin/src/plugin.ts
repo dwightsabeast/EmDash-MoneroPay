@@ -76,7 +76,10 @@ const plugin: SandboxedPlugin = {
 		admin: {
 			methods: ["POST"],
 			permission: "plugins:manage",
-			handler: async (routeCtx, ctx) => handleAdmin(ctx, routeCtx.input, Date.now()),
+			// No `request` block: EmDash passes this route the request's headers (minus cookies and credentials), so the
+			// admin's browser Origin is here for the wallet host's address when EmDash's saved one can't be used
+			// (spec change 23). Public routes never read it (matrix row F06).
+			handler: async (routeCtx, ctx) => handleAdmin(ctx, routeCtx.input, Date.now(), routeCtx.request.headers.origin),
 		},
 	},
 };

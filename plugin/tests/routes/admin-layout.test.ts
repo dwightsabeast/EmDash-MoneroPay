@@ -133,7 +133,7 @@ describe("Settings after setup (round 2, change 3)", () => {
 		expect(kinds(b)).toEqual(["header", "form:settings", "context", "fields:bridge_key", "context", "actions:connect_wallet_host", "context", "context", "banner", "code", "context", "code", "accordion:setup"]);
 		const s = settings(b);
 		expect(s[8]).toMatchObject({ type: "banner", title: "Pairing code ready" });
-		expect(String(s[9].code)).toMatch(/^if command -v curl .*\/install\.sh; .* fi \| sh -s -- --site /);
+		expect(String(s[9].code)).toMatch(/^if command -v curl .*\/install\.sh\n.*\nfi \| sh -s -- --site /s);
 		expect(String(s[11].code)).toMatch(/^xmr-bridge install /);
 		expect(b.some((x) => x.type === "accordion" && String(x.block_id).startsWith("connect"))).toBe(false);
 	});

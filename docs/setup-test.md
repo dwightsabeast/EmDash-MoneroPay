@@ -50,11 +50,11 @@ Under **Connect wallet host**, press **Connect wallet host**.
 
 **Check:** a box says **Pairing code ready**, with the time it works until, and below it a command that starts with `if command -v curl`. The code in it works once, for 15 minutes.
 
-Copy the whole command: it's one line.
+Copy the whole command: all four lines, from `if` to the end of the line that starts with `fi`.
 
 ### 3. Run the command (the wallet host)
 
-On the **wallet host**, not your site's server, paste the command into the terminal and press Enter.
+On the **wallet host**, not your site's server, paste the four lines into the terminal together and press Enter.
 
 The command downloads the Coffer wallet host and checks it, then starts the installer. `sudo` may ask for your password on the wallet host.
 

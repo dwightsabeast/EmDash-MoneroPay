@@ -26,7 +26,7 @@ func adminCommand(t *testing.T, installURL, site, code string) string {
 	return strings.NewReplacer("${INSTALL_URL}", installURL, "${siteUrl}", site, "${code}", code).Replace(string(m[1]))
 }
 
-// The admin page's one-line command, run by sh on machines with curl, with only wget, and with neither (phase 05:
+// The admin page's four-line command, run by sh on machines with curl, with only wget, and with neither (phase 05:
 // a clean Ubuntu 24.04 container has no curl).
 func TestAdminInstallCommand(t *testing.T) {
 	// A stand-in install.sh that records its arguments.
@@ -59,8 +59,21 @@ func TestAdminInstallCommand(t *testing.T) {
 			t.Errorf("%s, missing file: record %q, output %q", tools, rec, out)
 		}
 	}
+	// Pasted into a terminal, the four lines reach the shell one by one; it waits for `fi`, then runs the command once.
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	paste := exec.Command("/bin/sh")
+	paste.Stdin = strings.NewReader(adminCommand(t, srv.URL+"/install.sh", "https://shop.example", "AbCdEfGhIjKlMnOpQrSt_-") + "\n")
+	paste.Env = []string{"PATH=" + toolPath(t, "wget"), "HOME=" + dir, "RECORD=" + record}
+	if out, err := paste.CombinedOutput(); err != nil {
+		t.Errorf("pasted: %v: %s", err, out)
+	}
+	if got, _ := os.ReadFile(record); strings.TrimSpace(string(got)) != "--site https://shop.example --pair AbCdEfGhIjKlMnOpQrSt_-" {
+		t.Errorf("pasted: install.sh got %q", got)
+	}
+
 	rec, out := run("none", "/install.sh")
-	if rec != "" || !strings.Contains(out, "needs curl or wget") || !strings.Contains(out, "sudo apt install curl") || !strings.Contains(out, "paste this command again") {
+	if rec != "" || !strings.Contains(out, "needs curl or wget") || !strings.Contains(out, "sudo apt install curl") || !strings.Contains(out, "paste again") {
 		t.Errorf("neither: record %q, output %q", rec, out)
 	}
 }

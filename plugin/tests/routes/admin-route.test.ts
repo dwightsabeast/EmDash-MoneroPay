@@ -79,13 +79,17 @@ describe("admin page", () => {
 		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).includes("/install.sh")) as B).code as string;
 		const site = cmd.split("--site ")[1].split(" ")[0];
 		expect(cmd).toBe(installCommand(site, code as string));
-		// curl, else wget (a clean Ubuntu 24.04 container has no curl), else a plain message; one line, no extra step.
-		// The bridge's installer tests run this exact line under sh with each (bridge/internal/installer/installcmd_test.go).
+		// curl, else wget (a clean Ubuntu 24.04 container has no curl), else a plain message; no extra step. Four short
+		// lines, so it fits the page (run A attempt 1). The bridge's installer tests run it under sh with each
+		// (bridge/internal/installer/installcmd_test.go).
 		expect(cmd).toBe(
-			`if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}; elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}; ` +
-				`else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi` +
-				` | sh -s -- --site ${site} --pair ${code}`,
+			`if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}\n` +
+				`elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}\n` +
+				`else echo "This needs curl or wget: sudo apt install curl, then paste again." >&2\n` +
+				`fi | sh -s -- --site ${site} --pair ${code}`,
 		);
+		expect(cmd.split("\n")).toHaveLength(4);
+		expect(texts(blocks)).toContain("copy all four and paste them together");
 		expect(texts(blocks)).toContain(`xmr-bridge install --site`);
 		const state = (await host.inspect.kv.get<{ codeHash: string; expiresAt: number; used: boolean }>("state:pairing")) as { codeHash: string; expiresAt: number; used: boolean };
 		expect(state.codeHash).toBe(await hashPairingCode(code as string));
@@ -159,12 +163,12 @@ describe("pairing codes and the site URL", () => {
 		expect(await pairWith(host, second)).toMatchObject({ ok: true });
 	});
 
-	it("the install command uses the configured site URL, not the request's host, and says which address it is", async () => {
+	it("the install command uses the saved https site URL, not the request's host, and says which address it is", async () => {
 		host = await createPluginRuntimeTestHost({ site: { url: "https://shop.example" } });
 		const blocks = (await host.admin.act("/payments", "connect_wallet_host")).blocks as B[];
 		const cmd = (find(blocks, (x) => x.type === "code" && String(x.code).includes("/install.sh")) as B).code as string;
 		expect(cmd).toContain("--site https://shop.example --pair ");
-		expect(texts(blocks)).toContain("The wallet host will connect to https://shop.example.");
+		expect(texts(blocks)).toContain("The wallet host will connect to https://shop.example (EmDash's saved address for this site).");
 	});
 
 	it("with no site URL, no command is shown and no code is created", async () => {

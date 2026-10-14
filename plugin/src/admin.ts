@@ -266,20 +266,81 @@ async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 }
 
 /**
- * The one-line install command for the wallet host: curl, else wget (a clean Ubuntu 24.04 container has no curl), else
- * a plain message saying what to install. One tool is chosen before anything downloads, so a half-finished curl can't
- * be followed by a second copy. Kept as one template literal: the bridge's tests run it under sh
- * (bridge/internal/installer/installcmd_test.go).
+ * The install command for the wallet host, on four short lines so it fits the page (setup test, run A attempt 1):
+ * curl, else wget (a clean Ubuntu 24.04 container has no curl), else a plain message saying what to install. One tool
+ * is chosen before anything downloads, so a half-finished curl can't be followed by a second copy. The shell runs it
+ * once `fi` arrives, so pasting all four lines runs it once. Kept as one template literal: the bridge's tests run it
+ * under sh (bridge/internal/installer/installcmd_test.go).
  */
 export function installCommand(siteUrl: string, code: string): string {
-	return `if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}; elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}; else echo "This command needs curl or wget. Install one (on Debian or Ubuntu: sudo apt install curl), then paste this command again." >&2; fi | sh -s -- --site ${siteUrl} --pair ${code}`;
+	return `if command -v curl >/dev/null; then curl -fsSL ${INSTALL_URL}
+elif command -v wget >/dev/null; then wget -nv -O- ${INSTALL_URL}
+else echo "This needs curl or wget: sudo apt install curl, then paste again." >&2
+fi | sh -s -- --site ${siteUrl} --pair ${code}`;
+}
+
+/** The address the install command uses, and where it came from (spec change 23). */
+export type WalletHostSite =
+	| { url: string; source: "saved" | "browser"; saved: string; browser?: string }
+	| { url: null; saved: string };
+
+/** An https origin with nothing after it (no path, login, query), not on this machine; else null. */
+function publicHttpsOrigin(s: string | undefined): string | null {
+	if (!s) return null;
+	let u: URL;
+	try {
+		u = new URL(s);
+	} catch {
+		return null;
+	}
+	if (u.protocol !== "https:" || u.origin !== s.replace(/\/$/, "") || isLoopbackHost(u.hostname)) return null;
+	return u.origin;
+}
+
+function isLoopbackHost(host: string): boolean {
+	const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+	return h === "localhost" || h.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(h) || h === "::1";
+}
+
+/**
+ * EmDash 1.1.0 gives a sandboxed plugin only the address saved at site setup (`emdash:site_url`); a site first set up
+ * under `astro dev` keeps http://localhost:4321 for good, and neither siteUrl nor EMDASH_SITE_URL changes it. A saved
+ * public https address is always used (a different browser origin only adds a warning). Otherwise the admin's own
+ * browser origin is used if it's a public https one: it comes from the private admin route only (signed-in admins
+ * with plugins:manage), never from a public route (matrix row F06). Anything else: no address, no command.
+ */
+export function walletHostSite(savedUrl: string, browserOrigin: string | undefined): WalletHostSite {
+	const saved = savedUrl.replace(/\/$/, "");
+	const browser = publicHttpsOrigin(browserOrigin);
+	const savedPublic = publicHttpsOrigin(saved);
+	if (savedPublic) return browser && browser !== savedPublic ? { url: savedPublic, source: "saved", saved, browser } : { url: savedPublic, source: "saved", saved };
+	return browser ? { url: browser, source: "browser", saved } : { url: null, saved };
+}
+
+/** The site line and, when the address can't be used or two addresses disagree, a banner. */
+function siteBlocks(site: WalletHostSite): Block[] {
+	if (site.url === null) {
+		const description = site.saved
+			? `EmDash's saved address for this site is ${site.saved}, which a wallet host on another machine can't use: it needs your site's public https address. Open this page at that address (the one visitors use), and Coffer uses it instead.`
+			: "EmDash has no saved address for this site. Open this page at your site's public https address (the one visitors use), and Coffer uses it.";
+		return [{ type: "banner", variant: "error", title: site.saved ? "Your site's address can't be used for the wallet host" : "Your site's address isn't known", description }];
+	}
+	const line: Block = {
+		type: "context",
+		text: site.source === "browser" ? `The wallet host will connect to ${site.url} (from your browser, because EmDash's saved address for this site is ${site.saved || "empty"}).` : `The wallet host will connect to ${site.url} (EmDash's saved address for this site).`,
+	};
+	if (!site.browser) return [line];
+	return [
+		line,
+		{ type: "banner", variant: "alert", title: "Two addresses for this site", description: `EmDash's saved address is ${site.url}, but you opened this page at ${site.browser}. The command uses ${site.url}. If the site has moved, the wallet host won't reach it there: open this page at ${site.url} to check it still answers.` },
+	];
 }
 
 const minutesLeft = (expiresAt: number, now: number) => Math.max(0, Math.floor((expiresAt - now) / 60_000));
 
 function installBlocks(siteUrl: string, code: string, expiresAt: number, now: number): Block[] {
 	return [
-		{ type: "banner", variant: "default", title: "Pairing code ready", description: `It works once, until ${utc(expiresAt)} (${minutesLeft(expiresAt, now)} min left). Run one of these on your wallet host (a Linux machine, not your site's server).` },
+		{ type: "banner", variant: "default", title: "Pairing code ready", description: `It works once, until ${utc(expiresAt)} (${minutesLeft(expiresAt, now)} min left). Run one of these on your wallet host (a Linux machine, not your site's server). The first is four lines: copy all four and paste them together.` },
 		{ type: "code", language: "bash", code: installCommand(siteUrl, code) },
 		{ type: "context", text: "Cautious path, if the bridge is already installed: download and verify it first, then run:" },
 		{ type: "code", language: "bash", code: `xmr-bridge install --site ${siteUrl} --pair ${code}` },
@@ -596,6 +657,8 @@ async function invoiceAction(ctx: PluginContext, value: unknown, now: number): P
 }
 
 interface PageOptions {
+	/** The admin request's Origin header, for the wallet host's address when EmDash's saved one can't be used. */
+	origin?: string;
 	shownCode?: { code: string; expiresAt: number };
 	/** The invoice list's page (a storage cursor); the newest page when absent. */
 	cursor?: string;
@@ -613,12 +676,10 @@ const CONNECT_HINT = "Use this to move, rebuild or replace your wallet host. It 
  * the warning, the button. After setup, in Settings: the button, its hint, the site line, then the code and commands
  * (Wyatt, round 2, change 3).
  */
-async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSetup: boolean, shownCode?: PageOptions["shownCode"]): Promise<Block[]> {
-	// The site URL comes from the site's configuration or the address stored at setup, never from this request.
-	const siteUrl = ctx.site.url.replace(/\/$/, "");
-	const site: Block = siteUrl
-		? { type: "context", text: `The wallet host will connect to ${siteUrl}. If that isn't your site's public address, set siteUrl in the site's Astro config (or EMDASH_SITE_URL) first.` }
-		: { type: "banner", variant: "error", title: "Your site's address isn't known", description: "Set siteUrl in the site's Astro config (or the EMDASH_SITE_URL environment variable) to its public address, then reload this page." };
+async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSetup: boolean, shownCode?: PageOptions["shownCode"], origin?: string): Promise<Block[]> {
+	const where = walletHostSite(ctx.site.url, origin);
+	const siteUrl = where.url ?? "";
+	const site = siteBlocks(where);
 	const code: Block[] = [];
 	if (siteUrl && shownCode) code.push(...installBlocks(siteUrl, shownCode.code, shownCode.expiresAt, now));
 	else if (siteUrl) {
@@ -632,9 +693,9 @@ async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSe
 	if (afterSetup) {
 		// No confirmation dialog (EmDash 1.1.0's has no padding): making a code unpairs nothing, so the hint says it instead.
 		const hint = h.paired ? `${CONNECT_HINT} When the new one pairs, the current wallet host stops syncing.` : CONNECT_HINT;
-		return [button, { type: "context", text: hint }, site, ...code, ...paired];
+		return [button, { type: "context", text: hint }, ...site, ...code, ...paired];
 	}
-	return [...(siteUrl ? [] : [site]), ...code, ...paired, ...(siteUrl ? [site] : []), ...(h.paired ? [{ type: "context", text: PAIRED_WARNING }] : []), button];
+	return [...(siteUrl ? [] : site), ...code, ...paired, ...(siteUrl ? site : []), ...(h.paired ? [{ type: "context", text: PAIRED_WARNING }] : []), button];
 }
 
 /**
@@ -645,7 +706,7 @@ async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSe
 async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
 	const h = await health(ctx, now, { checkRate: true });
 	const setup = await setupSection(ctx, h);
-	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode);
+	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode, opts.origin);
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h)];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
 	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, now, opts)));
@@ -690,7 +751,8 @@ async function widget(ctx: PluginContext, now: number): Promise<Block[]> {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-export async function handleAdmin(ctx: PluginContext, input: unknown, now: number): Promise<AdminResponse> {
+export async function handleAdmin(ctx: PluginContext, input: unknown, now: number, origin?: string): Promise<AdminResponse> {
+	const view = (opts: PageOptions = {}) => page(ctx, now, { ...opts, origin });
 	// Config-managed installs get neither plugin:install nor plugin:activate, so an admin load schedules the cron.
 	if (!(await ctx.kv.get<boolean>(KV.cronScheduled))) await ensureCron(ctx);
 	const i = isObject(input) ? input : {};
@@ -699,38 +761,38 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 	if (i.type === "form_submit" && i.action_id === "save_settings") {
 		const values = isObject(i.values) ? i.values : {};
 		if (!isCurrency(values.currency) || !isSpeed(values.speed)) {
-			return { blocks: await page(ctx, now), toast: { message: "Choose a currency and a confirmation speed from the lists.", type: "error" } };
+			return { blocks: await view(), toast: { message: "Choose a currency and a confirmation speed from the lists.", type: "error" } };
 		}
 		await ctx.settings.set(SETTING.currency, values.currency);
 		await ctx.settings.set(SETTING.speed, values.speed);
-		return { blocks: await page(ctx, now), toast: { message: "Settings saved. They apply to new invoices.", type: "success" } };
+		return { blocks: await view(), toast: { message: "Settings saved. They apply to new invoices.", type: "success" } };
 	}
 	if (i.type === "block_action" && i.action_id === "connect_wallet_host") {
-		if (!ctx.site.url) return { blocks: await page(ctx, now), toast: { message: "Set your site's public address first.", type: "error" } };
+		if (walletHostSite(ctx.site.url, origin).url === null) return { blocks: await view(), toast: { message: "Open this page at your site's public https address first.", type: "error" } };
 		// A new code replaces the stored hash, so any earlier code stops working at once.
 		const { code, state } = await newPairingCode(now);
 		await ctx.kv.set(KV.pairing, state);
-		return { blocks: await page(ctx, now, { shownCode: { code, expiresAt: now + PAIRING_TTL_MS } }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };
+		return { blocks: await view({ shownCode: { code, expiresAt: now + PAIRING_TTL_MS } }), toast: { message: "Pairing code created. It works once, for 15 minutes.", type: "success" } };
 	}
 	if (i.type === "block_action" && i.action_id === "get_test_address") {
 		const toast = await testAddress(ctx, now);
-		return { blocks: await page(ctx, now), toast };
+		return { blocks: await view(), toast };
 	}
 	if (i.type === "block_action" && i.action_id === "invoices_page") {
 		const v = isObject(i.value) ? i.value : {};
 		const cursor = typeof v.cursor === "string" && v.cursor.length > 0 && v.cursor.length <= 1000 ? v.cursor : undefined;
-		return { blocks: await page(ctx, now, cursor ? { cursor } : {}) };
+		return { blocks: await view(cursor ? { cursor } : {}) };
 	}
-	if (i.type === "block_action" && i.action_id === "invoices_newest") return { blocks: await page(ctx, now) };
+	if (i.type === "block_action" && i.action_id === "invoices_newest") return { blocks: await view() };
 	if (i.type === "block_action" && i.action_id === "review_page") {
 		const v = isObject(i.value) ? i.value : {};
 		const n = typeof v.start === "number" && Number.isFinite(v.start) ? Math.floor(v.start / REVIEW_STEP) * REVIEW_STEP : 0;
-		return { blocks: await page(ctx, now, { reviewStart: Math.min(REVIEW_MAX - REVIEW_STEP, Math.max(0, n)) }) };
+		return { blocks: await view({ reviewStart: Math.min(REVIEW_MAX - REVIEW_STEP, Math.max(0, n)) }) };
 	}
 	if (i.type === "block_action" && i.action_id === "invoice_action") {
 		const r = await invoiceAction(ctx, i.value, now);
-		return { blocks: await page(ctx, now, { ...(r.cursor ? { cursor: r.cursor } : {}), ...(r.acted ? { acted: r.acted } : {}) }), toast: r.toast };
+		return { blocks: await view({ ...(r.cursor ? { cursor: r.cursor } : {}), ...(r.acted ? { acted: r.acted } : {}) }), toast: r.toast };
 	}
-	if (i.type === "page_load" || i.type === undefined) return { blocks: await page(ctx, now) };
-	return { blocks: await page(ctx, now), toast: { message: "That action isn't available.", type: "error" } };
+	if (i.type === "page_load" || i.type === undefined) return { blocks: await view() };
+	return { blocks: await view(), toast: { message: "That action isn't available.", type: "error" } };
 }
