@@ -2,7 +2,7 @@
 
 **Goal:** tips on the same engine: open or suggested amounts, an optional entry reference and note, settling at the dust floor, with per-entry totals for the owner.
 **Spec sections:** Tip jar mode (all), API contracts (`checkout` tips), Invoice lifecycle (Tips rule, presets), Theme integration (tip button).
-**Done when:** a stagenet tip from the dev site's tip button settles; per-entry totals show in the admin page; tests cover every amount mode and the purge.
+**Done when:** a stagenet tip from the dev site's tip button settles; the release-1 switch is off and tested; per-entry totals show in the admin page; tests cover every amount mode and the purge.
 
 ## For Wyatt, before the session
 
@@ -26,11 +26,17 @@ Phase 07, tip mode. Read docs/phases/07-tip-mode.md and docs/progress.md, then g
 - Under-dust payments at expiry: the spec doesn't say, and the POC simply expired them. Ask Wyatt; review as underpaid is the cautious choice.
 - Notes and buyer data are purged 30 days after the invoice is final, like other buyer data.
 - Admin page: a tips view with totals per entry (counted, settled tips only) and recent notes.
+- **The release-1 switch (spec change 22).** One constant in the plugin, turned off here, once tip checkout works. Off means:
+  - `checkout` takes only `kind: "tip"`; `product` and `order` get exactly the reply an unknown `kind` gets
+  - the admin page hides product-only parts: the "All invoices" table (today filtered to products; tips get the tips view) and the review advice's "find it under All invoices" hint
+  - tests prove each of those with the switch off, and that turning it on restores product checkout, so release 2 starts from working code
+  - `scripts/dev-e2e.mjs` and `scripts/dev-invoices.mjs` move from product checkouts to tips
+  Phase 07b's row A0 attacks all of it.
 - Public tips count: the spec allows an optional count (off by default, never amounts or notes), but showing it to visitors needs either a new public route or another way to read it, plus a fourth setting. Both touch frozen parts (routes, settings). Write it up in `docs/spec-changes.md` and let Wyatt choose between building it that way and dropping it from v1.
 
 **Theme:** `TipButton.astro`, for entry templates: suggested amounts, a custom amount, or "any amount", then the same `/pay` page.
 
-**Tests:** each amount mode, dust floor boundaries, contentRef validation, note sanitizing and length, purge timing, totals excluding unsettled and not-counted transfers.
+**Tests:** the release-1 switch (above), each amount mode, dust floor boundaries, contentRef validation, note sanitizing and length, purge timing, totals excluding unsettled and not-counted transfers.
 
 **Stop points:** the public count; any new setting; any change to the trust contract.
 

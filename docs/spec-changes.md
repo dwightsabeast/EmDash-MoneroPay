@@ -471,3 +471,20 @@ Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
   ```
 - After it: "The command uses curl, or wget where curl isn't installed (as on a clean Ubuntu or Debian container). With neither, it says what to install."
 
+
+## 22. Tips first: two releases  (status: accepted, 2026-10-13)
+Found in: Wyatt's plan change of 2026-10-13 (`docs/plan-change-tips-first.md`, Part 1), during phase 05.
+Spec says: Build plan and testing, steps 5 to 9: one release after the store adapter (step 8).
+Evidence: two Stripe-based payment plugins and a commerce plugin are already on the EmDash registry. Nothing is fulfilled on a tip, so a tips-only release carries far less risk than selling goods. No release reaches mainnet without an adversarial pass first.
+Decision (Wyatt, 2026-10-13):
+1. **Release 1, tips only:** phase 05 (unchanged; the confirmed test payment is a test tip), 06 (scoped to what tips need), 07 (unchanged), the new 07b (adversarial testing, pass 1), then 09 (release, mainnet tips trial). No order or product checkout.
+2. **Release 2, orders:** 08 (store adapter), 08b (adversarial testing, pass 2), 09b (orders release, security report regenerated to cover orders).
+3. **Goods kept out of release 1 by one switch** (Wyatt's choice of 2026-10-13, over leaving the code out of the build): a single constant in the plugin. With it off, `checkout` accepts only `kind: "tip"`, and `product` and `order` get the same reply as an unknown `kind`. The admin page hides what only products use (the "All invoices" table filtered to products, the review advice's "find it under All invoices" hint). The release-1 theme package has no PayButton. Dev and release builds run the same code. Phase 07 turns it off when tip checkout lands; release 2 turns it on. Pass 1 attacks every path (07b, row A0).
+4. **The trust contract stays as declared:** release 1 publishes today's manifest unchanged. Per the spec and phase 08, orders need no new capability, host, route or index. If phase 08 finds it needs more (for example an `orderRef` index for a store that retries checkout), release 2 takes the version bump and the admin's fresh consent, written up here first.
+5. **Security reports:** release 1's published report covers tips. Order-only threats stay listed, marked "covered in release 2".
+6. **Sidebar icon:** the admin page declares `"icon": "coins"` (Phosphor's Coins; EmDash shows its generic plug when none is declared), set in phase 09's manifest step.
+
+Effect on the admin budget: none.
+Effect on the trust contract: none (item 4). The icon is an admin-page change, not part of the trust contract.
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Build plan and testing: after step 7, "7b. **Adversarial testing, pass 1.** A fresh session that didn't write the code attacks everything a tips-only install exposes, and proves no order path is reachable." Step 9 becomes "**Release 1 (tips).**" with the mainnet tips trial. After it: "8b. **Adversarial testing, pass 2** (orders, products, the store adapter, and a retest of pass 1 on changed code)" and "9b. **Release 2 (orders).**" Step 8 is marked as release 2.

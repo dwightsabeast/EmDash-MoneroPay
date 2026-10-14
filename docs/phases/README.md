@@ -1,6 +1,6 @@
 # Build phases
 
-Ten phases, in order. Each ends in something that runs. A phase may take several Claude Code sessions; `docs/progress.md` carries the thread between them.
+Coffer ships in two releases (spec change 22, 2026-10-13): **release 1, tips only** (phases 00–07, 07b and 09), then **release 2, orders** (08, 08b and 09b). The table is in the order the phases run, so 09 comes before 08. Each phase ends in something that runs. A phase may take several Claude Code sessions; `docs/progress.md` carries the thread between them.
 
 | Phase | File | Ends with | Wyatt needed for |
 | --- | --- | --- | --- |
@@ -10,10 +10,14 @@ Ten phases, in order. Each ends in something that runs. A phase may take several
 | 03 | `03-bridge-and-installer.md` | Go bridge and `install.sh`; a real stagenet payment settles end to end | Release-signing and GPG-verification choices; running the installer with `sudo`; stagenet payments by hand |
 | 04 | `04-admin-page.md` | Block Kit admin page and dashboard widget | Looking at the page in a browser |
 | 05 | `05-setup-test.md` | A timed fresh install on a separate machine, under 15 minutes | A second container, a tester, a remote stagenet node |
-| 06 | `06-theme-kit.md` | Pay button and `/pay` page as Astro components | npm package name and account |
-| 07 | `07-tip-mode.md` | Tips with open amounts, notes and per-entry totals | Small UI choices |
-| 08 | `08-store-adapter.md` | `kind: "order"`, the payment contract doc and tests, a DashCommerce adapter draft | Posting upstream |
-| 09 | `09-release.md` | Signed releases, registry listing, install script live, mainnet tips trial | Atmosphere account, offline signing key, DNS, live-site go-ahead |
+| 06 | `06-theme-kit.md` | The `/pay` page and `isPaid` as Astro components (release 1: what tips need; PayButton moves to 08) | npm package name and account |
+| 07 | `07-tip-mode.md` | Tips with open amounts, notes and per-entry totals; the release-1 switch turned off (checkout takes tips only) | Small UI choices |
+| 07b | `07b-adversarial-testing.md` (pass 1) | The tips surface attacked by a fresh session; no Critical or High finding open; matrix updated | Approving the attack plan, stagenet payments by hand, `sudo` steps, ruling on findings |
+| 09 | `09-release.md` (release 1) | Signed releases, registry listing (tips), install script live, mainnet tips trial | Atmosphere account, offline signing key, DNS, live-site go-ahead |
+| **Release 2** | | | |
+| 08 | `08-store-adapter.md` | `kind: "order"`, PayButton, the payment contract doc and tests, a DashCommerce adapter draft | Posting upstream, talking to store plugins |
+| 08b | `07b-adversarial-testing.md` (pass 2) | Orders and the adapter attacked to the same bar | The same as 07b |
+| 09b | `09-release.md` (release 2 section) | Orders release on the registry, security report covering orders | Release go-ahead |
 
 ## Running a phase
 

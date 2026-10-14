@@ -1,12 +1,15 @@
 # Phase 08 — Store adapter and the payment contract
 
+**Release 2 (spec change 22).** This phase runs after release 1 (tips) has shipped in phase 09. Pass 2 of the adversarial testing (phase 08b, `07b-adversarial-testing.md`) follows it, then the orders release (09b).
+
 **Goal:** make Coffer a payment method any EmDash store can use, and publish the contract so other payment methods can implement it too.
 **Spec sections:** Commerce readiness (all), API contracts (`checkout` with `kind: "order"`, `status`), Security model (price manipulation).
-**Done when:** `kind: "order"` works and is tested; `contract/` holds the contract doc and a conformance suite that Coffer passes; a DashCommerce adapter works against the dev site on stagenet; an upstream proposal draft is ready for Wyatt to post.
+**Done when:** the release-1 switch is on again and product checkout works through `PayButton.astro`; `kind: "order"` works and is tested; `contract/` holds the contract doc and a conformance suite that Coffer passes; a DashCommerce adapter works against the dev site on stagenet; an upstream proposal draft is ready for Wyatt to post.
 
 ## For Wyatt, before the session
 
-- [ ] Phases 02–07 are done.
+- [ ] Release 1 is out (phases 05–07, 07b and 09 are done).
+- [ ] Talk to the store plugins early, before the contract is fixed, so it fits their payment hooks: Otta (discussion #406) and DinkusKit. You post; Claude drafts.
 - [ ] You decide whether and where to post upstream (DashCommerce issues, EmDash GitHub Discussions). Claude only drafts.
 
 **Start the session:**
@@ -16,6 +19,14 @@ Phase 08, store adapter. Read docs/phases/08-store-adapter.md and docs/progress.
 ```
 
 ## For Claude
+
+**Design input from the store plugins:** DinkusKit allows only one active payment provider per store, so Coffer may have to be a store's only payment method, or sit behind a provider that offers several. Check the contract against both.
+
+**Plugin: the release-1 switch and the pay button**
+
+- Turn the release-1 switch on (spec change 22): product checkout and the admin page's product parts come back. Phase 07's tests for both positions must still pass.
+- `PayButton.astro` (moved from phase 06): "Pay with Monero" for a product entry. Posts `{ kind: "product", product }` to the plugin's `checkout` route (same origin) and redirects to `/pay/<token>`. Domain errors show a short, plain message.
+- Release 2's trust contract: release 1 declared today's manifest as is. Anything more this phase needs (for example an `orderRef` index for a store that retries checkout) is a spec change first, then a version bump and the admin's fresh consent.
 
 **Plugin: `kind: "order"`**
 

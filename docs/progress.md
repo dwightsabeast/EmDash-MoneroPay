@@ -1761,3 +1761,81 @@ Carried over for Wyatt:
 - **Open, not changed:** on a syncing node, the installer's default restore height is that node's low height. That's safe, but the first scan is slow.
 - **Upstream notes:** the confirm dialog's padding, no copy-to-clipboard element, no wrapping for long values.
 - **Review advice "find it under All invoices below":** may need Load more.
+
+## 2026-10-13 · Phase 05 · Section B done (waiting for run A); tips-first plan change folded in
+
+Started 2026-10-13 evening (US time); UTC times below.
+
+**Node caught up:** PASS at 00:06 UTC on 10-14. Run A's node is `synchronized` at 2,228,619, the same height as the dev box's node.
+
+Section B of the organizer sheet, done:
+- **Reset:** 317 pool rows, 17 invoices, 7 KV rows and 1 setting removed. **The backup to restore after both runs:** `~/xmr-pay-dev-data/baseline/data.db.before-setup-test-20261014T004124362Z`.
+- **Tester invite,** `55207d3`:
+  - `scripts/setup-test-invite.mjs` makes an Admin invite for `tester@coffer-test.invalid` through EmDash's dev sign-in.
+  - It takes the link from the reply, or from the dev email list (the dev console provider, which is what answered), and moves only its origin to `https://dev.wyattdilley.com`.
+  - It writes the link to `~/xmr-pay-dev-data/05-setup/tester-invite.txt`, mode 600. It never prints the token.
+  - Run once and checked with `stat` and a pattern count, never displayed. It works once and expires in 7 days.
+  - The `CLAUDE.md` command row is added.
+  - **Note:** EmDash's dev console email provider writes the first 200 characters of each email to astro's dev log, which likely includes the token. Don't read that log until the invite is used.
+- **Release:** `0.0.202610140046-dev.55207d3` for amd64 and arm64, base `http://192.168.8.249:8099`. Wyatt signed it, and `check-dev-signature.sh` verifies it.
+- **Release server:** tmux `release`, bound to the LAN address on 8099. The served `install.sh` matches the built file.
+- **Plugin:** `setup-test-plugin.sh --base http://192.168.8.249:8099`, with the bundle check inside it. The built site's server bundle carries the LAN URL.
+- **Built copy:** tmux `built` on 4322 with `EMDASH_SITE_URL=https://dev.wyattdilley.com`. Its status route answers 200.
+
+Tests:
+- **`setup-test-invite.test.mjs`:** 6 tests against a fake EmDash on 127.0.0.1, red first because the script didn't exist. They cover:
+  - both link sources
+  - the origin rewrite
+  - mode 600, also on overwrite
+  - no token in the output
+  - an existing account (409)
+  - a non-loopback site
+  - a non-https public origin
+- **Mutation checks:** removing the CSRF header fails 4 tests; the chmod on overwrite, 1; picking the newest email, 1; the loopback check, 1; the origin rewrite, 2.
+- **All script tests** (`node --test scripts/*.test.mjs`): 16 pass.
+- **Not covered:** the invite link in a real browser. That's Wyatt's passkey step.
+
+Tips-first plan change (Wyatt, 2026-10-13, `docs/plan-change-tips-first.md`), folded in; docs only:
+- **Spec change 22** (accepted) and a `docs/decisions.md` row. Wyatt's choices:
+  - one switch keeps goods out of release 1
+  - release 1 declares today's manifest as is
+  - order-only threats are marked "covered in release 2" in the report
+  - the sidebar icon is `coins` (EmDash 1.1.0 resolves any Phosphor name; none is declared today, so it shows a plug)
+- **`docs/phases/07b-adversarial-testing.md`** (new): the note's Part 2, one file for passes 1 and 2. Changes from the note:
+  - row A0 names the switch's paths
+  - a pass-1 prerequisite for spec change 18's decision
+  - the builder's README and phase-09 edits are marked done
+- **`docs/phases/README.md`:** the table runs in release order, with rows for 07b, 08b and 09b.
+- **Phase files:**
+  - **06:** scoped to the pay page and `isPaid`. PayButton moves to 08. `WALLET_HOST_SYNCING` is shown like `WALLET_HOST_SILENT`.
+  - **07:** turns the switch off, with tests, and moves the dev scripts to tips.
+  - **08:** marked release 2. PayButton and the switch back on. Talk to Otta and DinkusKit early; DinkusKit's one-provider limit is a design input.
+  - **09:** release 1, tips. It starts from the red-team findings, with a before-session checklist, a tips-scoped report, the icon and listing-image rules, and a "Release 2 (09b)" section.
+- The note itself is committed as the source record.
+
+Still waiting on Wyatt (from the note):
+- **Before 07:** spec change 18's spike decision.
+- **Before 07b:**
+  - the security matrix in the repo as `docs/security-matrix.md`
+  - decisions on C01–C06, or accepting that undecided candidates are only probed and reported
+- **Before 09:**
+  - the mainnet second-node list
+  - the self-update admin-copy question
+  - an install host without redirects
+  - the Atmosphere account
+  - the hand-made registry icon
+- **Not blocking:** the spec text for changes 20, 21 and 22.
+
+State left:
+- **Running:** the built copy (4322) and the release server (8099), for the runs.
+- **Stopped:** the dev site (4321 free).
+- **`plugin/dist`:** the setup-test build with the LAN install URL. A plain `pnpm run build` restores the placeholder (section E).
+- **Dev database:** reset. The dev data is in the backup above.
+
+Next steps:
+1. **Wyatt:**
+   - scp the invite and register a passkey
+   - the wget reachability check on `coffer-test`, then roll it back to `blank`
+   - open and sync both Feather wallets
+   - run A
+2. **Claude:** section D (stop `built`, reset, start `built`). Then Wyatt does run B. Then Claude does section E and the triage session.

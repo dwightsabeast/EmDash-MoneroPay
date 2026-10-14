@@ -1,8 +1,8 @@
 # Phase 06 — Theme kit
 
-**Goal:** the buyer-facing pieces as an installable package of Astro components: a pay button and the `/pay/[token]` page, one import each.
+**Goal:** the buyer-facing pieces as an installable package of Astro components, one import each. **Release 1 (spec change 22): what tips need.** That's the `/pay/[token]` page and the `isPaid` helper; the tip button comes in phase 07. The product pay button moves to phase 08 (release 2).
 **Spec sections:** Theme integration (pieces, privacy details, distribution), API contracts (`checkout`, `status`), Commerce readiness (storefront pieces as components).
-**Done when:** the dev site uses the package to sell a test product end to end on stagenet; the page meets every privacy rule; the QR code encodes the exact `monero:` URI (see "QR code" for how that's tested); the `installation` snippet for the registry listing is written.
+**Done when:** a stagenet payment on the dev site goes end to end through the package's `/pay` page. It is started by a product checkout, the only public checkout until phase 07 adds tips and turns the release-1 switch off; the page meets every privacy rule; the QR code encodes the exact `monero:` URI (see "QR code" for how that's tested); the `installation` snippet for the registry listing is written.
 
 ## For Wyatt, before the session
 
@@ -19,8 +19,8 @@ Phase 06, theme kit. Read docs/phases/06-theme-kit.md and docs/progress.md, then
 
 **Package (`theme/`)**
 
-- `PayButton.astro`: "Pay with Monero" for a product entry. Posts `{ kind: "product", product }` to the plugin's `checkout` route (same origin) and redirects to `/pay/<token>`. Domain errors show a short, plain message.
-- `PayPage.astro` (used by the site's `src/pages/pay/[token].astro`): fetches `status` server-side, then shows the amount in XMR and fiat, the address with a copy button, a QR code of the `monero:` URI, a countdown to `expiresAt`, a confirmation counter, "Checking for your payment" while `pendingExpiry` is true, and a success state on `settled`. Polls `status` every 5 seconds with a small inline script.
+- `PayButton.astro` ("Pay with Monero" for a product entry): **moved to phase 08, release 2** (spec change 22). The release-1 package must not export it. To drive the pay page in this phase, start checkouts with `scripts/dev-invoices.mjs new <name>`.
+- `PayPage.astro` (used by the site's `src/pages/pay/[token].astro`): fetches `status` server-side, then shows the amount in XMR and fiat, the address with a copy button, a QR code of the `monero:` URI, a countdown to `expiresAt`, a confirmation counter, "Checking for your payment" while `pendingExpiry` is true, and a success state on `settled`. Checkout's `WALLET_HOST_SYNCING` is shown the same way as `WALLET_HOST_SILENT` (spec change 20, item 5). Polls `status` every 5 seconds with a small inline script.
 - A server-side helper `isPaid(token)` that returns true only for `settled`, for gated content. Never trust a client-side flag.
 - Styling through CSS custom properties so any theme can restyle it; no framework required; works without JavaScript except for polling and copy.
 
@@ -38,4 +38,4 @@ Phase 06, theme kit. Read docs/phases/06-theme-kit.md and docs/progress.md, then
 
 **Stop points:** the package name, the choice of QR encoder to vendor, any dependency, anything that would need a new plugin route or setting.
 
-**Out of scope:** the tip button (phase 07), store integration (phase 08), publishing to npm (phase 09).
+**Out of scope:** the tip button (phase 07), the product pay button and store integration (phase 08, release 2), publishing to npm (phase 09).
