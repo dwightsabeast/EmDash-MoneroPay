@@ -1917,3 +1917,87 @@ Next steps:
    - roll `coffer-test` back to `blank`
    - check the page's site line on the built copy
    - rerun A (the clock starts at a fresh reload)
+
+## 2026-10-14 · Phase 05 · Run A attempt 2 failed (wallet app); fixes proposed; end of night handoff
+
+Before the attempt:
+- Pushed `abb8955` (spec change 23's fixes). CI run 38499190185 passed (plugin, bridge, race detector).
+- Rebuilt the release (`0.0.202610140208-dev.abb8955`); Wyatt signed it, and the signature verifies.
+- Ran `setup-test-plugin.sh` and the site build, reset again (extra backup `…T020900344Z`), and restarted `built`.
+
+**Run A, attempt 2: FAIL at about 16½ minutes** (Wyatt's notes: `~/xmr-pay-dev-data/05-setup/run-a-attempt-2.md`; recorded on `run-A.md`).
+- **Coffer's part was well inside the limit:**
+  - paired 02:18 UTC
+  - test address 02:20:05 (account 0, subaddress 1)
+  - settled 02:22:30 (block 2,228,686, txid `2f88c81c1fcd1521846caa9f83e7907a7880865a3c0fe0bb699d8d79ecc972ec`, 0.0001 XMR, 2 confirmations required)
+- **The failure:** the tip never showed in Feather's shop wallet, a pass criterion (spec change 9).
+- **Confirmed cause:** Feather 2.8.1 gave the new 16-word (Polyseed) stagenet wallet a restore height of 2,230,020, about 1,300 blocks above the chain. It scanned nothing.
+- **After the run:** a re-restore with height 2,228,000 showed the tip.
+- **Spec change 23's fix worked on the built copy:** the page said "from your browser, because EmDash's saved address for this site is http://localhost:4321", and the four-line command paired. That closes the "not covered" item from the entry above.
+- **Smaller findings:**
+  - Feather lagged the node until a restart (it routes through Tor)
+  - the node address had to be looked up
+  - the `monero:` link has no label
+  - a settled test tip shows nowhere but "Done"
+
+Recorded:
+- **`docs/setup-friction.md`:** five rows and a lesson ("the last step happens in software you don't control").
+- **`docs/spec-changes.md` 24 (proposed):** Wyatt's suggested fixes 1–7 with a when for each, and the Feather upstream note draft.
+- **Local:**
+  - attempt 2 on `run-A.md`, plus an "Attempt 3" heading
+  - a "Wallet app prep" section in the organizer sheet, with Feather 2.8.1's re-restore steps, so the next tester finds them
+
+**Proposal (spec change 24), for Wyatt to approve:**
+- **Before the rerun of A:**
+  - 1: show the settled test tip's amount, txid and block
+  - 2: a "Not in your wallet app?" hint with the heights
+  - 3: a wallet-app-ready line before Get a test address
+  - 3b: a label for the payment link
+  - 5 and 7: the prep step and separate timings in `docs/setup-test.md` and the run sheets
+
+  All are plugin text or docs. They need no installer change, so the signed release stays valid.
+- **Phase 09:** 4 and 7 in the install docs, and the node prompt's wording at the next release rebuild.
+- **Phase 07:** a place to see tips (already planned).
+- **Any time:** 6, the Feather note (Wyatt posts).
+
+**Recommendation: no run B tonight.**
+- Attempt 2 failed a pass criterion, so phase 05's rule needs a fix merged and run A repeated.
+- Run B would take another 15+ minutes on the same wallet-app risk, and the prep step only exists in the local organizer sheet so far.
+- Next session:
+  1. Wyatt approves or changes spec change 24.
+  2. Build items 1–3b and 5 (tests first).
+  3. Push and wait for CI.
+  4. Rebuild the plugin and the site (the release doesn't need rebuilding).
+  5. Section D.
+  6. Rerun A with the prep step.
+  7. Section D again, then run B.
+
+State left (checked at handoff):
+- **Stopped:**
+  - the dev site, the built copy (`dev.wyattdilley.com` gives Cloudflare's 502 until it restarts) and the release server
+  - ports 4321, 4322 and 8099 are free, and there are no tmux sessions
+- **Services:** `monerod-stagenet` and the dev-box `xmr-bridge` are active.
+- **`coffer-test`:** still has attempt 2's install, and Wyatt is **not** rolling it back tonight. Its bridge backs off while the site is stopped. The evidence is captured but still on the container: `~/run-status.txt` and `~/run-install-log.txt`, in the home of the user who ran the command. First thing next session: copy them to the dev box (below), then roll back to `blank` in section D.
+- **Dev database:**
+  - It holds attempt 2's state: paired with `coffer-test`, 51 pool rows, the settled test tip.
+  - Section D resets it.
+  - **The backup to restore after both runs is still the first one:** `~/xmr-pay-dev-data/baseline/data.db.before-setup-test-20261014T004124362Z`.
+- **`plugin/dist`:** the setup-test build with the LAN install URL. A plain `pnpm run build` restores the placeholder (section E).
+- **The signed release** `0.0.202610140208-dev.abb8955` is in `~/xmr-pay-dev-data/dev-release/` and can be served again as is.
+- **Memory:** about 4.9 GB available, swap full (511 of 512 MB).
+
+Done by Wyatt at handoff (section C's evidence, on `coffer-test`; the files are still on the container):
+`sudo xmr-bridge status --config /etc/xmr-bridge/config > ~/run-status.txt 2>&1; sudo cat /var/lib/xmr-bridge/log/install.log > ~/run-install-log.txt; ls -l ~/run-status.txt ~/run-install-log.txt`
+Then copy both files to the dev box's `~/xmr-pay-dev-data/05-setup/` as `A2-run-status.txt` and `A2-run-install-log.txt`. Also send back the filled-in timing sheet and confusion log for attempt 2.
+
+To resume: "Continue phase 05. Read docs/progress.md for where we stopped, then plan the next step." The first decision is spec change 24.
+
+Carried over for Wyatt (unchanged, plus tonight's):
+- **Spec text to fold in:** changes 20–23. Change 24 once decided.
+- **Matrix:** spec change 23's F06 note goes into the Claude Doc.
+- **Upstream notes to post:**
+  - EmDash's `ctx.site.url` (spec change 23)
+  - Feather's restore height (spec change 24)
+  - the earlier Block Kit notes
+- **Phase 08:** the `returnUrl` same-origin check must not rely on `ctx.site.url` alone (see the entry above).
+- **Before 07, 07b and 09:** as listed in the 2026-10-13 tips-first entry.

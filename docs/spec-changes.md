@@ -516,3 +516,34 @@ Upstream note (draft for Wyatt to post to EmDash): "`ctx.site.url` for sandboxed
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
 - Admin setup and upkeep, the install flow: "The command carries the site's address: EmDash's saved address when it is a public https one; otherwise the address the admin has the page open at, when that is https. The page says which, and shows no command when neither will do."
 - Bridge service, the install command: the four-line form (spec change 21's command, split at `if` / `elif` / `else` / `fi`, with the shorter message "This needs curl or wget: sudo apt install curl, then paste again.").
+
+## 24. Help the owner find the test tip in their wallet app  (status: proposed, 2026-10-14)
+Found in: phase 05, run A attempt 2 (`~/xmr-pay-dev-data/05-setup/run-a-attempt-2.md`, local).
+Spec says: Admin setup and upkeep, the setup checklist ending in a test tip; spec change 9 makes "the tip shows in the shop's wallet app, with its amount" a pass criterion.
+Evidence:
+- Coffer settled the test tip at 02:22:30 UTC, about 4 minutes in (block 2,228,686, txid `2f88c81c…c972ec`). The node agreed.
+- Feather's shop wallet stayed empty, and the run failed at about 16½ minutes.
+- Cause: Feather 2.8.1 gave the new 16-word (Polyseed) stagenet wallet a restore height of 2,230,020 from the seed's creation date, about 1,300 blocks above the chain. It scanned nothing.
+- Feather 2.8.1 can't change the restore height of an open wallet. Re-restoring with "Override embedded wallet creation date" and height 2,228,000 showed the tip.
+- The admin page gave the owner nothing to look for. A settled test tip appears nowhere but the checklist's "Done", and the `monero:` link under the test address has no label.
+
+Proposal (Wyatt's suggestions 1–7, with Claude's recommendation on when):
+
+| # | What | Where | When (recommended) |
+| --- | --- | --- | --- |
+| 1 | After the test tip settles, show its amount, txid and block height, with "Look for this in your shop wallet's history" | Plugin, setup section | Before the rerun of A |
+| 2 | Beside it, a "Not in your wallet app?" hint: the app must be synced to the wallet host's height (shown); its restore height must be at or below block N (the tip's block); rescan if not | Plugin | Before the rerun of A |
+| 3 | In the checklist, before Get a test address: "Open your shop wallet app and let it finish syncing. If the wallet is new, check its restore height is at or below block N", with N the wallet host's current height | Plugin | Before the rerun of A |
+| 3b | Label the `monero:` link: "Payment link: fills in the address and amount in most wallets" | Plugin | Before the rerun of A |
+| 4 | "Your shop wallet app" section in the install docs: a synced node, and the restore height of a new wallet | Phase 09 docs | Phase 09 |
+| 5 | Setup-test protocol: a wallet prep step before the clock (restart, heights match, restore height below the current block); the run sheet records Coffer's settle time, the wallet app's show time and the confirmation wait separately | `docs/setup-test.md`, run sheets | Before the rerun of A (the prep is already in the local organizer sheet) |
+| 6 | Upstream note for Feather (draft below) | For Wyatt to post | Any time |
+| 7 | Preventive wording everywhere: check the shop wallet's restore height right after creating it, before installing; redo the restore then if needed | Setup test, phase 09 docs | With 5 and 4 |
+| — | The installer's node prompt (the tester looked up the address) | Organizer sheet now; prompt wording at the next release rebuild | Not before the rerun: it would need another release build and signature |
+| — | A place to see tips | Phase 07's tips view (already planned) | Phase 07 |
+
+Effect on the admin budget: better, because a wallet-app mismatch shows up while it's cheap to fix. Item 3 adds guidance text, not a step Coffer runs or checks; there's no new setting or prompt.
+Effect on the trust contract: none (admin page text only; the txid and height are already stored).
+
+Upstream note for Feather (draft; Wyatt decides whether to post it, and no LAN addresses go in it):
+"Feather 2.8.1, stagenet: a new wallet with a 16-word Polyseed got restore height 2,230,020, while the chain was at about 2,228,700 (2026-10-14). The height is in the future, so the wallet silently scans nothing and misses every payment until the chain passes it. Debug info shows the height, but nothing changes it; the only fix is restoring again with 'Override embedded wallet creation date'. Two asks: (1) clamp a new wallet's restore height to the node's current height; (2) expose the existing 'Change restore height' action (it's in the source but on no menu)."
