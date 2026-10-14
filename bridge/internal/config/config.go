@@ -110,6 +110,13 @@ func validateNode(s string) error {
 	return nil
 }
 
+// IsLoopbackSite reports whether a site URL's host is this machine (localhost, 127.0.0.0/8, ::1), which a wallet host
+// on another machine can never reach.
+func IsLoopbackSite(site string) bool {
+	u, err := url.Parse(site)
+	return err == nil && isLoopback(u.Hostname())
+}
+
 func isLoopback(host string) bool {
 	if host == "localhost" {
 		return true

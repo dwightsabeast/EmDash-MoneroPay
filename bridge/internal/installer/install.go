@@ -122,6 +122,10 @@ func (r *recorder) AskSecret(prompt string) (secret.String, error) {
 	return a, err
 }
 
+func sameMachineErr(signals []string) error {
+	return fmt.Errorf("this machine seems to run the site (%s). The wallet host must be a separate machine: run the installer on another Linux machine", strings.Join(signals, "; "))
+}
+
 func answered(err error) string {
 	if err != nil {
 		return "[no answer]"
@@ -158,6 +162,17 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 	}
 	if !codeRE.MatchString(o.Code) {
 		return errors.New("--pair needs the 22-character code that " + sitetext.Button + " shows")
+	}
+	// Never beside the site (spec, "Where the wallet host runs"). Checked before the shop wallet's details are asked
+	// for, so nobody types a view key on a machine that is then refused (setup test, run A attempt 1). The
+	// stagenet-only development flag is checked after the address, which names the network.
+	if !o.AllowSameMachine {
+		if config.IsLoopbackSite(o.Site) {
+			return fmt.Errorf("--site is %s, an address that only reaches this machine; the wallet host needs your site's public address. Copy the install command from your site's admin page again (if the page shows this address too, it says how to fix it)", o.Site)
+		}
+		if signals := st.SameMachine(ctx, o.Site); len(signals) > 0 {
+			return sameMachineErr(signals)
+		}
 	}
 
 	// The two values the admin types once.
@@ -200,15 +215,14 @@ func install(ctx context.Context, o Options, sys System, tty Prompter, st Steps,
 		return err
 	}
 
-	// Never beside the site (spec, "Where the wallet host runs"), except with the stagenet-only development flag.
-	if o.AllowSameMachine && network != "stagenet" {
-		return errors.New("--allow-same-machine is for development on stagenet only")
-	}
-	if signals := st.SameMachine(ctx, o.Site); len(signals) > 0 {
-		if !o.AllowSameMachine {
-			return fmt.Errorf("this machine seems to run the site (%s). The wallet host must be a separate machine: run the installer on another Linux machine", strings.Join(signals, "; "))
+	// The stagenet-only development flag: beside the site is allowed, on stagenet only.
+	if o.AllowSameMachine {
+		if network != "stagenet" {
+			return errors.New("--allow-same-machine is for development on stagenet only")
 		}
-		tty.Say("Development flag: installing beside the site (%s). Stagenet only.", strings.Join(signals, "; "))
+		if signals := st.SameMachine(ctx, o.Site); len(signals) > 0 {
+			tty.Say("Development flag: installing beside the site (%s). Stagenet only.", strings.Join(signals, "; "))
+		}
 	}
 
 	// Run again: the same address keeps its wallet; another address is refused.

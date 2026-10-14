@@ -108,6 +108,10 @@ func TestInstallRefusesEarly(t *testing.T) {
 		"bad code":   func(o *Options, s *fakeSystem) { o.Code = "short" },
 		"no code":    func(o *Options, s *fakeSystem) { o.Code = "" },
 		"bad site":   func(o *Options, s *fakeSystem) { o.Site = "http://shop.example" },
+		// Run A attempt 1: an admin page that knew only EmDash's saved localhost address.
+		"loopback site": func(o *Options, s *fakeSystem) { o.Site = "http://localhost:4321" },
+		"127 site":      func(o *Options, s *fakeSystem) { o.Site = "http://127.0.0.1:4321" },
+		"::1 site":      func(o *Options, s *fakeSystem) { o.Site = "http://[::1]:4321" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts, sys, tty, st := harness(t)
@@ -263,6 +267,10 @@ func TestSameMachine(t *testing.T) {
 	if len(sys.calls) != 0 {
 		t.Fatal("changed the machine")
 	}
+	// Refused before the shop wallet's details are asked for (run A attempt 1 typed the view key, then was refused).
+	if len(tty.asked) != 0 {
+		t.Fatalf("asked %q before refusing", tty.asked)
+	}
 	// The stagenet-only development flag.
 	opts, sys, tty, st = harness(t)
 	st.signals = []string{"a running site process (astro dev)"}
@@ -280,6 +288,27 @@ func TestSameMachine(t *testing.T) {
 	st.nodes = map[string]noderpc.Info{"http://127.0.0.1:18081": {NetType: "mainnet", Height: 1, Synchronized: true}}
 	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err == nil || !strings.Contains(err.Error(), "stagenet") {
 		t.Fatalf("mainnet with the dev flag: %v", err)
+	}
+}
+
+// A loopback --site says what's wrong with the address, not only that this machine runs the site.
+func TestLoopbackSite(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	opts.Site = "http://localhost:4321"
+	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
+	if err == nil || !strings.Contains(err.Error(), "http://localhost:4321") || !strings.Contains(err.Error(), "only reaches this machine") || !strings.Contains(err.Error(), "admin page") {
+		t.Fatalf("got %v", err)
+	}
+	if len(tty.asked) != 0 {
+		t.Fatalf("asked %q", tty.asked)
+	}
+	// Development on one machine (stagenet only) still installs with the flag.
+	opts, sys, tty, st = harness(t)
+	opts.Site = "http://localhost:4321"
+	opts.AllowSameMachine = true
+	st.signals = []string{"the site's address (localhost) resolves to this machine"}
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatal(err)
 	}
 }
 
