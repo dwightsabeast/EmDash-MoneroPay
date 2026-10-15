@@ -144,6 +144,61 @@ describe("setup checklist", () => {
 		b = await load();
 		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
 	});
+
+	it("before the test address: a line about the wallet app with the wallet host's height; under the link, its label (spec change 24, items 3 and 3b)", async () => {
+		const h = await setup();
+		const appLine = `Open your shop wallet app and let it finish syncing. If the wallet is new, check that its restore height is at or below block ${H0} (the wallet host's height now).`;
+		let inner = checklist(await load())?.blocks as B[];
+		expect(inner).toContainEqual({ type: "context", text: appLine });
+		expect(inner.findIndex((x) => x.type === "context" && x.text === appLine)).toBeLessThan(inner.findIndex((x) => x.type === "actions"));
+		inner = checklist((await h.admin.act("/payments", "get_test_address")).blocks as B[])?.blocks as B[];
+		const link = inner.findIndex((x) => x.type === "code" && String(x.code).startsWith("monero:"));
+		expect(inner[link + 1]).toEqual({ type: "context", text: "Payment link: fills in the address and amount in most wallets." });
+		expect(inner).toContainEqual({ type: "context", text: appLine });
+		// Nothing about a received tip until one settles.
+		expect(text(await load())).not.toContain("Look for this in your shop wallet's history");
+		await h.dispose();
+		// Not while the checklist isn't ready.
+		await setup({ lastSyncAgo: 12 * 60_000 });
+		expect(text(await load())).not.toContain("Open your shop wallet app");
+	});
+
+	it("a settled test tip: amount, block and txids at the top for a day, and in Setup (complete) for good, with the wallet-app hint (spec change 24, items 1 and 2)", async () => {
+		const h = await setup();
+		await h.admin.act("/payments", "get_test_address");
+		const [tip] = await tips();
+		const t = (txid: string, amountAtomic: string, height: number, unlockTime = "0") => ({ txid, amountAtomic, confirmations: tip.required, height, timestamp: 1_790_000_100, doubleSpendSeen: false, unlockTime, seenAt: 1, poolTs: 1 });
+		const transfers = [t("ab".repeat(32), "50000000", H0 + 3), t("cd".repeat(32), "150000000", H0 + 1), t("ef".repeat(32), "900000000", H0 + 2, "5")];
+		const settle = (settledAt: number) => h.fixtures.plugin.storage("invoices", tip.id, { ...tip, status: "settled", settledAt, transfers });
+		const outside = (b: B[]) => b.filter((x) => x.block_id !== "setup");
+		const hint = `Not in your wallet app? It must be synced to block ${H0} (the wallet host's height now), and its restore height must be at or below block ${H0 + 1}. If the restore height is higher, restore the wallet again with a lower one; otherwise rescan.`;
+		const details = (b: B[]) => {
+			const at = b.findIndex((x) => x.type === "section" && String(x.text).startsWith("0.0002 XMR arrived in block"));
+			expect(at).toBeGreaterThanOrEqual(0);
+			expect(b[at].text).toMatch(new RegExp(`^0\\.0002 XMR arrived in block ${H0 + 1}, settled at \\d\\d:\\d\\d UTC\\. Look for this in your shop wallet's history\\.$`));
+			expect(b[at + 1]).toEqual({ type: "code", code: `0.00015 XMR in block ${H0 + 1}\nTransaction ID: ${"cd".repeat(32)}\n\n0.00005 XMR in block ${H0 + 3}\nTransaction ID: ${"ab".repeat(32)}` });
+			expect(b[at + 2]).toEqual({ type: "context", text: hint });
+		};
+
+		await settle(Date.now() - 60_000);
+		let b = await load();
+		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
+		// At the top: right after the page header and banners, before Health.
+		const top = outside(b);
+		const header = top.findIndex((x) => x.type === "header" && x.text === "Test tip received");
+		expect(header).toBeGreaterThan(0);
+		expect(header).toBeLessThan(top.findIndex((x) => x.type === "header" && x.text === "Health"));
+		details(top.slice(header));
+		expect(text(top)).not.toContain("ef".repeat(32)); // time-locked: not counted, not listed
+		details(checklist(b)?.blocks as B[]);
+
+		// A day later: only in Setup (complete).
+		await settle(Date.now() - 25 * 60 * 60_000);
+		b = await load();
+		expect(text(outside(b))).not.toContain("Test tip received");
+		expect(text(outside(b))).not.toContain("cd".repeat(32));
+		details(checklist(b)?.blocks as B[]);
+	});
 });
 
 describe("pairing notes", () => {

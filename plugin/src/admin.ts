@@ -197,13 +197,38 @@ async function testTips(ctx: PluginContext): Promise<Invoice[]> {
 }
 
 const DUST_XMR = atomicToXmr(DUST_ATOMIC);
+/** XMR without trailing zeros, as wallet apps show it: "0.0002", not "0.000200000000". */
+const shortXmr = (atomic: bigint) => atomicToXmr(atomic).replace(/0+$/, "").replace(/\.$/, "");
 const tipUri = (address: string) => `monero:${address}?tx_amount=${DUST_XMR}&tx_description=${encodeURIComponent("Coffer test tip")}`;
+
+/** How long a settled test tip's details stay at the top of the page (spec change 24); after that, only in Setup. */
+const TEST_TIP_TOP_MS = 24 * 60 * 60_000;
+
+/**
+ * What to look for in the shop's wallet app once the test tip settles, and why it might be missing (spec change 24,
+ * items 1 and 2; run A attempt 2, where the wallet's restore height was above the tip's block). Empty when nothing
+ * counted, as for a test tip an admin marked settled.
+ */
+function testTipBlocks(tip: Invoice, h: Health): Block[] {
+	const paid = tip.transfers.filter(counted).sort((a, b) => a.height - b.height);
+	if (paid.length === 0) return [];
+	const block = paid[0].height;
+	const listed = paid.slice(0, TRANSFERS_LISTED).map((t) => `${shortXmr(BigInt(t.amountAtomic))} XMR in block ${t.height}\nTransaction ID: ${t.txid}`);
+	if (paid.length > TRANSFERS_LISTED) listed.push(`…and ${paid.length - TRANSFERS_LISTED} more payments.`);
+	const synced = h.bridge ? `block ${h.bridge.height} (the wallet host's height now)` : "the wallet host's height (under Health)";
+	return [
+		{ type: "section", text: `${shortXmr(totals(tip).received)} XMR arrived in block ${block}${tip.settledAt ? `, settled at ${utc(tip.settledAt)}` : ""}. Look for this in your shop wallet's history.` },
+		{ type: "code", code: listed.join("\n\n") },
+		{ type: "context", text: `Not in your wallet app? It must be synced to ${synced}, and its restore height must be at or below block ${block}. If the restore height is higher, restore the wallet again with a lower one; otherwise rescan.` },
+	];
+}
 
 /**
  * The setup checklist (spec, Install flow step 4), as a toggle: open near the top until a test tip settles, then closed
- * in Settings for good (Wyatt, 2026-10-09).
+ * in Settings for good (Wyatt, 2026-10-09). The settled tip's details go inside it, and for a day also at the top
+ * (`recentTip`; Wyatt, 2026-10-15).
  */
-async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: boolean; toggle: Block }> {
+async function setupSection(ctx: PluginContext, h: Health, now: number): Promise<{ done: boolean; toggle: Block; recentTip: Block[] }> {
 	const tips = await testTips(ctx);
 	let done = (await ctx.kv.get<boolean>(KV.setupDone)) === true;
 	if (!done && tips.some((t) => t.status === "settled")) {
@@ -227,25 +252,35 @@ async function setupSection(ctx: PluginContext, h: Health): Promise<{ done: bool
 		],
 		["Payment addresses ready", h.free > 0, "the wallet host adds them at its first sync."],
 		["Price feed answering", Boolean(h.rate), "both price services failed just now; this page checks again when it loads."],
-		["Test tip received", done, `once the items above are done, press Get a test address and send at least ${DUST_XMR.replace(/0+$/, "")} XMR to it.`],
+		["Test tip received", done, `once the items above are done, press Get a test address and send at least ${shortXmr(DUST_ATOMIC)} XMR to it.`],
 	];
 	const inner: Block[] = [{ type: "fields", fields: rows.map(([label, ok, next]) => ({ label, value: ok ? "Done" : `To do: ${next}` })) }];
+	const settled = tips.find((t) => t.status === "settled");
+	const tipBlocks = settled ? testTipBlocks(settled, h) : [];
+	inner.push(...tipBlocks);
 	const ready = rows.slice(0, 4).every(([, ok]) => ok);
-	if (!done && ready) {
+	if (!done && ready && h.bridge) {
+		inner.push({ type: "context", text: `Open your shop wallet app and let it finish syncing. If the wallet is new, check that its restore height is at or below block ${h.bridge.height} (the wallet host's height now).` });
 		const open = tips.find((t) => isOpen(t));
 		if (open) {
 			const t = totals(open);
 			inner.push(
-				{ type: "section", text: `Send at least ${DUST_XMR.replace(/0+$/, "")} XMR to this address from any wallet. It's a tip to your own shop wallet, so the money stays yours.` },
+				{ type: "section", text: `Send at least ${shortXmr(DUST_ATOMIC)} XMR to this address from any wallet. It's a tip to your own shop wallet, so the money stays yours.` },
 				{ type: "code", code: open.subaddress },
 				{ type: "code", code: tipUri(open.subaddress) },
+				{ type: "context", text: "Payment link: fills in the address and amount in most wallets." },
 				{ type: "context", text: open.status === "new" ? `Waiting for the payment (until ${utc(open.expiresAt)}).` : `Payment seen: ${t.depth} of ${open.required} confirmations.` },
 			);
 		}
 		inner.push({ type: "actions", elements: [{ type: "button", action_id: "get_test_address", label: "Get a test address" }] });
 	}
 	const count = rows.filter(([, ok]) => ok).length;
-	return { done, toggle: { type: "accordion", block_id: "setup", label: done ? "Setup (complete)" : `Setup: ${count} of 5 done`, default_open: !done, blocks: inner } };
+	const recent = settled?.settledAt !== undefined && now - settled.settledAt < TEST_TIP_TOP_MS && tipBlocks.length > 0;
+	return {
+		done,
+		toggle: { type: "accordion", block_id: "setup", label: done ? "Setup (complete)" : `Setup: ${count} of 5 done`, default_open: !done, blocks: inner },
+		recentTip: recent ? [{ type: "header", text: "Test tip received" }, ...tipBlocks] : [],
+	};
 }
 
 /** Get a test address: an open tip invoice on a pool address, through this private route (phase 07 adds public tips). */
@@ -705,9 +740,9 @@ async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSe
  */
 async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
 	const h = await health(ctx, now, { checkRate: true });
-	const setup = await setupSection(ctx, h);
+	const setup = await setupSection(ctx, h, now);
 	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode, opts.origin);
-	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h)];
+	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...setup.recentTip];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
 	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, now, opts)));
 
