@@ -547,3 +547,70 @@ Effect on the trust contract: none (admin page text only; the txid and height ar
 
 Upstream note for Feather (draft; Wyatt decides whether to post it, and no LAN addresses go in it):
 "Feather 2.8.1, stagenet: a new wallet with a 16-word Polyseed got restore height 2,230,020, while the chain was at about 2,228,700 (2026-10-14). The height is in the future, so the wallet silently scans nothing and misses every payment until the chain passes it. Debug info shows the height, but nothing changes it; the only fix is restoring again with 'Override embedded wallet creation date'. Two asks: (1) clamp a new wallet's restore height to the node's current height; (2) expose the existing 'Change restore height' action (it's in the source but on no menu)."
+
+## 25. Admin upkeep: tip records, quiet-host alerts, versions, a recovery sheet, an activity log  (status: proposed, 2026-10-14)
+Found in: Wyatt's planning chat of 2026-10-14 ("what would make the admin side easier to live with"), after reading the spec, spec changes 1–24 and phases 07, 07b and 09.
+Spec says:
+- Phase 07: "a tips view with totals per entry (counted, settled tips only) and recent notes."
+- Admin setup and upkeep, Health: one line per check, shown on the admin page and dashboard widget; the silent-bridge line turns red after 5 minutes without a sync.
+- Updates: the bridge updates itself and wallet-rpc daily (on by default, can be turned off); an older protocol version shows "wallet host update available".
+- Build plan step 10, Later versions: "Receipts through `email:send` … Each capability addition re-prompts consent."
+- Proposed earlier, undecided: a reconciliation export (settled txids and amounts, to check in the owner's own wallet).
+
+Evidence:
+- Every invoice already stores `fiat` (amount, currency), `rate` (locked at checkout), `settledAt`, `transfers[]` (txid, amount, height) and `kind`. A tip's fiat value is already known; nothing shows it over time or lets the owner take it away. Tips are taxable income for most owners, and today they'd have to rebuild that record by hand from their wallet and a price history.
+- Buyer notes are purged 30 days after an invoice is final. Invoices themselves are kept. So a record of amounts can be complete, but notes can't be, and anything that exports notes must say so.
+- Health lines only help when someone opens the admin page. A home wallet host that loses power or a tunnel that lapses stays red until the owner happens to look, and every tip in that time waits.
+- Run A attempt 2 showed that restore height is the easiest thing for an owner to get wrong, and the moment they most need the right number is when a wallet host has died. Spec changes 15 and 17 cover how a reinstall catches up; nothing hands the owner the numbers ahead of time.
+- When auto-update is turned off, nothing tells the owner they've fallen behind until the protocol version gap shows up, and a Monero network upgrade would make an old wallet-rpc stop seeing payments.
+- Re-pairs, setting changes and review decisions leave no trace the owner can read. A re-pair nobody remembers making is a security signal (it may mean the bridge key was replaced), and a trail makes support questions answerable.
+
+Proposal (five parts, separable; Claude's recommendation on when):
+
+| # | What | Where | Trust contract | When (recommended) |
+| --- | --- | --- | --- | --- |
+| 1 | **Tip record.** Extend phase 07's tips view with totals for this month, this year and all time, in XMR and in the site currency at each tip's locked rate. Add an export of settled tips: date (UTC), txid, block height, amount in XMR, rate, fiat value, currency, rate source, entry. This is the same table as the proposed reconciliation export; build them as one. Label the fiat column "value at the rate locked at checkout (up to 30 minutes before payment)" and add a line under the export: "Not tax advice. Check how your country values crypto income." Notes stay out of the export (they're purged after 30 days anyway). | Plugin (phase 07 tips view) | None, if the export fits an existing route (see question A) | Release 1, phase 07 |
+| 1b | Store the price host that answered as `rateSource` on new invoices, so the export can name it. Older invoices show "not recorded". | Plugin, invoice field | None (a field, not an index or collection) | With 1 |
+| 2 | **Quiet-host email.** One email when the wallet host has been silent for a set time (default 2 hours), one when it's back. Never more than one of each per outage. Off until the owner turns it on and EmDash has an email provider. | Plugin | Adds `email:send`: a new version and fresh consent | Release 2, bundled with buyer receipts so owners see one consent prompt for both |
+| 2b | Until then: a short "Get told when this breaks" line in the install docs, pointing to the dashboard widget and to any uptime checker the owner already uses against the site (no new Coffer surface). | Phase 09 docs | None | Release 1, phase 09 |
+| 3 | **Versions on the health list.** One line: bridge version, wallet-rpc version, auto-update on/off. Yellow when auto-update is off and the bridge's daily check found something newer: "Updates are off on your wallet host, and Monero X is out. Run `xmr-bridge update`." Requires the bridge to send its own and wallet-rpc's versions, plus "newer available", in the signed sync. | Plugin and bridge | None (sync body fields, not manifest) | Release 1 if the sync change is small, otherwise release 2. Ties to phase 09's open self-update question |
+| 4 | **Recovery sheet.** A "If your wallet host dies" section on the admin page, closed by default, showing only public facts: the shop's primary address (shortened), the bridge key fingerprint, the restore height to use (the block before the first settled invoice, or the install height if none), the highest pool address index (so a rebuilt wallet looks far enough ahead), and the four steps to rebuild and re-pair. A "print this" hint. No view key, no seed. | Plugin text, plus phase 09 docs | None (all values already stored) | Release 1, with spec change 24's text work or phase 07 |
+| 5 | **Activity log.** A short list of re-pairs, settings saves, review-queue decisions and test tips, newest first, each with time and which admin did it. Keep the last 100 entries in plugin KV, not a new collection. A re-pair entry gets a "Didn't do this? Re-pair now and check the wallet host" line. | Plugin | None if KV (see question B) | Release 2, or release 1 if A and B come back cheap |
+
+Effect on the admin budget: setup unchanged (nothing here is a setup step; 2 is opt-in). Upkeep better: the owner gets a tax-ready record without rebuilding it, hears about outages, sees when they're behind on updates, and has recovery numbers before they need them.
+Effect on the trust contract: none for 1, 1b, 2b, 3, 4 and (if B holds) 5. Part 2 adds `email:send` and must wait for a release that already re-prompts.
+
+Questions for Claude Code to answer before any of this is built (from EmDash 1.1.0 source, as in spec change 23):
+- A. **How does the owner get the export out?** Options, cheapest first: (i) a Block Kit code or text block holding CSV the owner copies; (ii) a raw text/csv response from the existing private admin route; (iii) a new private admin route. Say whether (ii) or (iii) changes the consent dialog or anything spec change 22 item 4 freezes. On a phone, (i) is awkward past a few dozen rows; note the limit.
+- B. **Can the admin route see who is signed in** (for "which admin" in part 5), and is plugin KV available to a sandboxed plugin without a manifest change? If either is no, say what part 5 can do instead.
+- C. **Does `email:send` reach a sandboxed plugin** on EmDash 1.1/1.2 when the site has an `email:deliver` provider (Wyatt's own site uses emdash-smtp)? Proof only, no build.
+- D. For part 3: does the bridge's daily update check already know wallet-rpc's latest version when auto-update is off, or does it skip the check?
+
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+- Admin setup and upkeep, Health: add "Versions: bridge, wallet-rpc, auto-update on or off; yellow when updates are off and a newer release is out."
+- Tip jar mode: "The tips view shows totals by month, year and all time in XMR and in the site currency at each tip's locked rate, and exports settled tips (date, txid, height, XMR, rate, fiat value, rate source, entry) for bookkeeping. Notes are not exported."
+- Admin setup and upkeep: add "Recovery: the admin page keeps the public numbers needed to rebuild a wallet host (primary address, bridge key fingerprint, restore height, highest pool index) with the steps to do it."
+- Build plan step 10, Later versions: add "an opt-in email when the wallet host goes quiet and when it's back, shipped with receipts under the same `email:send` consent."
+
+Not proposed (considered and left out): scheduled crypto-to-fiat conversion, or anything that moves funds. It needs spend authority and exchange keys on a server, which breaks "the site holds nothing worth stealing" and "money goes straight to the merchant." The tip record (part 1) and a docs page on converting XMR cover the need without custody.
+
+Answers (Claude Code, 2026-10-15, from the EmDash 1.1.0 source installed in the dev site, and this repo's bridge):
+- **A. The export.**
+  - **(i) works today.** A Block Kit `code` block holds any string. `@emdash-cms/blocks` (`BLOCK_RESPONSE_LIMITS`) caps each string at 64 KB, the whole admin reply at 256 KB and 2,000 nodes. A CSV row of the proposed columns is about 200 bytes, so one block holds about 300 rows: one block per year, or per month in a busy year, fits. kumo 2.6.0's `CodeBlock` has no copy button, so the owner selects the text by hand: fine on a desktop, awkward on a phone past a few dozen rows.
+  - **(ii) isn't possible.** The manifest validator requires the Block Kit `admin` route to be a private POST JSON route (`validateBlockKitAdminRoute`), and the runtime checks every `admin` reply as Block Kit (`validateSandboxedAdminResponse`); anything else becomes a 502 `INVALID_BLOCK_RESPONSE`. Raw replies exist only on routes declared `response: "raw"`.
+  - **(iii) is possible but doesn't give a download.**
+    - A new private route declared `response: "raw"` can return `text/csv` with `content-disposition` (an allowed header; 8 MB body cap; EmDash adds `nosniff` and a sandbox CSP).
+    - EmDash's consent dialog doesn't change: its update gate (`handleRegistryUpdate`) re-prompts only for added capabilities, newly public routes and changed MCP tools. It does change Coffer's frozen route list and spec change 22 item 4 (release 1 ships today's manifest), so it's Wyatt's decision and release 2 at the earliest.
+    - It can't be a link the owner clicks: private routes refuse a signed-in session without the `X-EmDash-Request: 1` header (`authorizePrivatePluginRouteRequest`, its CSRF check), so a plain link gets a 403, and Block Kit has no download action. Only an API-token `curl` reaches it, which is an admin step.
+  - **Recommendation:** (i), one code block per year with its row count above it.
+- **B. Who is signed in, and KV.** Yes to both.
+  - A private route's handler gets `user` (id, email, name, role), filled in by the host after its own auth check; no `users:read` needed (`RouteContext.user` in `plugins/types.ts`; the workerd wrapper passes `serializedRequest.user`). It's undefined for an API-token call with no bound user: part 5 would log "an API token" then.
+  - `ctx.kv` needs no capability or manifest entry (the sandbox bridge's `kv/*` calls). Coffer already uses it.
+- **C. `email:send` from a sandboxed plugin.** Yes, on 1.1.0, when the plugin declares `email:send` and the site has an `email:deliver` provider.
+  - The runtime hands `emailPipeline.send` to the sandbox runner (`setEmailSend`); the bridge's `email/send` checks the capability, then the provider, and throws "Email is not configured" without one.
+  - A sandboxed send carries the plugin id as its source, so the site's `email:beforeSend` and `email:afterSend` hooks see it (only auth email skips them).
+  - From source only, not run live. EmDash 1.2 isn't installed here, so this covers 1.1.0 only.
+- **D. The update check with auto-update off.** It skips the check.
+  - `startUpdates` (`bridge/cmd/xmr-bridge/update.go`) sets "off (installed with --no-auto-update)" and returns before checking anything.
+  - The check is already separate from the install: `monerodl.Fetcher.Latest` fetches and verifies only the signed `hashes.txt`. Part 3 needs a small bridge change (check only, when off) and new signed sync body fields, a change to the spec's API contracts.
+  - Also found: there is no `xmr-bridge update` command (the CLI has install, uninstall, version, run, pair, status, notify). Part 3's proposed line names it, and so does today's "Wallet host update available" banner (`plugin/src/admin.ts`). Logged in `docs/progress.md` for phase 09's self-update work.
