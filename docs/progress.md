@@ -2001,3 +2001,66 @@ Carried over for Wyatt (unchanged, plus tonight's):
   - the earlier Block Kit notes
 - **Phase 08:** the `returnUrl` same-origin check must not rely on `ctx.site.url` alone (see the entry above).
 - **Before 07, 07b and 09:** as listed in the 2026-10-13 tips-first entry.
+
+## 2026-10-15 · Phase 05 · Spec change 24 built; spec change 25 recorded with answers
+
+Evidence in:
+- **From attempt 2 on `coffer-test`:** `A2-run-status.txt` and `A2-run-install-log.txt` are in `~/xmr-pay-dev-data/05-setup/`. They show:
+  - paired
+  - 50 of 50 addresses
+  - the wallet in step with its node
+  - updates on
+  - the status file's `HTTP_502`, which is only the stopped site
+  - the node prompt asked twice: the first answer wasn't a URL
+- **Still missing:** attempt 2's timing sheet and confusion log.
+
+**Spec change 25 (admin upkeep), `574cf28`:**
+- Wyatt's proposal is appended as written, status proposed.
+- Questions A–D are answered from the EmDash 1.1.0 source and this repo's bridge.
+- In short:
+  - the export fits Block Kit code blocks (64 KB each; no copy button)
+  - the `admin` route can't return CSV, and a raw private route can't be a download link (CSRF header)
+  - private routes get the signed-in user, and KV needs no manifest change
+  - `email:send` reaches sandboxed plugins when a provider exists (from source, 1.1.0 only)
+  - the bridge skips the update check when auto-update is off
+- Nothing is built.
+
+**Spec change 24, accepted by Wyatt 2026-10-15** (his choice: the tip's details sit at the top for 24 hours, and stay in Setup (complete) for good):
+- **`8d50d0a`, plugin:**
+  - item 1: the settled test tip's amount, block and txids, at the top for a day and in Setup (complete)
+  - item 2: the "Not in your wallet app?" hint, with the wallet host's height and the tip's lowest block
+  - item 3: the wallet-app line before Get a test address
+  - item 3b: the payment link's label
+- **`7c73b4a`, docs:**
+  - `docs/setup-test.md` gets "Before the clock: get your wallet app ready", the split timing table (Coffer's part, the confirmation wait, the wallet app) and pass criterion 7
+  - the local `run-A.md` (attempt 3) and `run-B.md` get the same rows
+  - spec change 24 is marked accepted
+
+Tests:
+- **Plugin:** 220 pass. The 2 new ones in `admin-setup.test.ts` failed first:
+  - the wallet-app line, and the link label under the `monero:` code
+  - a settled tip with two counted transfers and one time-locked one: amount 0.0002, lowest block, both txids, the time-locked one left out; at the top within 24 hours and not after; in Setup (complete) both times
+- **Plugin checks:** typecheck, validate and the bundle check pass (52.7 KB).
+- **Script tests:** 16 pass.
+- **Bridge:** unchanged, not run.
+- **Not covered yet:** the new text on the built copy (workerd) in a browser. The settled-tip section is only proven live when attempt 3's tip settles.
+
+Found, for phase 09 (not fixed):
+- **`xmr-bridge update` doesn't exist.** The CLI has install, uninstall, version, run, pair, status and notify. The plugin's "Wallet host update available" banner (`plugin/src/admin.ts`, `bannerBlocks`) tells the owner to run it, and spec change 25 part 3 repeats it. Phase 09's self-update work must add the command or change the text.
+
+Next steps:
+1. **Wyatt approves the push.** Push, then wait for CI to pass.
+2. **Rebuild** (the signed release `0.0.202610140208-dev.abb8955` stays valid):
+   - `scripts/setup-test-plugin.sh --base http://<LAN>:8099`
+   - the site build
+   - serve the release
+3. **Section D:**
+   - Wyatt rolls `coffer-test` back to `blank`
+   - reset (the first backup is still the one to restore)
+   - start `built`
+   - the node caught-up check
+4. **Wyatt:**
+   - B7's reachability check, then roll back again
+   - "Before the clock"
+   - rerun A
+   - send back attempt 3's sheet, status and install log, plus attempt 2's timing sheet and confusion log
