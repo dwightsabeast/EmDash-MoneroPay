@@ -33,10 +33,26 @@ You'll connect your site to your shop's Monero wallet. It takes about 15 minutes
 Before you start you need:
 - The address of your site's admin, and a login for it.
 - A terminal on the wallet host, logged in as a user who can use `sudo`.
-- Your shop wallet, already created in Feather Wallet (stagenet). This wallet is just for the shop, never your main wallet.
+- Your shop wallet, already created in Feather Wallet (stagenet). This wallet is just for the shop, never your main wallet. Right after creating it, check its restore height (see "Before the clock" below): a wallet whose restore height is above the current block misses every payment, and it's easiest to fix before anything is paid to it.
 - A second wallet with a little stagenet XMR, to send a test tip. The organizer has it ready for you.
 
 If you get stuck, write down where and why, and keep going if you can. Don't ask for help unless you can't continue.
+
+### Before the clock: get your wallet app ready (your wallet app)
+
+Do this before step 1. It isn't timed: a real shop owner does it once, when they create the shop wallet.
+
+1. **Restart Feather Wallet**, then open the shop wallet and the second wallet, and let both finish syncing.
+2. **In each wallet, open Help → Debug info.** The wallet height must equal the daemon height.
+3. **In the shop wallet's Debug info, find the restore height.** It must be **at or below the current block height** (the daemon height). A new 16-word (Polyseed) wallet can get a restore height in the future.
+4. **If the shop wallet's restore height is too high,** restore it again now, while nothing has been paid to it (Feather can't change the restore height of an open wallet):
+   1. Note the 16 words: **Wallet → Seed** shows them after the wallet password.
+   2. **File → New/Restore**, then under "Restore wallet from…" choose **Seed**, and pick **16 word mnemonic seed (Polyseed)**. Enter the 16 words.
+   3. On the seed page, click **Options** and tick **Override embedded wallet creation date**. Without it, Feather skips the restore height page.
+   4. On the **Restore height** page, replace the value with a height a little below the current block (for example, the current block minus 1,000).
+   5. Save it as a new wallet file, let it sync, and use this file as the shop wallet from now on.
+
+**Check:** both wallets are synced, and the shop wallet's restore height is at or below the current block. Tell the observer you're ready; the clock starts at step 1.
 
 ### 1. Open the payments page (your site's admin)
 
@@ -82,9 +98,11 @@ Back on the Monero payments page, reload the page. The **Setup** section ticks o
 
 **Check:** all four say **Done**. It can take a minute or two after the installer finishes; reload again if not.
 
+Under the checklist, a line asks you to open your shop wallet app, let it finish syncing, and check a new wallet's restore height against a block number. If you did "Before the clock", that's already done.
+
 ### 6. Send a test tip (your site's admin, then the second wallet)
 
-When the four items are done, press **Get a test address** under Setup. The page shows an address and a `monero:` link.
+When the four items are done, press **Get a test address** under Setup. The page shows an address and, under it, a **payment link** (it starts with `monero:` and fills in the address and amount in most wallets). Use either one.
 
 From the **second wallet** (not your shop wallet), send at least **0.0001 XMR** to that address. The organizer tells you how to send from it.
 
@@ -92,15 +110,17 @@ From the **second wallet** (not your shop wallet), send at least **0.0001 XMR** 
 
 ### 7. Setup complete (your site's admin)
 
-Keep reloading every minute or two. Once the tip has enough confirmations (a few minutes on stagenet), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings.
+Keep reloading every minute or two. Once the tip has enough confirmations (a few minutes on stagenet), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings. At the top of the page, a **Test tip received** section shows the amount, the block it arrived in, the time it settled and its Transaction ID.
 
-**Check:** **Setup (complete)**.
+**Check:** **Setup (complete)**, and the **Test tip received** section. Tell the observer the "settled at" time it shows.
 
 ### 8. Check your wallet app (your wallet app)
 
 Open your shop wallet in Feather Wallet and let it sync.
 
-**Check:** the test tip appears in the wallet's history with the amount you sent. **Stop the clock here.**
+**Check:** the test tip appears in the wallet's history with the amount the **Test tip received** section shows (its Transaction ID matches too). **Stop the clock here.**
+
+If it isn't there after the wallet has synced, follow **Not in your wallet app?** under the Test tip received section: it says which block your wallet must be synced to and the highest restore height that works.
 
 ### If something goes wrong
 
@@ -142,11 +162,21 @@ The observer fills these in during the run, without helping. Times are wall-cloc
 | 6a | Get a test address | | | | | |
 | 6b | Tip sent from the second wallet | | | | | |
 | 6c | Payment seen on the page | | | | | |
-| 7 | Setup (complete) | | | | | |
+| 7 | Setup (complete), with Test tip received at the top. Write its "settled at" time in Notes | | | | | |
 | 8 | Tip visible in Feather, with its amount (**clock stops**) | | | | | |
 | | **Total** (step 1 start to step 8 end) | | | | | |
 
 Waiting time (installer downloads, sync, confirmations) counts: the budget is what the admin experiences.
+
+Then split the total into the three parts below, so an overrun points at the right thing (run A attempt 2 settled in about 4 minutes but failed at about 16½, on the wallet app):
+
+| Part | From | To | Minutes |
+| --- | --- | --- | --- |
+| Coffer's part | step 1 start | the page's "settled at" time | |
+| The confirmation wait (inside Coffer's part) | 6c end | the page's "settled at" time | |
+| The wallet app | the page's "settled at" time | step 8 end | |
+
+Also note how long "Before the clock" took and whether the shop wallet needed a new restore. It isn't part of the total.
 
 ### Confusion log
 
@@ -180,5 +210,6 @@ A run **passes** only when all of these hold:
 4. **One command on the wallet host:** the pasted install command. Checking commands from "If something goes wrong" are allowed but go in the confusion log.
 5. **No software installed first** on the wallet host beyond what the clean machine has.
 6. **The tip shows in the wallet app** with its amount (step 8). A tip settled on the site but missing from Feather fails the run (spec change 9).
+7. **"Before the clock" was done first,** so a run measures setup, not a wallet created with a bad restore height. If it found a problem, note it; the run still counts.
 
 Any overrun, error or confusion becomes a fix in the triage session (wording on the admin page, an installer message, a default, or a bug), and the run is repeated. The phase is done when both runs pass, or every overrun and confusion has a merged fix and the run has been repeated.

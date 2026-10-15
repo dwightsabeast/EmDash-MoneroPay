@@ -517,7 +517,7 @@ Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
 - Admin setup and upkeep, the install flow: "The command carries the site's address: EmDash's saved address when it is a public https one; otherwise the address the admin has the page open at, when that is https. The page says which, and shows no command when neither will do."
 - Bridge service, the install command: the four-line form (spec change 21's command, split at `if` / `elif` / `else` / `fi`, with the shorter message "This needs curl or wget: sudo apt install curl, then paste again.").
 
-## 24. Help the owner find the test tip in their wallet app  (status: proposed, 2026-10-14)
+## 24. Help the owner find the test tip in their wallet app  (status: accepted, 2026-10-15)
 Found in: phase 05, run A attempt 2 (`~/xmr-pay-dev-data/05-setup/run-a-attempt-2.md`, local).
 Spec says: Admin setup and upkeep, the setup checklist ending in a test tip; spec change 9 makes "the tip shows in the shop's wallet app, with its amount" a pass criterion.
 Evidence:
@@ -544,6 +544,8 @@ Proposal (Wyatt's suggestions 1–7, with Claude's recommendation on when):
 
 Effect on the admin budget: better, because a wallet-app mismatch shows up while it's cheap to fix. Item 3 adds guidance text, not a step Coffer runs or checks; there's no new setting or prompt.
 Effect on the trust contract: none (admin page text only; the txid and height are already stored).
+
+Decision (Wyatt, 2026-10-15): as proposed, with the "when" column as recommended. Item 1's details show in a "Test tip received" section at the top of the page for 24 hours after the tip settles (the plugin's clock, for display only), and inside Setup (complete) for good. Built before the rerun of A: items 1, 2, 3 and 3b in `plugin/src/admin.ts` (tests in `plugin/tests/routes/admin-setup.test.ts`), and items 5 and 7 in `docs/setup-test.md` ("Before the clock", the split timing table, pass criterion 7) and the local run sheets.
 
 Upstream note for Feather (draft; Wyatt decides whether to post it, and no LAN addresses go in it):
 "Feather 2.8.1, stagenet: a new wallet with a 16-word Polyseed got restore height 2,230,020, while the chain was at about 2,228,700 (2026-10-14). The height is in the future, so the wallet silently scans nothing and misses every payment until the chain passes it. Debug info shows the height, but nothing changes it; the only fix is restoring again with 'Override embedded wallet creation date'. Two asks: (1) clamp a new wallet's restore height to the node's current height; (2) expose the existing 'Change restore height' action (it's in the source but on no menu)."
