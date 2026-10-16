@@ -616,3 +616,47 @@ Answers (Claude Code, 2026-10-15, from the EmDash 1.1.0 source installed in the 
   - `startUpdates` (`bridge/cmd/xmr-bridge/update.go`) sets "off (installed with --no-auto-update)" and returns before checking anything.
   - The check is already separate from the install: `monerodl.Fetcher.Latest` fetches and verifies only the signed `hashes.txt`. Part 3 needs a small bridge change (check only, when off) and new signed sync body fields, a change to the spec's API contracts.
   - Also found: there is no `xmr-bridge update` command (the CLI has install, uninstall, version, run, pair, status, notify). Part 3's proposed line names it, and so does today's "Wallet host update available" banner (`plugin/src/admin.ts`). Logged in `docs/progress.md` for phase 09's self-update work.
+
+## 26. The test tip's confirmations  (status: proposed, 2026-10-15)
+Found in: phase 05, run A attempt 3 (`~/xmr-pay-dev-data/05-setup/run-A.md`, local), which passed at 13 minutes. Wyatt asked whether the test tip needs 2 confirmations.
+Spec says: Admin setup and upkeep, Install flow step 6: "Send a test tip … Setup is done when it settles." Confirmation presets: Under 100 (site currency) is Fast 1, Standard 2, Strict 10; tips use that tier (`requiredConfirmations`). "Nothing is fulfilled at zero confirmations."
+Evidence:
+- Attempt 3's test tip, from the dev database and the node (UTC):
+
+  | Event | Time | Gap |
+  | --- | --- | --- |
+  | Test address | 23:18:50 | |
+  | Tip in the pool (the page showed Payment seen) | 23:20:00 | |
+  | Mined in block 2,230,085 | 23:23:17 | 3 min 17 s in the pool |
+  | Block 2,230,086 | 23:28:38 | 5 min 21 s more |
+  | Settled | 23:29:01 | 23 s for the next sync |
+
+  - The confirmation wait was 9 of the run's 13 minutes. Coffer's own share was the 23-second sync.
+  - With 1 confirmation it would have settled at about 23:23:40: about 8½ minutes in all.
+- Block times vary: Monero targets one block every 2 minutes, but the gaps are random. Assuming a steady 2-minute rate, the tip waits more than 9 minutes after it's sent about 1 time in 16 with 2 confirmations, and about 1 time in 90 with 1. Real gaps vary more than that, as attempt 3's 5-minute gap shows.
+- The test tip takes its target from the confirmation speed setting. An owner who chooses Strict before testing waits for 10 confirmations, about 20 minutes on average, and goes over the budget every time.
+- Nothing is fulfilled on a test tip. It's the owner's own money, from their own second wallet, and it only proves that the wallet host and site see a payment. The checks that follow (seen, mined, counted: `unlockTime` "0" and no double-spend flag, then settled) are the same at 1 confirmation as at 2.
+
+Proposal: the test tip from Get a test address always needs **1 confirmation** (a constant), whatever the speed setting. It's never zero: it still has to be mined and counted. Public tips (phase 07) and orders keep the preset. The waiting line says so: "Payment seen: 0 of 1 confirmation. A test tip needs one; your buyers' payments use your confirmation speed."
+Effect on the admin budget: better. The typical wait drops by about one block, and choosing Strict no longer breaks setup.
+Effect on the trust contract: none.
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here): Install flow step 6: "Setup is done when it settles, at one confirmation whatever the speed setting (a test tip fulfils nothing)."
+
+## 27. The payments page doesn't update by itself  (status: proposed, 2026-10-15)
+Found in: phase 05, run A attempt 3, confusion log at 5:19 MDT (steps 6c and 7). The tester reloaded the page by hand to see Payment seen and then the confirmations. It cost no time, but they expected the page to update on its own.
+Spec says: Admin setup and upkeep, Install flow step 4: "The admin page's setup checklist turns green item by item". It doesn't say how.
+Evidence (EmDash 1.1.0, from the installed `@emdash-cms/admin` and `@emdash-cms/blocks`):
+- A plugin's admin page sends one `page_load` when it opens (a `useEffect` in the Block Kit page renderer) and never again. There's no timer or polling, and the dashboard widget works the same way.
+- A reply can carry `blocks` and `toast`. The validator also accepts `refresh`, `navigate` and `patch`, but those are content-editor panel effects: the admin page renderer reads only `blocks` and `toast`. Even `refresh: true` would reload once, not on a schedule.
+- Block Kit has no element that refreshes itself.
+- A `block_action` reply re-renders the page in place, so a button can refresh the page without a full browser reload.
+- A Check again while the install command is on screen would lose the command: it's shown once, and only its hash is stored. So a refresh must not run on that view, or must warn first.
+
+Proposal:
+1. **During setup only** (checklist not done), add a line at the bottom of the Setup section: "Checked at HH:MM:SS UTC. This page doesn't update by itself." It goes next to a **Check again** button, a new `block_action` that only re-renders the page.
+2. **Not on the pairing-code view.** There the line says "Reload this page after the installer says Done". It mustn't come earlier, because the command would be gone.
+3. **After setup,** nothing new. Health's "Last sync" already says how fresh the data is.
+4. **An upstream note for EmDash** (draft, for Wyatt to post): "Block Kit admin pages load once. Could a page reply carry an optional `refresh_after_seconds` (with a minimum, paused while the tab is hidden) so a status page can update itself? A plugin waiting on an external event (a payment, a sync) today has to tell the admin to reload."
+
+Effect on the admin budget: none in time. It's clearer while the admin waits, and the setup test's "reload" wording stays as a fallback.
+Effect on the trust contract: none (a button on the existing page; no route, page, widget or setting).

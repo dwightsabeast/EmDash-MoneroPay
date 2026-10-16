@@ -2064,3 +2064,45 @@ Next steps:
    - "Before the clock"
    - rerun A
    - send back attempt 3's sheet, status and install log, plus attempt 2's timing sheet and confusion log
+
+## 2026-10-15 (evening) · Phase 05 · Run A attempt 3 passed; triage items; plan for section D and run B
+
+Before the run:
+- CI run 38820484860 passed for `408a0de` (plugin, bridge, race detector).
+- Rebuilt: `setup-test-plugin.sh` with the LAN install URL, then the site build (log in `05-setup/site-build-20261015.txt`).
+- The signed release `0.0.202610140208-dev.abb8955` was served unchanged; all four files matched `SHA256SUMS`.
+- Section D:
+  - Wyatt rolled `coffer-test` back.
+  - Reset: removed 51 pool rows, 1 invoice, 7 KV entries and 1 setting. Extra backup `…20261015T230212872Z`.
+  - Started `built`. The status route answers 200 locally and at the public hostname.
+  - Node caught-up check: PASS, both at 2,230,076.
+- Wyatt: the reachability check passed, then a second rollback.
+
+**Run A attempt 3: PASS at 13 minutes** (5:15 to 5:28 MDT; `05-setup/run-A.md`, `A3-run-status.txt`, `A3-run-install-log.txt`).
+- **No help needed:** two values typed once, one command.
+- **Status:** the wallet in step with its node, 50 of 50 addresses, updates on.
+- **Before the clock:** took no time. The restore height was 2,228,000 against block 2,230,100.
+- **The tip's timeline (UTC):**
+  - test address 23:18:50
+  - in the pool 23:20:00
+  - mined in 2,230,085 at 23:23:17
+  - the next block at 23:28:38
+  - settled 23:29:01, required 2
+- **The confirmation wait was 9 of the 13 minutes.** Coffer's sync added 23 s.
+- **Feather** showed the tip, unconfirmed, at 5:19.
+- **Spec change 24 was proven live** on the built copy: the Test tip received section and the settled time.
+- **Attempt 2's timing sheet and confusion log were never filled in** (Wyatt). Nothing is waiting on them.
+
+Triage (Wyatt asked for both):
+- **Spec change 26 (proposed): the test tip needs 1 confirmation,** whatever the speed setting.
+  - It would have saved about 5½ minutes here.
+  - Today an owner who picks Strict waits 10 confirmations, about 20 minutes, which goes over the budget every time.
+  - Nothing is fulfilled on a test tip, and it's never zero confirmations.
+- **Spec change 27 (proposed): the page doesn't update by itself.**
+  - In EmDash 1.1.0, a plugin admin page sends one `page_load` and never polls. The renderer reads only `blocks` and `toast`, and Block Kit has no self-refreshing element.
+  - Proposed: during setup, a "Checked at … This page doesn't update by itself" line with a Check again button.
+  - It must not appear on the install command view: the command is shown once, so a re-render would lose it.
+  - Also an upstream note draft for EmDash.
+- **`docs/setup-friction.md`:** a row for the refresh confusion.
+
+Public stagenet nodes for run B, checked from the dev box (heights only): all six built-in ones answer, on stagenet, synchronized at 2,230,104, the dev box's height.
