@@ -2697,3 +2697,37 @@ State left:
 - **Scratch files:** `~/xmr-pay-dev-data/06-pay/` (the expected URIs and status replies, mode 600).
 
 Next: Wyatt closes phase 06, then phase 07 (tips). Read the "before 07, 07b and 09" list in the 2026-10-13 entry first, plus the phase 07 notes above.
+
+## 2026-10-16 · Phase 06 · Done: closed by Wyatt
+
+Phase 06's done criteria are met (the 6c entries above):
+- **End to end:** a stagenet product payment through `@cofferhq/astro`'s `/pay` page reached Paid without a reload, on the dev site's built copy. An open tip also did.
+- **Privacy rules,** all checked on the built copy:
+  - `Cache-Control: private, no-store`
+  - `Referrer-Policy: no-referrer`
+  - `X-Robots-Tag` and meta `noindex`
+  - `nosniff`
+  - Wyatt's CSP, by hash, with no console errors
+  - no third-party assets
+  - the token only in the polling URL
+- **The QR's exact URI:** zbarimg in CI and on the dev box, and Wyatt's camera scans.
+- **The installation snippet:** `plugin/docs/installation.md`, the registry's Installation section.
+- **CI is green** on `a87da24` (run 38950113916).
+
+Carried over:
+- **For phase 07:**
+  - the Paid card on a tip shows the amount received
+  - spec change 18 A (the static tip button)
+  - the tip button uses `checkoutErrorMessage`
+- **For release 2 (phase 08):**
+  - `isPaid`, gated content, back in the installation text
+  - PayButton
+- **For phase 09:** publish `@cofferhq/astro` with trusted publishing.
+- **Not covered:** a wallet opening a link from Open in wallet, and a wallet app scanning a QR.
+- **Still open for Wyatt:**
+  - the upstream notes
+  - spec text to fold in (now also 32)
+  - spec changes 28 item 2, 25 and 18
+  - updating the dev box's bridge
+
+Next step: phase 07 (tip mode), from the beginning. Read `docs/phases/07-tip-mode.md`, write the plan, and wait for Wyatt's approval.
