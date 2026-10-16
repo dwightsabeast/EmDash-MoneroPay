@@ -102,7 +102,7 @@ Under the checklist, a line asks you to open your shop wallet app, let it finish
 
 ### 6. Send a test tip (your site's admin, then the second wallet)
 
-When the four items are done, press **Get a test address** under Setup. The page shows an address and, under it, a **payment link** (it starts with `monero:` and fills in the address and amount in most wallets). Use either one.
+When the four items are done, press **Get a test address** under Setup. The page shows an address and, under it, a **payment link** (it starts with `monero:`). Wallets that read the link fill in the address and amount. Paste it with the keyboard (Ctrl+V); Feather ignores a link pasted any other way. If the wallet doesn't fill in the address, or offers to resolve an OpenAlias, copy the address instead and type the amount.
 
 From the **second wallet** (not your shop wallet), send at least **0.0001 XMR** to that address. The organizer tells you how to send from it.
 

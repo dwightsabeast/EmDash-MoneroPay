@@ -153,7 +153,9 @@ describe("setup checklist", () => {
 		expect(inner.findIndex((x) => x.type === "context" && x.text === appLine)).toBeLessThan(inner.findIndex((x) => x.type === "actions"));
 		inner = checklist((await h.admin.act("/payments", "get_test_address")).blocks as B[])?.blocks as B[];
 		const link = inner.findIndex((x) => x.type === "code" && String(x.code).startsWith("monero:"));
-		expect(inner[link + 1]).toEqual({ type: "context", text: "Payment link: fills in the address and amount in most wallets." });
+		// Run B attempt 2: Feather 2.8.1 reads a monero: link only from a keyboard paste; otherwise the raw link looks like an
+		// OpenAlias to it ("Unable to resolve OpenAlias: Address empty").
+		expect(inner[link + 1]).toEqual({ type: "context", text: "Payment link: wallets that read one fill in the address and amount. Paste it with the keyboard (Ctrl+V, or Cmd+V on a Mac). If your wallet doesn't fill in the address, or says it can't resolve an OpenAlias, copy the address above instead." });
 		expect(inner).toContainEqual({ type: "context", text: appLine });
 		// Nothing about a received tip until one settles.
 		expect(text(await load())).not.toContain("Look for this in your shop wallet's history");

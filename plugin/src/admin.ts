@@ -268,7 +268,9 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 				{ type: "section", text: `Send at least ${shortXmr(DUST_ATOMIC)} XMR to this address from any wallet. It's a tip to your own shop wallet, so the money stays yours.` },
 				{ type: "code", code: open.subaddress },
 				{ type: "code", code: tipUri(open.subaddress) },
-				{ type: "context", text: "Payment link: fills in the address and amount in most wallets." },
+				// Feather 2.8.1 reads a monero: link only from a keyboard paste; pasted another way it looks like an OpenAlias
+				// (run B attempt 2), so the label says how to paste and what to do instead.
+				{ type: "context", text: "Payment link: wallets that read one fill in the address and amount. Paste it with the keyboard (Ctrl+V, or Cmd+V on a Mac). If your wallet doesn't fill in the address, or says it can't resolve an OpenAlias, copy the address above instead." },
 				{ type: "context", text: open.status === "new" ? `Waiting for the payment (until ${utc(open.expiresAt)}).` : `Payment seen: ${t.depth} of ${open.required} confirmations.` },
 			);
 		}

@@ -547,8 +547,17 @@ Effect on the trust contract: none (admin page text only; the txid and height ar
 
 Decision (Wyatt, 2026-10-15): as proposed, with the "when" column as recommended. Item 1's details show in a "Test tip received" section at the top of the page for 24 hours after the tip settles (the plugin's clock, for display only), and inside Setup (complete) for good. Built before the rerun of A: items 1, 2, 3 and 3b in `plugin/src/admin.ts` (tests in `plugin/tests/routes/admin-setup.test.ts`), and items 5 and 7 in `docs/setup-test.md` ("Before the clock", the split timing table, pass criterion 7) and the local run sheets.
 
+Addendum, item 3b (run B attempt 2, 2026-10-16):
+- **What happened:** pasting the page's `monero:` link into Feather 2.8.1's Pay to box gave "Unable to resolve OpenAlias: Address empty", and the tester pasted the address alone.
+- **Cause, from Feather's 2.8.1 source (`src/widgets/PayToEdit.cpp`, `src/SendWidget.cpp`):**
+  - Feather reads a link only from a keyboard paste whose text starts with `monero:` (`keyPressEvent` → `pasteEvent` → `parse_uri_to_object`).
+  - Pasted any other way, for example from the right-click menu, the link stays raw text. Text with a dot and no spaces counts as an OpenAlias (`isOpenAlias`), and the "Resolve OpenAlias" button then fails with "Address empty".
+- **The link itself is well-formed:** Monero's `wallet2::parse_uri` accepts it (`tx_amount`, `tx_description`), and the admin's code block is a plain `<pre>` with no line numbers. The link can't drop the dot, because the amount needs one.
+- **Fix:** the label now says how to paste and what to do if it fails: "Payment link: wallets that read one fill in the address and amount. Paste it with the keyboard (Ctrl+V, or Cmd+V on a Mac). If your wallet doesn't fill in the address, or says it can't resolve an OpenAlias, copy the address above instead." Step 6 of `docs/setup-test.md` says the same.
+
 Upstream note for Feather (draft; Wyatt decides whether to post it, and no LAN addresses go in it):
 "Feather 2.8.1, stagenet: a new wallet with a 16-word Polyseed got restore height 2,230,020, while the chain was at about 2,228,700 (2026-10-14). The height is in the future, so the wallet silently scans nothing and misses every payment until the chain passes it. Debug info shows the height, but nothing changes it; the only fix is restoring again with 'Override embedded wallet creation date'. Two asks: (1) clamp a new wallet's restore height to the node's current height; (2) expose the existing 'Change restore height' action (it's in the source but on no menu)."
+Second note (same thread or separate): "Feather 2.8.1: a `monero:` URI pasted into Pay to from the right-click menu isn't parsed (only a Ctrl+V paste reaches `pasteEvent`), and a URI with an amount looks like an OpenAlias (`isOpenAlias`: a dot and no spaces), so 'Resolve OpenAlias' fails with 'Address empty'. Could `insertFromMimeData` route `monero:` text through the same URI parser, and could `isOpenAlias` skip text starting with `monero:`?"
 
 ## 25. Admin upkeep: tip records, quiet-host alerts, versions, a recovery sheet, an activity log  (status: proposed, 2026-10-14)
 Found in: Wyatt's planning chat of 2026-10-14 ("what would make the admin side easier to live with"), after reading the spec, spec changes 1–24 and phases 07, 07b and 09.
