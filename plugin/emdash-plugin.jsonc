@@ -11,6 +11,11 @@
 	"repo": "https://github.com/dwightsabeast/EmDash-MoneroPay",
 
 	"name": "Coffer",
+	// The registry listing's Installation section (Wyatt approved the text, phase 06 session 6c). Profile text, inlined at
+	// publish (2,000 graphemes at most). Release 1 covers tips; release 2 adds gated content (isPaid) to it.
+	"sections": {
+		"installation": { "file": "./docs/installation.md" }
+	},
 
 	// Trust contract (spec, "Plugin manifest", revision 69; CLAUDE.md, "Plugin trust contract (frozen)").
 	// Changing any of it needs a new version and Wyatt's approval; broadening it is a major version.
