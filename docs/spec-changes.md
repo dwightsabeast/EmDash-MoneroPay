@@ -299,7 +299,7 @@ Implemented in session 3j (2026-10-08), option (a) with a 720-block margin (Wyat
 - If wallet creation fails after pairing, the code is spent; the error says to press Connect wallet host for a new one.
 Spec text to fold in, Admin setup step 3: "creates the view-only wallet with a restore height of today (no full-chain scan), or, when the site already has open invoices, from just before the oldest of them (the pairing response suggests it), so a reinstall sees payments made while the wallet host was away"; and in the installer's steps, pairing moves before the wallet's creation. API contracts, `bridge/sync` response: "`restoreHeight` (number, on the response that completes a pairing only, absent when no invoice is watched)".
 
-## 18. A tips-only tier with no wallet host  (status: proposed, 2026-10-08)
+## 18. A tips-only tier with no wallet host  (status: A accepted for phase 07, B deferred until after release 1; 2026-10-16)
 Found in: Wyatt's planning chat, 2026-10-08, comparing Coffer with SlowBearDigger's `xmr-pay` (npm 1.1.0, published 2026-06-21; README section "You do not need a dedicated server"). Not found by code or tests; it reopens a decision at Wyatt's request.
 Spec says:
 - Key design decisions, "Wallet host on its own Linux machine": "A watcher inside the plugin and running on the site's server were both considered and rejected."
@@ -390,6 +390,16 @@ Effect on the trust contract:
 - **Both keep** the reason behind the "no in-plugin watcher" decision: no key of any kind on the site; the view key stays on the wallet host or nowhere. B does take on the rejected watcher's other cost, depending on public nodes, and accepts it for tips only. Only the decision's wording, "no in-plugin quick setup mode", is reopened.
 
 Recommended order (planning chat): accept A for phase 06. Run B's spike after phase 04 and decide B before phase 07. Phase 04 goes ahead as written.
+Decision (Wyatt, 2026-10-16, phase 07 plan):
+- **A is built in phase 07, as a fallback of the invoice tip button** rather than a separate mode.
+  - The button takes an optional shop `address` and a `network`.
+  - When checkout can't make a tip invoice (no free pool address, as before pairing, or the plugin can't answer), the visitor sees that address with a local QR, Copy, and "This site doesn't confirm these tips."
+  - Once a wallet host is paired, the same button makes tip invoices with no theme edit.
+  - The question above about `WALLET_HOST_SILENT` is moot: tips are taken while the host is silent (spec change 33).
+- **The address is checked** (Wyatt): base58 alphabet and length (95; integrated addresses refused), and its network byte against `network`.
+  - A bad one shows an error for the site's admin, never a QR or the address.
+  - The base58 checksum needs Keccak-256, which WebCrypto lacks; wallets check it before sending.
+- **B (proof-checked tips) waits until after release 1,** spike included.
 
 ## 19. The "paste a key by hand" fallback has nothing to paste  (status: accepted, 2026-10-09, option (a))
 Found in: phase 04 session 4b, building the Settings section.
@@ -838,3 +848,50 @@ Effect on the admin budget: none.
 Effect on the trust contract: none. Same route, method and visibility. No capability, collection or index change; `uriDescription` is a new optional field in invoice data.
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here): API contracts, `GET status`: add `kind`, `address`, `uri`, `fiat` and `minAtomic` to the example, with "`uri` is the same as checkout's".
 Decision (Wyatt, 2026-10-16): accepted, during the phase 06 plan.
+
+## 33. Tips: never late, watched longer, settled at the floor  (status: accepted, 2026-10-16)
+Found in: phase 07 planning, settling the four items in `docs/decisions.md`'s 2026-10-12 tips row, and the phase file's amount rule against the code.
+Spec says: Tip jar mode: "An open tip settles on any amount at or above the dust floor"; "Confirmations: the lowest tier of the chosen speed preset". Invoice lifecycle: a payment made after the window goes to review as `late`. API contracts, `bridge/sync`, "Watch list": expired and review invoices inside the 24-hour late window. Phase 07 file: "With an amount: settles like a product at tolerance."
+Evidence:
+- **Tips are taken while the host is silent or syncing** (decisions, 2026-10-12). Such a tip takes its deadline from the last sync's height, which is stale or far too low, so a tip paid on time could look late.
+- **The phase file's "at tolerance" would lose money.** `totals()` already uses a tip's floor (`minAtomic`) as its threshold for every tip. A set-amount tip held to 99.5% would stay "seen" when underpaid, and since tips have no underpaid review, it would expire with real money on it.
+- **The 24-hour watch window misses a tip paid during an outage longer than a day.**
+- **A longer watch has a cost** (Wyatt asked).
+  - The site-wide cap is 40 open invoices per 30-minute window, so a bot can make about 1,920 invoices a day.
+  - Watched for 7 days, that's about 13,440 addresses on the bridge's list. The bridge reports 100 a sync, about 135 syncs a pass, and real tips wait behind the junk.
+  - The plugin would rebuild the list from about 15,000 rows a sync.
+
+Proposal (Wyatt's decisions, 2026-10-16):
+1. **A tip settles on any counted amount at or above the floor (0.0001 XMR), whenever it's seen.**
+   - It is never `late`.
+   - An expired tip that receives the floor or more reopens to confirming, then settled.
+   - A set amount (fiat or XMR) only fills in the payment link; whatever arrives is recorded. A tip is never `underpaid`.
+2. **Below the floor at the end of the window, a tip expires quietly,** as the proof of concept does.
+3. **Watched for 7 days after its window, except when untouched:** a tip with no transfer ever reported leaves the list once the wallet host has reported its address empty for 24 hours past its window.
+   - Measured by the invoice's `seq` (the bridge's clock of the newest snapshot applied), not the plugin's clock.
+   - During an outage, `seq` doesn't advance, so the tip stays watched.
+   - With a healthy host, a bot's hold is about 1,920 addresses, as for products today.
+4. **Tips are taken while the host is silent or syncing,** at the last sync's height, which never goes down. Products keep refusing.
+5. **A fiat amount with no price available becomes an open tip** instead of failing.
+6. **Wording:**
+   - When the pool is empty, the tip button says "Tips can't be taken right now. Please try again in a few minutes."
+   - Every tip's pay page says "Tips are confirmed when the shop's wallet sees them; this can take a while."
+   - A tip's Paid card shows the amount received.
+   - No new status field.
+
+Effect on the admin budget: none.
+Effect on the trust contract: none (lifecycle and watch rules; no route, setting, capability or index change).
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here): Tip jar mode (amount, the watch, silent hosts), Invoice lifecycle (the tips rule), the `bridge/sync` watch list.
+
+## 34. The public "tips received" count  (status: deferred, 2026-10-16)
+Found in: phase 07 planning (the phase file's stop point).
+Spec says: Tip jar mode, "Public display: off by default. The owner may enable a tips-received count, but never amounts or notes."
+Evidence:
+- **A visitor's page can read plugin data only through a public route.** Status needs an invoice's token, so a count needs a new public route, or another way to read it.
+- **Turning it on needs a fourth setting.**
+- Both touch the frozen trust contract (routes, settings).
+
+Proposal: not in release 1. Revisit after release 1, as a new version with a fresh consent prompt if it's wanted.
+Effect on the admin budget: none (one fewer optional setting).
+Effect on the trust contract: none now.
+Decision (Wyatt, 2026-10-16): deferred, as proposed.

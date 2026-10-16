@@ -21,9 +21,9 @@ Phase 07, tip mode. Read docs/phases/07-tip-mode.md and docs/progress.md, then g
 
 - **Decided (Wyatt, 2026-10-12):** tips stay open whatever the wallet host's state, while orders keep refusing (`WALLET_HOST_SILENT`, `WALLET_HOST_SYNCING`). Read the row in `docs/decisions.md` first: it lists what this phase must settle (empty pool, no late review for tips, watch length, tip-page wording). The setup-test tip on the admin page doesn't change.
 - `checkout` accepts `kind: "tip"` with optional `contentRef` (collection and entry id, checked to exist through `ctx.content`), optional `amount` (fiat minor units or XMR atomic units, clearly typed), and optional `note` (plain text, length-limited, control characters stripped).
-- No amount: an open tip that settles on any counted amount at or above `minAtomic` (proposed 0.0001 XMR = 10^8 atomic units). With an amount: settles like a product at tolerance.
+- No amount: an open tip that settles on any counted amount at or above `minAtomic` (0.0001 XMR = 10^8 atomic units). With an amount: **the same** (spec change 33, Wyatt 2026-10-16): the amount only fills in the payment link, and tolerance would expire an underpaid tip with real money on it.
 - Confirmations: the lowest tier of the chosen speed preset.
-- Under-dust payments at expiry: the spec doesn't say, and the POC simply expired them. Ask Wyatt; review as underpaid is the cautious choice.
+- Under-dust payments at expiry: expire quietly, as the POC did (Wyatt, 2026-10-16; spec change 33).
 - Notes and buyer data are purged 30 days after the invoice is final, like other buyer data.
 - Admin page: a tips view with totals per entry (counted, settled tips only) and recent notes.
 - **The release-1 switch (spec change 22).** One constant in the plugin, turned off here, once tip checkout works. Off means:
