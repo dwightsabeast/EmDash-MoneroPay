@@ -2572,8 +2572,28 @@ Not covered yet (session 6c):
 - a live stagenet payment
 - the install text
 
+Changed before 6c (Wyatt, 2026-10-16): **he has no phone wallet.** So the QR check is:
+- He scans each QR (the product's and the admin test tip's `/pay` page) with his phone's camera, and compares the decoded text with the `monero:` URI. I give him the expected URIs in a file.
+- On his PC he opens "Open in wallet", which should open Feather with the address and amount filled in.
+- He pays from Feather (the CLI buyer wallet is empty, so no `pay-script`).
+
+What this covers:
+- The camera scan, plus CI's zbar round trip, checks that the QR holds the exact URI.
+- Feather checks that a wallet reads the link.
+- No wallet reads the QR itself.
+
 Next: session 6c, the dev site end to end. Steps:
-1. Back up `data.db`, then `npm install file:../../xmr-pay/theme` in the dev site, and add `src/pages/pay/[token].astro`.
-2. Build the plugin, then the built copy.
-3. Make a product checkout, and have Wyatt look at the page, scan the QR (and the test tip's), and pay from Feather.
-4. Write the `sections.installation` text.
+1. Back up `data.db`. In the dev site, `npm install file:../../xmr-pay/theme`, and add `src/pages/pay/[token].astro` (the two-line snippet).
+2. Build the plugin, then the site, and start the built copy (4322). The CSP is checked there, because `astro dev` injects a script it blocks.
+3. Make a product checkout (`dev-invoices.mjs new p6`) and a test tip (Get a test address on the admin page). Write both expected URIs to a file for Wyatt.
+4. **Wyatt:**
+   - opens both `/pay` pages through his tunnel
+   - compares the camera scans with the URIs
+   - checks the console for CSP errors
+   - opens "Open in wallet" in Feather
+   - pays the product from Feather and watches the page reach Paid with no reload
+5. **Me:**
+   - `curl -I` for the headers
+   - the HTML for third-party references
+   - `isPaid` through a temporary test page, deleted afterwards
+6. Write the `sections.installation` text and show it to Wyatt before committing.
