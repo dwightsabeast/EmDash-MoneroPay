@@ -393,7 +393,7 @@ Recommended order (planning chat): accept A for phase 06. Run B's spike after ph
 Decision (Wyatt, 2026-10-16, phase 07 plan):
 - **A is built in phase 07, as a fallback of the invoice tip button** rather than a separate mode.
   - The button takes an optional shop `address` and a `network`.
-  - When checkout can't make a tip invoice (no free pool address, as before pairing, or the plugin can't answer), the visitor sees that address with a local QR, Copy, and "This site doesn't confirm these tips."
+  - When checkout can't make a tip invoice (no free pool address, as before pairing; the open-invoice cap reached, `TOO_MANY_OPEN`, added by Wyatt; or the plugin can't answer), the visitor sees that address with a local QR, Copy, and "This site doesn't confirm these tips."
   - Once a wallet host is paired, the same button makes tip invoices with no theme edit.
   - The question above about `WALLET_HOST_SILENT` is moot: tips are taken while the host is silent (spec change 33).
 - **The address is checked** (Wyatt): base58 alphabet and length (95; integrated addresses refused), and its network byte against `network`.
