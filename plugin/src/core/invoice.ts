@@ -46,6 +46,8 @@ export interface Invoice {
 	returnUrl?: string;
 	/** The monero: URI's tx_description, kept so status can rebuild checkout's URI (spec change 32). */
 	uriDescription?: string;
+	/** "checkout" for a visitor's tip (phase 07); absent for the admin's test tips and for products. */
+	via?: "checkout";
 	/** Fiat amount in minor units (decimal string); null for open-amount tips. */
 	fiat: { amountMinor: string; currency: string } | null;
 	/** The XMR price locked at checkout, in fiat minor units per XMR (decimal string). */

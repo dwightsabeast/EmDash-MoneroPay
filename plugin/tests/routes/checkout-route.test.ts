@@ -157,9 +157,9 @@ describe("checkout", () => {
 		expect((await h.inspect.storage.list<Invoice>("invoices"))[0].data).toMatchObject({ createdHeight: H0, expiresHeight: H0 + 18 });
 	});
 
-	it("INVALID_REQUEST for anything but a well-formed product checkout", async () => {
+	it("INVALID_REQUEST for anything but a well-formed product checkout (tips: tip-checkout.test.ts)", async () => {
 		await setup();
-		for (const body of [null, [], {}, { kind: "tip" }, { kind: "order", product: "handbook" }, { kind: "product" }, { kind: "product", product: "a/b" },
+		for (const body of [null, [], {}, { kind: "order", product: "handbook" }, { kind: "product" }, { kind: "product", product: "a/b" },
 			{ kind: "product", product: "handbook", email: "not-an-email" }, { kind: "product", product: "handbook", refundAddress: "4abc" }]) {
 			expect(await checkout(body)).toEqual({ error: { code: "INVALID_REQUEST" } });
 		}

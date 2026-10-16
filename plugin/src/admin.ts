@@ -213,8 +213,10 @@ function healthBlocks(h: Health): Block[] {
 
 /** The newest test tips (kind "tip" invoices made from this page; public tips come in phase 07). */
 async function testTips(ctx: PluginContext): Promise<Invoice[]> {
-	const r = await invoices(ctx).query({ where: { kind: "tip" }, orderBy: { createdAt: "desc" }, limit: 10 });
-	return r.items.map((i) => i.data);
+	// The admin's own test tips only: a visitor's tip (via "checkout", phase 07) never completes setup or stands in for
+	// the test address. Bounded: the newest 100 tips, which on a busy site may hold no test tip after setup (fine then).
+	const r = await invoices(ctx).query({ where: { kind: "tip" }, orderBy: { createdAt: "desc" }, limit: 100 });
+	return r.items.map((i) => i.data).filter((t) => t.via === undefined).slice(0, 10);
 }
 
 /** The test tip's monero: URI description (stored on the invoice; spec change 32). */

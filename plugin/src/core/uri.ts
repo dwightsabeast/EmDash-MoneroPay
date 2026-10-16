@@ -13,8 +13,11 @@ export function paymentUri(address: string, amountAtomic: bigint | null, descrip
 	return params.length > 0 ? `monero:${address}?${params.join("&")}` : `monero:${address}`;
 }
 
-/** An invoice's URI: its expected amount, or a tip's floor when it has none; no description if none was stored. */
-export function invoiceUri(inv: Pick<Invoice, "subaddress" | "expectedAtomic" | "minAtomic" | "uriDescription">): string {
-	const amount = inv.expectedAtomic ?? inv.minAtomic;
+/**
+ * An invoice's URI: its expected amount; with none, the admin test tip's floor, while a visitor's open tip carries no
+ * amount, so the wallet asks (spec change 33). No description if none was stored.
+ */
+export function invoiceUri(inv: Pick<Invoice, "subaddress" | "expectedAtomic" | "minAtomic" | "uriDescription" | "via">): string {
+	const amount = inv.expectedAtomic ?? (inv.via === "checkout" ? null : inv.minAtomic);
 	return paymentUri(inv.subaddress, amount !== null ? BigInt(amount) : null, inv.uriDescription);
 }
