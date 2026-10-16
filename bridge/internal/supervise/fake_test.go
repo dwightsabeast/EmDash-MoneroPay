@@ -46,10 +46,10 @@ func fakeWalletRPC(args []string) int {
 	conf := fs.String("config-file", "", "")
 	port := fs.Int("rpc-bind-port", 0, "")
 	ip := fs.String("rpc-bind-ip", "", "")
-	for _, name := range []string{"wallet-dir", "shared-ringdb-dir", "log-file", "max-log-file-size", "max-log-files", "daemon-address", "daemon-ssl", "tx-notify"} {
+	for _, name := range []string{"wallet-dir", "shared-ringdb-dir", "log-file", "max-log-file-size", "max-log-files", "daemon-address", "daemon-ssl", "daemon-ssl-ca-certificates", "tx-notify"} {
 		fs.String(name, "", "")
 	}
-	for _, name := range []string{"non-interactive", "stagenet", "testnet"} {
+	for _, name := range []string{"non-interactive", "stagenet", "testnet", "daemon-ssl-allow-chained"} {
 		fs.Bool(name, false, "")
 	}
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {

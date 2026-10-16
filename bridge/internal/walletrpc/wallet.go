@@ -10,7 +10,8 @@ import (
 
 // GenerateFromKeys creates a view-only wallet file from the primary address and the private view key (no spend
 // key), scanning from restoreHeight. The secrets go only into the request body; wallet-rpc refuses a view key that
-// doesn't belong to the address. The wallet stays open.
+// doesn't belong to the address. The wallet stays open. Over a remote https node it can take longer than a routine
+// call (spec change 28), so it runs without the client's timeout: ctx alone bounds it.
 func (c *Client) GenerateFromKeys(ctx context.Context, filename, address string, viewKey, password secret.String, restoreHeight uint64) error {
 	params := map[string]any{
 		"filename":         filename,
@@ -24,7 +25,7 @@ func (c *Client) GenerateFromKeys(ctx context.Context, filename, address string,
 	var r struct {
 		Address string `json:"address"`
 	}
-	if err := c.call(ctx, "generate_from_keys", params, &r); err != nil {
+	if err := c.untimed().call(ctx, "generate_from_keys", params, &r); err != nil {
 		return err
 	}
 	if r.Address != address {
@@ -33,10 +34,10 @@ func (c *Client) GenerateFromKeys(ctx context.Context, filename, address string,
 	return nil
 }
 
-// OpenWallet opens a wallet file in wallet-rpc's --wallet-dir.
+// OpenWallet opens a wallet file in wallet-rpc's --wallet-dir. Like GenerateFromKeys, ctx alone bounds it.
 func (c *Client) OpenWallet(ctx context.Context, filename string, password secret.String) error {
 	var r struct{}
-	return c.call(ctx, "open_wallet", map[string]any{"filename": filename, "password": password.Reveal()}, &r)
+	return c.untimed().call(ctx, "open_wallet", map[string]any{"filename": filename, "password": password.Reveal()}, &r)
 }
 
 // CloseWallet saves and closes the open wallet.
@@ -62,12 +63,12 @@ func (c *Client) RescanBlockchain(ctx context.Context) error {
 	return c.untimed().call(ctx, "rescan_blockchain", struct{}{}, &r)
 }
 
-// untimed is a copy of the client without the HTTP client's overall timeout. It starts with its own digest
-// challenge, so the two never share a nonce count.
+// untimed is a view of the client without the HTTP client's overall timeout. It shares the client's digest state,
+// so both count one server nonce together (separate counts collided once open_wallet went untimed).
 func (c *Client) untimed() *Client {
 	hc := *c.http
 	hc.Timeout = 0
-	return &Client{url: c.url, user: c.user, pass: c.pass, http: &hc, maxResponse: c.maxResponse}
+	return &Client{url: c.url, user: c.user, pass: c.pass, http: &hc, maxResponse: c.maxResponse, auth: c.auth}
 }
 
 // errAddressIndexOutOfBounds is WALLET_RPC_ERROR_CODE_ADDRESS_INDEX_OUT_OF_BOUNDS (wallet-rpc 0.18.5.1).

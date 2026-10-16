@@ -214,6 +214,31 @@ func TestRescanBlockchainOutlastsTheClientTimeout(t *testing.T) {
 	}
 }
 
+// Over an https remote node, generate_from_keys took longer than the supervisor client's 5 s (spec change 28, run B
+// attempt 1's fix in a live run), and open_wallet can too. Both run without the client's timeout; ctx bounds them.
+func TestWalletCallsOutlastTheClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Write([]byte(`{"jsonrpc":"2.0","id":"0","result":{"address":"addr"}}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "u", secret.New("p"), &http.Client{Timeout: 50 * time.Millisecond})
+	if err := c.GenerateFromKeys(context.Background(), "shop", "addr", secret.New("v"), secret.New("p"), 1); err != nil {
+		t.Fatalf("generate_from_keys: %v", err)
+	}
+	if err := c.OpenWallet(context.Background(), "shop", secret.New("p")); err != nil {
+		t.Fatalf("open_wallet: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := c.GenerateFromKeys(ctx, "shop", "addr", secret.New("v"), secret.New("p"), 1); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the context still bounds generate_from_keys, got %v", err)
+	}
+	if err := c.OpenWallet(ctx, "shop", secret.New("p")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the context still bounds open_wallet, got %v", err)
+	}
+}
+
 func TestHasSubaddress(t *testing.T) {
 	f, srv := newFake(t)
 	c := client(f, srv)

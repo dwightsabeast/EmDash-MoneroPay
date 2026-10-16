@@ -216,6 +216,7 @@ The spec says the worst case is free goods, not lost funds. For tips, the matchi
 | A 100 MB reply, a reply that drips for minutes, a redirect to another host, a 401 or 403, the wrong content type, invalid JSON | F05 | Go | 1 |
 | A self-signed or expired certificate on the site and on the release host | C03 | Go (`httptest.NewTLSServer`) | 1 |
 | A dishonest node: lies about height, puts the txid in the wrong block, or the second node lies too; both nodes unreachable | T14 | Go | 1 |
+| A man in the middle on the link to an https node, with a valid certificate for a different name (spec change 28). On the dev box, a TLS proxy sits in front of a stagenet node and presents a certificate for `other.example` from a test CA. The bridge's supervisor starts wallet-rpc with that CA as its bundle, the node configured as `https://node.example:<port>` and the name pointed at the proxy. Then the proxy feeds a false height, a fake transfer and a reordered block. Record whether wallet-rpc accepts the connection (expected today: yes, because wallet-rpc doesn't check the name) and whether the cross-check catches the lies. The result is evidence for the TLS forwarder decision due before phase 09 | T14, C03 | Live (wallet-rpc), dev box | 1 |
 | wallet-rpc replies with huge numbers, missing fields, negative amounts or a non-zero `unlock_time` | F05, T11 | Go | 1 |
 | A double-spend flag set on a transfer that already counted | T11, T12 | Go, Host | 1 |
 

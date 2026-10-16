@@ -38,6 +38,8 @@ type Options struct {
 	DataDir string // absolute; run/, wallet/, ringdb/ and log/ are created under it
 	Network config.Network
 	Node    string // monerod RPC URL, http or https, with a port
+	// CABundles are the CA bundle files to try, in order, for an https node (nil: DefaultCABundles).
+	CABundles []string
 	// NotifyCommand runs for each new incoming transaction (--tx-notify), with the txid appended. Its parts may not
 	// contain spaces or '%': wallet-rpc splits the command on spaces.
 	NotifyCommand []string
@@ -58,6 +60,25 @@ type Options struct {
 	StableAfter  time.Duration // default 5 min: a run this long resets the backoff
 }
 
+// DefaultCABundles are where Linux distributions keep the system's trusted CA certificates: Debian and Ubuntu, then
+// Fedora and RHEL.
+var DefaultCABundles = []string{"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"}
+
+// ErrNoCABundle: an https node needs the system's CA bundle, and none was found.
+var ErrNoCABundle = errors.New("this machine has no list of trusted certificate authorities, which Monero's wallet program needs to use an https node. Install it with: sudo apt install ca-certificates (or your system's ca-certificates package), or give an http node instead")
+
+// CABundle returns the first of paths that is a non-empty regular file. wallet-rpc refuses --daemon-ssl enabled on
+// its own (spec change 28): it needs a CA file, and with --daemon-ssl-allow-chained it accepts any certificate that
+// chains to one in the file. It doesn't check the certificate's name.
+func CABundle(paths []string) (string, error) {
+	for _, p := range paths {
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Size() > 0 {
+			return p, nil
+		}
+	}
+	return "", ErrNoCABundle
+}
+
 // Status describes the child for `xmr-bridge status` and the health checks.
 type Status struct {
 	Running  bool
@@ -74,6 +95,7 @@ type Supervisor struct {
 	o          Options
 	daemonAddr string
 	daemonSSL  string
+	daemonCA   string // the CA bundle for an https node
 	notify     string
 
 	owner *[2]int // uid, gid the login file was handed to (tests)
@@ -100,7 +122,15 @@ func New(o Options) (*Supervisor, error) {
 	}
 	s := &Supervisor{o: o, daemonAddr: u.Host, daemonSSL: "disabled", readyCh: make(chan struct{})}
 	if u.Scheme == "https" {
-		s.daemonSSL = "enabled"
+		paths := o.CABundles
+		if paths == nil {
+			paths = DefaultCABundles
+		}
+		ca, err := CABundle(paths)
+		if err != nil {
+			return nil, err
+		}
+		s.daemonSSL, s.daemonCA = "enabled", ca
 	}
 	if len(o.NotifyCommand) > 0 {
 		if !filepath.IsAbs(o.NotifyCommand[0]) {
@@ -238,6 +268,9 @@ func (s *Supervisor) runOnce(ctx context.Context) error {
 		"--max-log-files", "2",
 		"--daemon-address", s.daemonAddr,
 		"--daemon-ssl", s.daemonSSL,
+	}
+	if s.daemonCA != "" {
+		args = append(args, "--daemon-ssl-ca-certificates", s.daemonCA, "--daemon-ssl-allow-chained")
 	}
 	switch s.o.Network {
 	case config.Stagenet:
@@ -409,4 +442,40 @@ func (t *tailBuffer) String() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.TrimSpace(string(t.b))
+}
+
+// LastError returns the message of the last ERROR line in wallet-rpc's log under dataDir (at most 300 bytes), or ""
+// when there is none. wallet-rpc answers "error 0" with no message when an exception escapes a handler (spec change
+// 28); its log has the reason. Only the log's last 64 KiB are read.
+func LastError(dataDir string) string {
+	f, err := os.Open(filepath.Join(dataDir, "log", "wallet-rpc.log"))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	const tail = 64 << 10
+	if fi, err := f.Stat(); err == nil && fi.Size() > tail {
+		f.Seek(fi.Size()-tail, io.SeekStart)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, tail))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		fields := strings.Split(lines[i], "\t")
+		if len(fields) < 6 || strings.TrimSpace(fields[2]) != "ERROR" {
+			continue
+		}
+		msg := strings.Join(fields[5:], "\t")
+		if _, after, ok := strings.Cut(msg, "(): "); ok {
+			msg = after
+		}
+		msg = strings.TrimSpace(msg)
+		if len(msg) > 300 {
+			msg = msg[:300]
+		}
+		return strings.ToValidUTF8(msg, "")
+	}
+	return ""
 }

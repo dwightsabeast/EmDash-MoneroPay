@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/secret"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/supervise"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/wallet"
+	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/walletrpc"
 )
 
 // cmdInstall is what install.sh hands off to, and the spec's cautious path. It asks for the shop wallet's address
@@ -70,6 +72,7 @@ func installSteps(log *slog.Logger) installer.Steps {
 			return noderpc.GetInfo(c, u, nil)
 		},
 		SameMachine:      installer.NewDetector().Signals,
+		CABundle:         func() (string, error) { return supervise.CABundle(supervise.DefaultCABundles) },
 		InstallWalletRPC: func(ctx context.Context, binDir string) error { return installWalletRPC(ctx, binDir, log) },
 		CreateWallet:     createWallet,
 		Pair: func(ctx context.Context, cfg config.Config, code string) (uint64, error) {
@@ -108,8 +111,34 @@ func createWallet(ctx context.Context, cfg config.Config, view secret.String, cr
 	if err != nil {
 		return err
 	}
-	return wallet.Create(ctx, c, cfg, view, node)
+	// generate_from_keys runs without the client's 5 s timeout (it can take longer over a remote https node), so it
+	// gets its own bound here.
+	cctx, ccancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer ccancel()
+	return explainWalletRPC(wallet.Create(cctx, c, cfg, view, node), cfg.DataDir)
 }
+
+// explainWalletRPC replaces wallet-rpc's bare "error 0" (an exception that escaped its handler, as in run B attempt
+// 1) with the reason from wallet-rpc's log, keeping the error underneath. Anything else is returned as it is.
+func explainWalletRPC(err error, dataDir string) error {
+	var re *walletrpc.RPCError
+	if !errors.As(err, &re) || re.Code != 0 || re.Message != "" {
+		return err
+	}
+	why := supervise.LastError(dataDir)
+	if why == "" {
+		return err
+	}
+	return explained{why: why, err: err}
+}
+
+type explained struct {
+	why string
+	err error
+}
+
+func (e explained) Error() string { return "Monero's wallet program refused: " + e.why }
+func (e explained) Unwrap() error { return e.err }
 
 func cmdUninstall(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)

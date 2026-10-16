@@ -210,6 +210,36 @@ func TestNodeFlag(t *testing.T) {
 	}
 }
 
+// Spec change 28: wallet-rpc needs the system's CA bundle for an https node. Without one, the node prompt says so
+// (so an http node can be given instead), and a --node flag is refused, both before pairing uses the code.
+func TestHTTPSNodeNeedsACABundle(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	st.nodes = map[string]noderpc.Info{
+		"https://node.example:38089": {NetType: "stagenet", Height: 1, Synchronized: true},
+		"http://node.example:38089":  {NetType: "stagenet", Height: 1, Synchronized: true},
+	}
+	st.noCA = errors.New("this machine has no list of trusted certificate authorities: sudo apt install ca-certificates")
+	tty.answers = []string{stagenetAddr, "https://node.example:38089", "http://node.example:38089"}
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatalf("%v\n%s", err, tty.said.String())
+	}
+	if st.walletCfg.Node != "http://node.example:38089" || !strings.Contains(tty.said.String(), "ca-certificates") {
+		t.Fatalf("node %s, said %s", st.walletCfg.Node, tty.said.String())
+	}
+
+	opts, sys, tty, st = harness(t)
+	opts.Node = "https://node.example:38089"
+	st.nodes = map[string]noderpc.Info{"https://node.example:38089": {NetType: "stagenet", Height: 1, Synchronized: true}}
+	st.noCA = errors.New("this machine has no list of trusted certificate authorities: sudo apt install ca-certificates")
+	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
+	if err == nil || !strings.Contains(err.Error(), "ca-certificates") {
+		t.Fatalf("--node https without a bundle: %v", err)
+	}
+	if len(st.order) != 0 {
+		t.Fatalf("steps ran before the refusal: %v", st.order)
+	}
+}
+
 // A node that answers but hasn't caught up with the network (spec change 20): the installer says so, with how far
 // it has got, and goes on. No prompt is added.
 func TestSyncingNodeSaysSo(t *testing.T) {

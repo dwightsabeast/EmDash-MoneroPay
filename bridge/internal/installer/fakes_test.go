@@ -127,6 +127,7 @@ type fakeSteps struct {
 	pairCode   string
 	suggest    uint64 // the restore height the site suggests on pairing (0: none)
 	walletErr  error
+	noCA       error // what CABundle returns (nil: a bundle exists)
 }
 
 func (s *fakeSteps) steps(sys *fakeSystem) Steps {
@@ -138,6 +139,12 @@ func (s *fakeSteps) steps(sys *fakeSystem) Steps {
 			return noderpc.Info{}, errors.New("connection refused")
 		},
 		SameMachine: func(context.Context, string) []string { return s.signals },
+		CABundle: func() (string, error) {
+			if s.noCA != nil {
+				return "", s.noCA
+			}
+			return "/etc/ssl/certs/ca-certificates.crt", nil
+		},
 		InstallWalletRPC: func(_ context.Context, binDir string) error {
 			s.order = append(s.order, "wallet-rpc")
 			os.MkdirAll(binDir, 0o755)

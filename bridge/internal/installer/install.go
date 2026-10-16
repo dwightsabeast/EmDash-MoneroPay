@@ -48,8 +48,10 @@ type Prompter interface {
 
 // Steps are the heavy parts (network, wallet-rpc), replaced in tests.
 type Steps struct {
-	NodeInfo         func(ctx context.Context, nodeURL string) (noderpc.Info, error)
-	SameMachine      func(ctx context.Context, site string) []string
+	NodeInfo    func(ctx context.Context, nodeURL string) (noderpc.Info, error)
+	SameMachine func(ctx context.Context, site string) []string
+	// CABundle finds the system's CA bundle, which wallet-rpc needs for an https node (spec change 28).
+	CABundle         func() (string, error)
 	InstallWalletRPC func(ctx context.Context, binDir string) error
 	CreateWallet     func(ctx context.Context, cfg config.Config, view secret.String, cred *syscall.Credential) error
 	// Pair pairs with the site and returns its suggested restore height for a new wallet (0: none).
@@ -418,6 +420,12 @@ func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Step
 	check := func(u string) error {
 		if err := config.CheckNode(u); err != nil {
 			return err
+		}
+		// Checked here, before pairing uses the code: wallet-rpc can't use an https node without it.
+		if strings.HasPrefix(u, "https://") {
+			if _, err := st.CABundle(); err != nil {
+				return err
+			}
 		}
 		i, err := st.NodeInfo(ctx, u)
 		if err != nil {

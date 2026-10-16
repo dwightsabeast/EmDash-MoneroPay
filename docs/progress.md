@@ -2142,3 +2142,42 @@ Next:
 3. Section D (roll back `coffer-test`, reset, `built`).
 4. Rerun B with the https node.
 5. Ask Wyatt what was typed at the node prompt in attempt 1.
+
+### 2026-10-16 (later) · Spec change 28 built (items 1 and 3); two more bugs found live
+
+Wyatt's decisions:
+- Item 1, the CA bundle, now.
+- Run B repeated over https after the fix.
+- The TLS forwarder (item 2) decided before phase 09.
+- A 07b row: a man in the middle on the node link with a valid certificate for another name (section E).
+
+Built, tests first:
+- **An https node:**
+  - Gets the system CA bundle plus `--daemon-ssl-allow-chained` (`supervise.CABundle`, `DefaultCABundles`).
+  - With no bundle, `supervise.New` refuses, and the installer's node check refuses before pairing.
+- **The installer** quotes wallet-rpc's own last log error instead of "error 0" (`explainWalletRPC`, `supervise.LastError`).
+- **The first live run with the fix found a second bug:** over kernal.eu's https, `generate_from_keys` takes longer than the client's 5 s, so run B would have failed again with a timeout.
+  - `generate_from_keys` and `open_wallet` now run untimed, like `rescan_blockchain`, and are bounded by their context. The installer's wallet creation gets 3 minutes; the service's open falls under the supervisor's 60 s start-up limit.
+- **Making `open_wallet` untimed exposed a third:** the untimed view's separate digest state collided on the server nonce. They now share one state. The same collision was latent after `rescan_blockchain`.
+
+Tests:
+- **Bridge:** gofmt, vet and all 20 packages pass. The race detector isn't run here (no gcc); CI runs it.
+- **Live, with kernal.eu over https, `TestLiveShopWallet` passes twice** (132 s):
+  - wallet created and synced
+  - the spike payment found
+  - the rescan
+  - recovery after `kill -9`
+  - no leftovers
+- **Live, `TestLiveDaemonSSL`:** as before.
+
+For triage (not fixed):
+- **The service's first start after creating a wallet far below the chain tip** failed `Init` once: `open_wallet` took about 33 s while wallet-rpc caught up, then `get_address` hit 5 s. It was ready 2.4 s after the restart, because wallet-rpc saves its progress, so it converges.
+  - The installer creates at today's height, so run B shouldn't see it.
+  - A reinstall with an older restore height (spec change 17) may restart a few times.
+  - Candidate fix: `wallet.Open`'s calls bounded by `Init`'s context alone.
+
+Next:
+1. Wyatt approves the push, then CI.
+2. Rebuild the dev release; Wyatt signs it.
+3. Section D: Wyatt rolls back `coffer-test`; I reset and restart `built`.
+4. Rerun B with `https://stagenet.xmr.kernal.eu:38089`.

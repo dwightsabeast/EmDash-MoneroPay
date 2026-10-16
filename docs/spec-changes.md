@@ -661,7 +661,7 @@ Proposal:
 Effect on the admin budget: none in time. It's clearer while the admin waits, and the setup test's "reload" wording stays as a fallback.
 Effect on the trust contract: none (a button on the existing page; no route, page, widget or setting).
 
-## 28. An https remote node breaks wallet creation  (status: proposed, 2026-10-16)
+## 28. An https remote node breaks wallet creation  (status: accepted, 2026-10-16, items 1 and 3)
 Found in: phase 05, run B attempt 1 (`~/xmr-pay-dev-data/05-setup/B1-*`, local).
 - The installer paired, then stopped at "Creating the view-only wallet" with `walletrpc: wallet-rpc error 0: .`
 - The node was `https://stagenet.xmr.kernal.eu:38089`.
@@ -700,3 +700,16 @@ Proposal (Claude's recommendation first):
 
 Effect on the admin budget: none for a working setup. Without the fix, every admin who chooses an https node fails setup and needs a new code.
 Effect on the trust contract: none (bridge only; the plugin's contract is unchanged).
+
+Decision (Wyatt, 2026-10-16): items 1 and 3 now, then run B is repeated over https. Item 2, the bridge's TLS forwarder that checks the node's name, is **decided before phase 09** (Wyatt, 2026-10-16), with 07b's man-in-the-middle row as evidence. Item 4 goes to triage.
+- Built:
+  - `supervise.CABundle` and `DefaultCABundles`; an https node gets `--daemon-ssl-ca-certificates <bundle> --daemon-ssl-allow-chained`, and `New` refuses with `ErrNoCABundle` when there's none
+  - the installer's node check refuses an https node without a bundle, at the prompt or for `--node`, before pairing
+  - `explainWalletRPC` quotes wallet-rpc's last log error (`supervise.LastError`) in place of a bare "error 0"
+- Tests: `internal/supervise/ssl_test.go`, `TestHTTPSNodeNeedsACABundle` in `internal/installer`, `cmd/xmr-bridge/explain_test.go`. The live proofs are `TestLiveDaemonSSL` and `TestLiveShopWallet` with `XMR_BRIDGE_LIVE_NODE`.
+- Found by the first live run with the fix: `generate_from_keys` over kernal.eu's https takes more than the supervisor client's 5 s. There was no error, the call was just cut off, so run B would have failed again, this time with a timeout.
+  - `generate_from_keys` and `open_wallet` now run without the client's timeout, like `rescan_blockchain`. The installer bounds wallet creation at 3 minutes, and the service's open is bounded by the supervisor's 60 s start-up limit.
+  - The untimed view now shares the client's digest-auth state. Separate nonce counts collided as soon as `open_wallet` went untimed (`TestOpenCloseAndAddress` caught it). That collision was latent after `rescan_blockchain` too.
+  - Test: `TestWalletCallsOutlastTheClientTimeout`.
+
+Matrix note (for `docs/security-matrix.md`; Wyatt copies it into the Claude Doc): "An https remote node: wallet-rpc checks that the node's certificate chains to the system's trusted CAs, but not that it was issued for the node's name (Monero 0.18.5.1, `--daemon-ssl-allow-chained`). An on-path attacker with any publicly trusted certificate can stand in for the node. That gives no more power than a dishonest node, which the remote-node cross-check (spec change 13) is for. 07b (section E) attacks it with a valid certificate for another name. Spec change 28 item 2 (the bridge checks the name) is decided before phase 09."

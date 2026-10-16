@@ -43,6 +43,11 @@ type Client struct {
 	http        *http.Client
 	maxResponse int64
 
+	// auth is shared with the untimed view of this client, so the two count one nonce together.
+	auth *digestState
+}
+
+type digestState struct {
 	mu sync.Mutex
 	ch *challenge
 	nc uint32
@@ -53,24 +58,26 @@ func New(base, user string, pass secret.String, hc *http.Client) *Client {
 	if hc == nil {
 		hc = &http.Client{}
 	}
-	return &Client{url: base + rpcPath, user: user, pass: pass, http: hc, maxResponse: defaultMaxResponse}
+	return &Client{url: base + rpcPath, user: user, pass: pass, http: hc, maxResponse: defaultMaxResponse, auth: &digestState{}}
 }
 
 // authHeader returns the Authorization header for the next request, or "" before the first challenge.
 func (c *Client) authHeader() (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.ch == nil {
+	a := c.auth
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.ch == nil {
 		return "", nil
 	}
-	c.nc++
-	return authorization(*c.ch, c.user, c.pass.Reveal(), http.MethodPost, rpcPath, c.nc)
+	a.nc++
+	return authorization(*a.ch, c.user, c.pass.Reveal(), http.MethodPost, rpcPath, a.nc)
 }
 
 func (c *Client) setChallenge(ch challenge) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.ch, c.nc = &ch, 0
+	a := c.auth
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.ch, a.nc = &ch, 0
 }
 
 // call sends one JSON-RPC request and decodes "result" into out. A 401 is answered once with a fresh challenge,

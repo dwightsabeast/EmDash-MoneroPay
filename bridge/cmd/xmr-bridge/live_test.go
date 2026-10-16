@@ -124,7 +124,17 @@ func TestLiveShopWallet(t *testing.T) {
 	stopFirst()
 
 	// 2. The bridge's own start-up: supervise and open the wallet.
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// With XMR_BRIDGE_LIVE_KEEP_LOG set, the bridge's own log goes next to wallet-rpc's (<file>.bridge).
+	var logOut io.Writer = io.Discard
+	if keep := os.Getenv("XMR_BRIDGE_LIVE_KEEP_LOG"); keep != "" {
+		f, err := os.OpenFile(keep+".bridge", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		logOut = f
+	}
+	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	h, err := defaultStartBridge(ctx, cfg, log)
 	if err != nil {
 		t.Fatal(err)
