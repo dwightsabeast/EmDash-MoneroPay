@@ -1,0 +1,18 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "cf-limits",
+	"publisher": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+
+	"license": "MIT",
+	"author": { "name": "Wyatt Dilley" },
+	"security": { "email": "security@example.invalid" },
+	"description": "Throwaway spike (spikes/cf-runner/PLAN.md): measures the Cloudflare sandbox runner's limits. Never shipped.",
+
+	// The same capabilities as Coffer, so the bridge calls measured are the ones Coffer makes.
+	"capabilities": ["content:read", "network:request"],
+	"allowedHosts": ["api.kraken.com"],
+	"storage": {
+		"rows": { "indexes": ["group"] }
+	}
+}

@@ -44,3 +44,38 @@ Answers, with evidence, to the questions in `docs/phases/01-spike.md`. Spike cod
 10. **Setup docs (phase 09) and health checks:** the site's access rules must let `/_emdash/api/plugins/xmr-pay/*` through without a login and must not add an `Origin` or `Authorization` header.
 11. **Budget:** `backend.js` is far below its cap (4 KB for the spike's seven routes); hand-written validation under the dependency tiers costs little.
 12. **Housekeeping:** on or after 2026-10-08, delete the spike's `minimumReleaseAgeExclude` list (`docs/progress.md` reminder).
+
+# Phase 07 spike: Coffer on EmDash's Cloudflare runner (2026-10-16)
+
+Plan: `spikes/cf-runner/PLAN.md`; setup: `SETUP.md`; code: `spikes/cf-runner/` (the `limits` plugin, `drive.mjs`, `coffer-pair.mjs`).
+- **The site:** a throwaway EmDash 1.1.0 site on Cloudflare Workers (`workers.dev`, behind Cloudflare Access with a bypass for `/_emdash/api/plugins/*`).
+- **Sandbox:** `sandbox()` from `@emdash-cms/cloudflare` 1.1.0.
+- **Plugins:** Coffer and the limits plugin.
+- **Raw output:** `~/xmr-pay-dev-data/cf-spike/` (local).
+
+## Results
+
+| Question | Answer |
+| --- | --- |
+| Do bridge calls count as subrequests? | **Yes, every kind.** Each fails at the 11th call in one invocation with "Too many subrequests by single Worker invocation": KV get, set and list; settings get; storage get, put and query; `ctx.content.get`; `ctx.http.fetch`. The plugin gets the error as an exception and can catch it |
+| Batching | `getMany` is one subrequest for up to 98 ids. 100 ids fails in D1 ("too many SQL variables"): EmDash doesn't split batches to D1's 100-parameter limit. `putMany` is one subrequest but slow, about 47 ms a row (10 rows 0.47 s, 50 rows 2.3 s); 100 rows ran into the 30 s wall time |
+| CPU | **Far looser than the documented 50 ms.** A pure loop that takes about 475 ms on the dev box passed; about 950 ms failed ("Worker exceeded CPU time limit", HTTP 400 `ROUTE_ERROR`) |
+| Coffer, status | Works (`INVOICE_NOT_FOUND` for an unknown token) |
+| Coffer, tip checkout with no pool | Works (`NO_ADDRESS_AVAILABLE`), under 10 calls |
+| **Coffer, pairing sync** | **Fails even with 0 addresses** (HTTP 400 `ROUTE_ERROR`, too many subrequests). So no wallet host can pair, so nothing else can run |
+| Coffer, a sync with snapshots, checkout with a pool, the admin page | Not reached (pairing fails first). Read from the code, each makes more than 10 calls: a checkout claim is about 12, a sync per snapshot and per address, the admin page dozens |
+
+## What this means
+
+**Coffer as built works only on Node-hosted EmDash sites,** where the workerd runner enforces only wall time. On Cloudflare, the platform EmDash's own templates default to, it can't pair.
+- Every test so far ran on the Node runner.
+- The spec and phase 01 assumed the limits wouldn't bind, which wasn't measured then (`docs/spike-findings.md`, phase 01, "Not covered: Cloudflare Workers limits").
+
+**The limit is fixed by EmDash** ("The limits are fixed; the `emdash()` integration has no option for them"), so the plugin has to fit within it. The design that fits is a budget of 10 bridge calls per route invocation:
+- state in a few KV values
+- `getMany` (at most 98 ids) instead of a lookup per item
+- small, bounded `putMany`
+- syncs carrying few snapshots each (the bridge already splits its work across syncs)
+- the watch list kept in KV instead of scanned
+
+The proposal is spec change 35.

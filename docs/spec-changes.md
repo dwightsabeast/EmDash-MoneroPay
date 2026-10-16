@@ -895,3 +895,52 @@ Proposal: not in release 1. Revisit after release 1, as a new version with a fre
 Effect on the admin budget: none (one fewer optional setting).
 Effect on the trust contract: none now.
 Decision (Wyatt, 2026-10-16): deferred, as proposed.
+
+## 35. Coffer can't pair on Cloudflare: 10 bridge calls per plugin invocation  (status: proposed, 2026-10-16)
+Found in: the phase 07 Cloudflare spike (`docs/spike-findings.md`, "Phase 07 spike"; `spikes/cf-runner/`).
+Spec says:
+- Key design decisions and Architecture: Coffer is a sandboxed plugin for EmDash sites, with no platform named.
+- The registry listing reaches every site with a sandbox runner, and EmDash's templates default to Cloudflare Workers.
+- Phase 01 didn't measure Cloudflare's limits ("Not covered: Cloudflare Workers limits").
+
+Evidence (measured on a throwaway site on Cloudflare Workers, EmDash 1.1.0):
+- **Every call a sandboxed plugin makes through EmDash's bridge counts as a subrequest,** and the 11th in one invocation throws: KV, settings, storage, content and `ctx.http`. The limit is fixed by EmDash.
+- **Coffer's pairing sync fails with zero addresses.** Without pairing nothing else runs.
+- **Read from the code, Coffer's other routes are over the limit too:**
+  - checkout with a pool: about 12 calls
+  - a sync: per snapshot and per address
+  - the admin page: dozens
+- **Batching helps, within limits:**
+  - `getMany` is one call for up to 98 ids (D1's parameter limit; EmDash doesn't split batches)
+  - `putMany` is one call but about 47 ms a row
+- **CPU is not the constraint:** about 0.5 s passed.
+- **On Node,** the workerd runner enforces only wall time, which is why every test so far passed.
+
+Options:
+- **A. Redesign Coffer to a 10-call budget per route invocation before release 1.**
+  - State moves into a few KV values: pairing, the bridge, buckets, and a watch index mapping each watched address to its invoice id. That replaces the watch-list scan, which also fixes the silent 1,000-row truncation (session 7a).
+  - Lookups by address become `getMany`.
+  - Writes become small `putMany`s.
+  - Settings are read in one call.
+  - **The bridge sends fewer snapshots and addresses per sync** (a bridge change and a release rebuild; the protocol's caps stay as upper bounds).
+  - **The admin page builds from the KV state** plus one or two queries.
+  - **Each route gets a test that counts its bridge calls,** so the budget can't silently regress.
+  - Then the whole suite again, the dev site, and this spike site.
+  - Several sessions; it touches the store, sync, checkout, the admin page and the bridge.
+- **B. Release 1 is for Node-hosted EmDash sites only.**
+  - The registry listing and install docs say so.
+  - Cloudflare support comes in a later release with A.
+  - A Cloudflare site that installs it anyway can't pair, and today would see a generic route error.
+  - Smallest change now, but a poor first impression on EmDash's default platform.
+- **C. Upstream, in parallel:** an EmDash note, for Wyatt to post, asking for a higher or configurable limit for bridge calls, or batching (and for `getMany` to split to D1's limit). Not in our control.
+
+Recommendation:
+- **A before release 1, with C posted now.**
+- Phase 07 pauses after 7a's plugin work. A becomes its own phase (07c), before 7b and 7c, because the tips view and the tip button sit on the same calls.
+- **If release 1's date matters more, B now and A next,** with the listing saying "Node.js sites" in the meantime.
+
+Effect on the admin budget:
+- **A:** none for Node sites; it makes Cloudflare sites possible at all.
+- **B:** excludes Cloudflare sites from release 1.
+
+Effect on the trust contract: none for A or B (no capability, host, route or index change; KV keys aren't part of it).

@@ -1,0 +1,33 @@
+{
+	"name": "cf-limits",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@12.8.1",
+	"description": "THROWAWAY (spikes/cf-runner/PLAN.md): measures EmDash's Cloudflare sandbox limits. Never shipped.",
+	"main": "dist/index.mjs",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"types": "./dist/index.d.mts"
+		},
+		"./sandbox": "./dist/plugin.mjs"
+	},
+	"files": [
+		"dist",
+		"emdash-plugin.jsonc"
+	],
+	"scripts": {
+		"build": "emdash-plugin build",
+		"validate": "emdash-plugin validate",
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"emdash": ">=0.12.0"
+	},
+	"devDependencies": {
+		"@emdash-cms/plugin-cli": "0.13.2",
+		"emdash": "1.1.0",
+		"typescript": "5.9.3"
+	}
+}

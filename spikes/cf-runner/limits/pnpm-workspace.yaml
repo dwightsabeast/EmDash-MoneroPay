@@ -1,0 +1,14 @@
+packages:
+  - "."
+
+# Dependency guardrails (CLAUDE.md, "Dependency tiers").
+# Install scripts are blocked except for this allowlist; an unapproved build fails the install.
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+# Only install versions published at least 7 days ago (pnpm counts minutes: 7 × 24 × 60).
+# Setting it explicitly makes minimumReleaseAgeStrict true, so a too-new version fails the install.
+minimumReleaseAge: 10080
