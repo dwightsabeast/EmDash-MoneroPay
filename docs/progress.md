@@ -2392,3 +2392,35 @@ Found for later phases (already in this log):
 - **Phase 08:** the `returnUrl` same-origin check must not rely on `ctx.site.url` alone.
 
 To resume: `Continue phase 05. Read docs/progress.md (the 2026-10-16 end-of-day handoff), then plan the next step.`
+
+## 2026-10-16 (night) · Phase 05 · Spec changes 26, 27 and 31 built
+
+Wyatt's decisions (2026-10-16), all as recommended:
+- **26:** accepted.
+- **27:** accepted, with the button kept off the install-command view. The upstream note (item 4) is for Wyatt to post.
+- **31:** accepted. Rebuild the dev release with it and spec change 29's bridge half; Wyatt signs.
+
+Built, tests first (each test seen failing before its code):
+
+| Commit | What |
+| --- | --- |
+| `802383a` | **26:** Get a test address locks `required` at `TEST_TIP_REQUIRED` (1) whatever the speed. The waiting line reads "Payment seen: 0 of 1 confirmation. A test tip needs one; your buyers' payments use your confirmation speed." (the second sentence is left off if an admin raised the target). `requiredConfirmations` is unchanged, so public tips and orders keep the presets. `docs/setup-test.md` step 7 says one confirmation |
+| `d778890` | **27:** until setup is done, Setup ends with "Checked at HH:MM:SS UTC. This page doesn't update by itself." and a **Check again** button (`check_again`, re-render only). On the install-command view it says "Reload this page after the installer says Done." instead. Nothing after setup. No trust-contract change. `docs/setup-test.md` steps 5–7 mention it |
+| `b119f3d` | **31:** `GetAddress` runs untimed like `open_wallet`, bounded by its context. Its one caller is `wallet.Open`, under Init's `ReadyTimeout` (60 s). `close_wallet` keeps its 5 s |
+
+Tests:
+- **Plugin:** 232 pass (5 new). Typecheck clean, manifest valid, bundle 54.4 KB.
+  - 26: Fast, Standard and Strict all give 1. Through `bridge/sync` with Strict: time-locked and double-spend-flagged transfers don't count, 0 confirmations is `confirming`, and 1 settles it.
+  - 27: the line and button, also after Get a test address. Check again gives no toast and leaves KV, pool and invoices unchanged. The install-command view has the reload line and no button. None after setup.
+- **Bridge:** gofmt, vet and all 20 packages pass. `TestWalletCallsOutlastTheClientTimeout` now covers `get_address`. Without the fix it failed with "Client.Timeout exceeded", as in the live run. The race detector runs in CI only.
+
+Not covered:
+- 27 not looked at on the dev site. The renderer is EmDash's, and the blocks pass the test host's Block Kit validation.
+- 31 not run against a real slow wallet-rpc (a wallet far below the tip). The candidate live check is `TestLiveShopWallet` against a remote node with an older restore height, about 2 minutes.
+- Spec change 29's "starting" message reaching a site, which needs the rebuilt release installed.
+
+Next:
+1. Wyatt OKs the push, then CI.
+2. Rebuild the dev release (`scripts/build-dev-release.sh`), with spec changes 29 (bridge half) and 31. Wyatt signs it, and `check-dev-signature.sh` verifies it.
+3. Wyatt closes phase 05.
+4. Wyatt posts the upstream notes when he chooses: EmDash's page refresh (27), plus the earlier ones in the handoff above.
