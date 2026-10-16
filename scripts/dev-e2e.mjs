@@ -1,4 +1,5 @@
-// Session 2f: the plugin end to end on the running dev site, with a fake bridge. Dev only; never shipped.
+// Session 2f: the plugin end to end on the running dev site, with a fake bridge. Dev only; never shipped. Since phase
+// 07 the payment is a tip (release 1, the switch off), and product checkout must be refused.
 //
 //   node scripts/dev-e2e.mjs                  pair through the KV shortcut (below), run every check, clean up
 //   node scripts/dev-e2e.mjs --pair <code>    pair with a code from the admin page's "Connect wallet host" instead
@@ -168,7 +169,7 @@ try {
 	check("bridge/sync with an invalid Bearer token: 401", r.status === 401 && r.code === "INVALID_TOKEN", show(r));
 	r = await sync(probe, undefined, { origin: "https://example.invalid" });
 	check("bridge/sync with a cross-origin Origin: 403", r.status === 403 && r.code === "CSRF_REJECTED", show(r));
-	r = await send(route("checkout"), { body: JSON.stringify({ kind: "product", product: PRODUCT }), headers: { "content-type": "application/json", origin: "https://example.invalid" } });
+	r = await send(route("checkout"), { body: JSON.stringify({ kind: "tip" }), headers: { "content-type": "application/json", origin: "https://example.invalid" } });
 	check("checkout with a cross-origin Origin: 403", r.status === 403 && r.code === "CSRF_REJECTED", show(r));
 	r = await send(route("admin"), { body: JSON.stringify({ type: "page_load", page: "/payments" }), headers: { "content-type": "application/json", authorization: "Bearer not-a-real-token" } });
 	check("admin with an invalid Bearer token: 401", r.status === 401, show(r));
@@ -221,32 +222,37 @@ try {
 	r = await sync(bom);
 	check("signed body with a leading BOM: INVALID_ENCODING", r.code === "INVALID_ENCODING", show(r));
 
-	// 6. Checkout as a same-origin browser would send it; a client-sent price is ignored.
-	r = await send(route("checkout"), { body: JSON.stringify({ kind: "product", product: PRODUCT, price: 0.0001 }), headers: { "content-type": "application/json", origin: site.origin } });
+	// 6. Checkout as a same-origin browser would send it. Release 1 (the switch off, spec change 22): products are
+	// refused like an unknown kind; a tip of $1.00 at the live rate, with a client-sent amount ignored.
+	r = await send(route("checkout"), { body: JSON.stringify({ kind: "product", product: PRODUCT }), headers: { "content-type": "application/json", origin: site.origin } });
+	check("product checkout refused (release-1 switch off): INVALID_REQUEST", r.code === "INVALID_REQUEST", show(r));
+	const tipBody = { kind: "tip", amount: { fiatMinor: "100", currency: "USD" } };
+	r = await send(route("checkout"), { body: JSON.stringify({ ...tipBody, amountAtomic: "1" }), headers: { "content-type": "application/json", origin: site.origin } });
 	const inv = r.data;
-	if (!check(`checkout ${PRODUCT} (live rate)`, typeof inv?.token === "string" && /^\d+$/.test(inv.amountAtomic ?? "") && inv.status === "new", show(r))) throw new Error("checkout failed; nothing to pay");
+	if (!check("tip checkout, $1.00 at the live rate", typeof inv?.token === "string" && /^\d+$/.test(inv.amountAtomic ?? "") && inv.status === "new", show(r))) throw new Error("checkout failed; nothing to pay");
 	const index = Array.from({ length: POOL_TARGET }, (_, i) => i + 1).find((i) => fakeAddress(i) === inv.address) ?? 0;
 	check("invoice on a pool address, exact monero: URI", index >= 1 && inv.uri.startsWith(`monero:${inv.address}?tx_amount=${inv.amountXmr}&`), `index ${index}, ${inv.amountXmr} XMR, ${inv.amountAtomic} atomic`);
-	// Same product, no client price, within the rate's 60-second cache: the same amount.
-	r = await send(route("checkout"), { body: JSON.stringify({ kind: "product", product: PRODUCT }), headers: { "content-type": "application/json", origin: site.origin } });
-	check("client-sent price ignored (same amount without it)", r.data?.amountAtomic === inv.amountAtomic, `${inv.amountAtomic} vs ${r.data?.amountAtomic ?? show(r)}`);
+	// The same tip without the stray field, within the rate's 60-second cache: the same amount.
+	r = await send(route("checkout"), { body: JSON.stringify(tipBody), headers: { "content-type": "application/json", origin: site.origin } });
+	check("client-sent amount ignored (same amount without it)", r.data?.amountAtomic === inv.amountAtomic, `${inv.amountAtomic} vs ${r.data?.amountAtomic ?? show(r)}`);
 	const status = async () => send(`${route("status")}?token=${encodeURIComponent(inv.token)}`, { method: "GET" });
 	r = await status();
 	const required = r.data?.required;
-	check("status: new", r.data?.status === "new" && Number.isInteger(required) && required >= 1, `status ${r.data?.status}, required ${required}`);
+	check("status: new, a tip", r.data?.status === "new" && r.data.kind === "tip" && Number.isInteger(required) && required >= 1, `status ${r.data?.status}, kind ${r.data?.kind}, required ${required}`);
 
-	// 7. The payment, in two parts: half seen unmined, then the rest (a full payment seen at once goes straight to
-	// confirming, spec "Invoice lifecycle"), then both mined and confirmed to the required depth.
+	// 7. The payment: under the 0.0001 floor first (seen), a time-locked transfer of the full amount beside it (never
+	// counted), then the rest (confirming), then mined and confirmed to the required depth. A tip settles at the floor
+	// (spec change 33), so "seen" means below it.
 	const now = () => Math.floor(Date.now() / 1000);
-	const half = BigInt(inv.amountAtomic) / 2n;
+	const small = 50_000_000n; // 0.00005 XMR, under the floor
 	const part = (amount) => ({ txid: randomBytes(32).toString("hex"), amount: String(amount), unlockTime: "0", doubleSpendSeen: false });
-	const [p1, p2] = [part(half), part(BigInt(inv.amountAtomic) - half)];
+	const [p1, p2] = [part(small), part(BigInt(inv.amountAtomic) - small)];
 	const at = (t, confirmations, height) => ({ ...t, confirmations, height, timestamp: now() });
 	r = await sync(syncBody({ snapshots: [{ index, transfers: [at(p1, 0, 0)] }] }));
-	check("sync: half the amount seen unmined; index watched", r.data?.ok === true && r.data.watch.includes(index), show(r));
+	check("sync: 0.00005 XMR seen unmined; index watched", r.data?.ok === true && r.data.watch.includes(index), show(r));
 	r = await status();
-	check("status: seen", r.data?.status === "seen" && r.data.receivedAtomic === p1.amount, `status ${r.data?.status}, received ${r.data?.receivedAtomic}`);
-	// A time-locked transfer of the full amount beside the parts: never counted (spec "Payment logic").
+	check("status: seen (under the floor)", r.data?.status === "seen" && r.data.receivedAtomic === p1.amount, `status ${r.data?.status}, received ${r.data?.receivedAtomic}`);
+	// A time-locked transfer of the full amount beside it: never counted (spec "Payment logic").
 	const locked = { ...part(inv.amountAtomic), unlockTime: "99999999" };
 	r = await sync(syncBody({ snapshots: [{ index, transfers: [at(p1, 0, 0), at(locked, 0, 0)] }] }));
 	r = await status();

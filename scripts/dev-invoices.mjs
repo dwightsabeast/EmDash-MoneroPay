@@ -1,7 +1,9 @@
 // Session 3h: real stagenet invoices on the running dev site, the pay scripts Wyatt runs, and a watcher. Dev only;
 // never shipped. Loopback sites only. State lives in ~/xmr-pay-dev-data/3h-invoices.json.
 //
-//   node scripts/dev-invoices.mjs new <name> [--product <slug>]   checkout (default test-sticker), record the invoice
+//   node scripts/dev-invoices.mjs new <name> [--xmr <amount> | --fiat <cents> [--currency EUR]] [--entry <coll>/<id>]
+//                                    [--note <text>]   a tip (phase 07; open without an amount), record the invoice
+//   node scripts/dev-invoices.mjs new <name> --product <slug>       a product checkout (release 2: the switch on only)
 //   node scripts/dev-invoices.mjs pay-script <step> <name>=<fraction|rest> ...
 //                                    write ~/xmr-pay-dev-data/3h-pay-<step>.sh: one transfer to every listed invoice
 //   node scripts/dev-invoices.mjs list                                 every recorded invoice, its status now
@@ -17,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-import { atomicToXmr, partAtomic, payScript } from "./dev-invoices-lib.mjs";
+import { atomicToXmr, partAtomic, payScript, tipBody } from "./dev-invoices-lib.mjs";
 
 process.removeAllListeners("warning"); // node:sqlite's experimental notice
 const { DatabaseSync } = await import("node:sqlite");
@@ -78,13 +80,14 @@ const [cmd, ...rest] = args;
 if (cmd === "new") {
 	const name = rest[0];
 	if (!name || !/^[A-Za-z0-9-]{1,20}$/.test(name)) throw new Error("new <name> (letters, digits, dashes)");
-	const product = value("--product", "test-sticker");
+	const product = value("--product", undefined);
+	const body = product ? { kind: "product", product } : tipBody({ xmr: value("--xmr", undefined), fiat: value("--fiat", undefined), currency: value("--currency", undefined), entry: value("--entry", undefined), note: value("--note", undefined) });
 	const s = load();
 	if (s.invoices[name]) throw new Error(`${name} already recorded`);
 	const res = await fetch(route("checkout"), {
 		method: "POST",
 		headers: { "content-type": "application/json", origin: site.origin },
-		body: JSON.stringify({ kind: "product", product }),
+		body: JSON.stringify(body),
 	});
 	const data = (await res.json()).data;
 	if (!data?.token) throw new Error(`checkout failed: HTTP ${res.status} ${JSON.stringify(data ?? {})}`);
@@ -92,9 +95,11 @@ if (cmd === "new") {
 	const row = db.prepare("SELECT data FROM _plugin_storage WHERE plugin_id = ? AND collection = 'invoices' AND json_extract(data, '$.token') = ?").get(PLUGIN, data.token);
 	db.close();
 	const inv = row ? JSON.parse(row.data) : {};
-	s.invoices[name] = { token: data.token, product, address: data.address, amountAtomic: data.amountAtomic, expiresAt: data.expiresAt, addrIndex: inv.addrIndex, expiresHeight: inv.expiresHeight, required: inv.required, createdAt: stamp(), paidAtomic: "0", parts: [] };
+	s.invoices[name] = { token: data.token, kind: body.kind, ...(product ? { product } : {}), address: data.address, amountAtomic: data.amountAtomic, expiresAt: data.expiresAt, addrIndex: inv.addrIndex, expiresHeight: inv.expiresHeight, required: inv.required, createdAt: stamp(), paidAtomic: "0", parts: [] };
 	save(s);
-	console.log(`${name}: index ${inv.addrIndex}, ${atomicToXmr(BigInt(data.amountAtomic))} XMR, ${inv.required} confirmations, expires ${data.expiresAt} (height ${inv.expiresHeight})`);
+	const amount = data.amountAtomic ? `${atomicToXmr(BigInt(data.amountAtomic))} XMR` : "any amount from 0.0001 XMR (open tip)";
+	console.log(`${name}: ${body.kind}, index ${inv.addrIndex}, ${amount}, ${inv.required} confirmations, expires ${data.expiresAt} (height ${inv.expiresHeight})`);
+	console.log(`  pay page: ${new URL(`/pay/${data.token}`, site).href}`);
 } else if (cmd === "pay-script") {
 	const [step, ...specs] = rest;
 	if (!step || specs.length === 0) throw new Error("pay-script <step> <name>=<fraction|rest> ...");
@@ -103,6 +108,7 @@ if (cmd === "new") {
 		const [name, fraction] = spec.split("=");
 		const inv = s.invoices[name];
 		if (!inv || !fraction) throw new Error(`unknown invoice or missing fraction: ${spec}`);
+		if (!inv.amountAtomic) throw new Error(`${name} is an open tip with no amount; make it with --xmr or --fiat to use pay-script`);
 		return { name, inv, fraction, atomic: partAtomic(inv.amountAtomic, fraction, inv.paidAtomic) };
 	});
 	const file = `${DATA}/3h-pay-${step}.sh`;

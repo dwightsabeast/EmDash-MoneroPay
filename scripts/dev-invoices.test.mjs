@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { atomicToXmr, partAtomic, payScript } from "./dev-invoices-lib.mjs";
+import { atomicToXmr, partAtomic, payScript, tipBody } from "./dev-invoices-lib.mjs";
 
 test("atomicToXmr: 12 decimals, trailing zeros trimmed, no floats", () => {
 	assert.equal(atomicToXmr(1_000_000_000_000n), "1");
@@ -56,4 +56,17 @@ test("payScript: refuses anything that isn't a stagenet address", () => {
 	assert.throws(() => payScript("A", [{ name: "x", address: "5" + "A".repeat(93) + "0", atomic: 1n }])); // not base58
 	assert.throws(() => payScript("A; rm", [{ name: "x", address: "5" + "A".repeat(94), atomic: 1n }])); // step name
 	assert.throws(() => payScript("A", []));
+});
+
+test("tipBody: an open tip by default; --xmr as atomic units (no floats), --fiat in minor units, an entry and a note", () => {
+	assert.deepEqual(tipBody({}), { kind: "tip" });
+	assert.deepEqual(tipBody({ xmr: "0.002" }), { kind: "tip", amount: { xmrAtomic: "2000000000" } });
+	assert.deepEqual(tipBody({ xmr: "1.000000000001" }), { kind: "tip", amount: { xmrAtomic: "1000000000001" } });
+	assert.deepEqual(tipBody({ fiat: "500", currency: "EUR" }), { kind: "tip", amount: { fiatMinor: "500", currency: "EUR" } });
+	assert.deepEqual(tipBody({ fiat: "300" }), { kind: "tip", amount: { fiatMinor: "300", currency: "USD" } });
+	assert.deepEqual(tipBody({ entry: "posts/01ABC", note: "thanks" }), { kind: "tip", contentRef: { collection: "posts", id: "01ABC" }, note: "thanks" });
+	assert.throws(() => tipBody({ xmr: "0.002", fiat: "500" }), /one of/);
+	for (const bad of ["1e-3", "-1", ".5", "0.0000000000001", "abc"]) assert.throws(() => tipBody({ xmr: bad }), /--xmr/);
+	assert.throws(() => tipBody({ fiat: "5.00" }), /--fiat/);
+	assert.throws(() => tipBody({ entry: "posts" }), /--entry/);
 });

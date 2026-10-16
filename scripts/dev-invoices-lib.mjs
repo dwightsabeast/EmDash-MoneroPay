@@ -60,3 +60,29 @@ export function payScript(step, payments) {
 		"",
 	].join("\n");
 }
+
+/**
+ * The checkout body for a tip (phase 07): open by default; `xmr` a plain decimal XMR amount (up to 12 places, turned
+ * into atomic units without floats) or `fiat` minor units with `currency` (USD by default), not both; `entry` as
+ * <collection>/<id>; `note` as given (the plugin cleans it).
+ */
+export function tipBody({ xmr, fiat, currency, entry, note } = {}) {
+	if (xmr !== undefined && fiat !== undefined) throw new Error("give one of --xmr or --fiat");
+	const body = { kind: "tip" };
+	if (xmr !== undefined) {
+		const m = /^(\d{1,9})(?:\.(\d{1,12}))?$/.exec(xmr);
+		if (!m) throw new Error(`--xmr must look like 0.002 (up to 12 decimals), got ${xmr}`);
+		body.amount = { xmrAtomic: (BigInt(m[1]) * ATOMIC_PER_XMR + BigInt((m[2] ?? "").padEnd(12, "0"))).toString() };
+	}
+	if (fiat !== undefined) {
+		if (!/^[1-9]\d{0,9}$/.test(fiat)) throw new Error(`--fiat takes minor units (cents), like 500, got ${fiat}`);
+		body.amount = { fiatMinor: fiat, currency: currency ?? "USD" };
+	}
+	if (entry !== undefined) {
+		const m = /^([a-z][a-z0-9_]*)\/([A-Za-z0-9_-]+)$/.exec(entry);
+		if (!m) throw new Error(`--entry takes <collection>/<id>, got ${entry}`);
+		body.contentRef = { collection: m[1], id: m[2] };
+	}
+	if (note !== undefined) body.note = note;
+	return body;
+}
