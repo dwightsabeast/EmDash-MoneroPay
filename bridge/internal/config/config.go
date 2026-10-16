@@ -107,6 +107,9 @@ func validateNode(s string) error {
 	if u.User != nil {
 		return errors.New("config: node must not carry a login in the URL")
 	}
+	if u.Port() == "" {
+		return errors.New("config: node must have a port") // supervise.New needs one (spec change 30)
+	}
 	return nil
 }
 

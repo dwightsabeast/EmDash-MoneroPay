@@ -132,6 +132,7 @@ func TestValidate(t *testing.T) {
 		"unknown network":            func(c *Config) { c.Network = "regtest" },
 		"node empty":                 func(c *Config) { c.Node = "" },
 		"node not http":              func(c *Config) { c.Node = "ftp://127.0.0.1:38081" },
+		"node without a port":        func(c *Config) { c.Node = "https://node.example" }, // supervise.New needs one (spec change 30)
 		"node with user info":        func(c *Config) { c.Node = "http://u:p@127.0.0.1:38081" },
 		"data dir relative":          func(c *Config) { c.DataDir = "data" },
 		"data dir empty":             func(c *Config) { c.DataDir = "" },

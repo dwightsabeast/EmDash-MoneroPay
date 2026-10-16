@@ -148,8 +148,12 @@ func TestPromptRetries(t *testing.T) {
 func TestPromptGivesUp(t *testing.T) {
 	opts, sys, tty, st := harness(t)
 	tty.answers = []string{"x", "y", "z", stagenetAddr}
-	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err == nil {
+	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
+	if err == nil {
 		t.Fatal("accepted after three bad addresses")
+	}
+	if !strings.Contains(err.Error(), "Nothing was changed on this machine") {
+		t.Fatalf("error: %v", err)
 	}
 	if len(st.order) != 0 || len(sys.calls) != 0 {
 		t.Fatal("went on after giving up")
@@ -195,6 +199,66 @@ func TestNodePrompt(t *testing.T) {
 	said := tty.said.String()
 	if !strings.Contains(said, "mainnet") || !strings.Contains(strings.ToLower(said), "doesn't answer") {
 		t.Fatalf("messages %s", said)
+	}
+}
+
+// Spec change 30 (run B attempt 1: "kernal.eu", three times). The message names what's missing in what was typed,
+// offers the full form for a bare host:port, and the example is a public node's shape. No "config:", no loopback.
+func TestNodePromptNamesWhatIsMissing(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	st.nodes = map[string]noderpc.Info{"https://node.example:38089": {NetType: "stagenet", Height: 1, Synchronized: true}}
+	tty.answers = []string{stagenetAddr, "kernal.eu", "stagenet.xmr.kernal.eu:38089", "https://node.example:38089"}
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatalf("%v\n%s", err, tty.said.String())
+	}
+	said := tty.said.String()
+	for _, want := range []string{
+		"kernal.eu isn't a full node address. It needs http:// or https:// at the start and a port at the end, like https://node.example:38089.",
+		"Did you mean https://stagenet.xmr.kernal.eu:38089?",
+	} {
+		if !strings.Contains(said, want) {
+			t.Errorf("messages lack %q:\n%s", want, said)
+		}
+	}
+	if strings.Contains(said, "config:") || strings.Contains(said, "127.0.0.1:18081") {
+		t.Errorf("internal wording or a loopback example:\n%s", said)
+	}
+	if got := tty.asked[len(tty.asked)-1]; got != "Monero node address (for example https://node.example:38089): " {
+		t.Errorf("prompt %q", got)
+	}
+}
+
+// An address with no port is refused at the prompt, even when a node answers on 443: wallet-rpc needs the port, and
+// finding out after pairing would use up the code (spec change 30).
+func TestNodePromptNeedsAPort(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	st.nodes = map[string]noderpc.Info{
+		"https://stagenet.xmr.kernal.eu": {NetType: "stagenet", Height: 1, Synchronized: true},
+		"https://node.example:38089":     {NetType: "stagenet", Height: 1, Synchronized: true},
+	}
+	tty.answers = []string{stagenetAddr, "https://stagenet.xmr.kernal.eu", "https://node.example:38089"}
+	if err := Install(context.Background(), opts, sys, tty, st.steps(sys)); err != nil {
+		t.Fatalf("%v\n%s", err, tty.said.String())
+	}
+	if st.walletCfg.Node != "https://node.example:38089" {
+		t.Fatalf("node %s", st.walletCfg.Node)
+	}
+	if !strings.Contains(tty.said.String(), "https://stagenet.xmr.kernal.eu has no port at the end. Add the node's port, like https://stagenet.xmr.kernal.eu:38089.") {
+		t.Fatalf("messages:\n%s", tty.said.String())
+	}
+}
+
+// After three wrong node addresses: nothing changed, the code still works, paste the command again.
+func TestNodePromptGivesUpSaysNothingChanged(t *testing.T) {
+	opts, sys, tty, st := harness(t)
+	st.nodes = map[string]noderpc.Info{}
+	tty.answers = []string{stagenetAddr, "kernal.eu", "kernal.eu", "kernal.eu"}
+	err := Install(context.Background(), opts, sys, tty, st.steps(sys))
+	if err == nil || !strings.Contains(err.Error(), "Nothing was changed on this machine, and the pairing code still works: paste the install command again.") {
+		t.Fatalf("error: %v", err)
+	}
+	if len(st.order) != 0 || len(sys.calls) != 0 {
+		t.Fatal("went on after giving up")
 	}
 }
 

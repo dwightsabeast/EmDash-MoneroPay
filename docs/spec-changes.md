@@ -714,7 +714,7 @@ Decision (Wyatt, 2026-10-16): items 1 and 3 now, then run B is repeated over htt
 
 Matrix note (for `docs/security-matrix.md`; Wyatt copies it into the Claude Doc): "An https remote node: wallet-rpc checks that the node's certificate chains to the system's trusted CAs, but not that it was issued for the node's name (Monero 0.18.5.1, `--daemon-ssl-allow-chained`). An on-path attacker with any publicly trusted certificate can stand in for the node. That gives no more power than a dishonest node, which the remote-node cross-check (spec change 13) is for. 07b (section E) attacks it with a valid certificate for another name. Spec change 28 item 2 (the bridge checks the name) is decided before phase 09."
 
-## 29. "Wallet synced" while nothing runs on the wallet host  (status: proposed, 2026-10-16)
+## 29. "Wallet synced" while nothing runs on the wallet host  (status: accepted, 2026-10-16; built after run B)
 Found in: phase 05, run B attempt 1 (spec change 28's evidence). The installer paired, then failed to create the wallet, so no service was installed. The site's checklist still showed "Wallet host paired" and "Wallet synced" (3 of 5).
 Spec says:
 - Install flow step 4: "The admin page's setup checklist turns green item by item: wallet host paired, wallet synced, …"
@@ -734,9 +734,13 @@ Proposal: a pairing request stores the key and marks the host paired, but **does
 
 It's a plugin change, and the wire protocol is unchanged. Tests: a pairing-only request leaves "Wallet synced" to do and checkout refused; the first normal sync turns it Done.
 Effect on the admin budget: better. A failed install no longer looks half done.
+Decision (Wyatt, 2026-10-16):
+- Accepted, built **after run B**, so run B uses the same plugin as run A.
+- Condition: the "hasn't synced" message must not fire during a slow but healthy first start. For example, the first `open_wallet` took about 33 s over a remote https node while wallet-rpc caught up (spec change 28's live run). A reinstall from an older restore height can take longer.
+- To be settled when it's built: what the 5 minutes count from, and whether the bridge reports "starting" before its first full sync. Either way, tests cover a first sync that arrives late but before the limit.
 Effect on the trust contract: none.
 
-## 30. The installer's node prompt: a bare host name  (status: proposed, 2026-10-16)
+## 30. The installer's node prompt: a bare host name  (status: accepted, 2026-10-16)
 Found in: phase 05, run B attempt 1. The tester typed `kernal.eu` (Wyatt, 2026-10-16), not the full address `https://stagenet.xmr.kernal.eu:38089`, three times. The installer gave up, and the tester ran the whole command again, typing the address and view key a second time. No pairing code was used, because nothing had changed yet.
 Spec says: Install flow: the installer asks for a node only when none answers locally ("a remote node only if your own monerod doesn't answer").
 Evidence (`bridge/internal/config/config.go`, `validateNode`; `bridge/internal/installer/install.go`, `chooseNode`, `retry`):
@@ -758,4 +762,5 @@ Proposal:
 
 It's a bridge change: installer text and one check. It needs a release rebuild.
 Effect on the admin budget: better. A typo costs one retry, not a rerun.
+Decision (Wyatt, 2026-10-16): accepted. Build it now, tests first, and include it in the release rebuild before Wyatt signs, so run B tests the new prompt.
 Effect on the trust contract: none.

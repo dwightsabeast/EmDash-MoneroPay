@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"github.com/dwightsabeast/EmDash-MoneroPay/bridge/internal/sitetext"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,6 +78,9 @@ var codeRE = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 
 var defaultPorts = map[string]string{"mainnet": "18081", "stagenet": "38081", "testnet": "28081"}
 
+// publicPorts are the usual restricted-RPC ports of public nodes, for the node prompt's example (spec change 30).
+var publicPorts = map[string]string{"mainnet": "18089", "stagenet": "38089", "testnet": "28089"}
+
 // installLogPath is where the installer keeps what it said (never what the admin typed), for support and triage.
 const installLogPath = dataDir + "/log/install.log"
 
@@ -87,6 +92,10 @@ func Install(ctx context.Context, o Options, sys System, tty Prompter, st Steps)
 	changing := false
 	err := install(ctx, o, sys, rec, st, &changing)
 	if !changing {
+		var gave errGaveUp
+		if errors.As(err, &gave) {
+			err = fmt.Errorf("%w. Nothing was changed on this machine, and the pairing code still works: paste the install command again.", err)
+		}
 		return err
 	}
 	if err != nil {
@@ -395,6 +404,12 @@ func RestoreHeightWarning(walletHeight, suggested uint64) string {
 // errFatal ends a prompt loop at once (the terminal went away).
 type errFatal struct{ error }
 
+// errGaveUp: a prompt was answered wrongly three times.
+type errGaveUp struct{ last error }
+
+func (e errGaveUp) Error() string { return fmt.Sprintf("giving up after %d tries: %v", tries, e.last) }
+func (e errGaveUp) Unwrap() error { return e.last }
+
 // retry runs ask up to three times, saying why each answer was refused.
 func retry(tty Prompter, ask func() error) error {
 	var last error
@@ -410,7 +425,7 @@ func retry(tty Prompter, ask func() error) error {
 		last = err
 		tty.Say("  %v", err)
 	}
-	return fmt.Errorf("giving up after %d tries: %w", tries, last)
+	return errGaveUp{last}
 }
 
 // chooseNode uses --node, else a local monerod on either loopback address, else asks. A node that hasn't caught up
@@ -418,7 +433,7 @@ func retry(tty Prompter, ask func() error) error {
 func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Steps) (string, error) {
 	var info noderpc.Info
 	check := func(u string) error {
-		if err := config.CheckNode(u); err != nil {
+		if err := nodeAddressProblem(u, network); err != nil {
 			return err
 		}
 		// Checked here, before pairing uses the code: wallet-rpc can't use an https node without it.
@@ -462,7 +477,7 @@ func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Step
 	tty.Say("No Monero node answers on this machine. Your own node is the most private choice; a remote node you trust works too.")
 	var node string
 	err := retry(tty, func() error {
-		u, err := tty.Ask("Monero node address (for example https://node.example:" + port + "): ")
+		u, err := tty.Ask("Monero node address (for example " + nodeExample(network) + "): ")
 		if err != nil {
 			return errFatal{err}
 		}
@@ -477,6 +492,35 @@ func chooseNode(ctx context.Context, flag, network string, tty Prompter, st Step
 		return "", err
 	}
 	return chosen(node)
+}
+
+func nodeExample(network string) string { return "https://node.example:" + publicPorts[network] }
+
+// nodeAddressProblem explains what's missing from a typed node address, in the admin's own words (spec change 30):
+// run B attempt 1's tester typed "kernal.eu" three times and got only "must be an http or https URL". It never guesses
+// and goes on by itself. The port is required here because wallet-rpc needs it, and finding out after pairing would
+// use up the code.
+func nodeAddressProblem(s, network string) error {
+	if s == "" {
+		return fmt.Errorf("type the node's full address, like %s", nodeExample(network))
+	}
+	if !strings.Contains(s, "://") {
+		if host, port, err := net.SplitHostPort(s); err == nil && host != "" && port != "" {
+			return fmt.Errorf("%s needs http:// or https:// at the start. Did you mean https://%s?", s, s)
+		}
+		return fmt.Errorf("%s isn't a full node address. It needs http:// or https:// at the start and a port at the end, like %s.", s, nodeExample(network))
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return fmt.Errorf("%s isn't a full node address. It needs http:// or https:// at the start and a port at the end, like %s.", s, nodeExample(network))
+	}
+	if u.Port() == "" {
+		return fmt.Errorf("%s has no port at the end. Add the node's port, like %s:%s.", s, strings.TrimSuffix(s, "/"), publicPorts[network])
+	}
+	if err := config.CheckNode(s); err != nil {
+		return errors.New(strings.TrimPrefix(err.Error(), "config: "))
+	}
+	return nil
 }
 
 // syncingNote says that the node at u hasn't caught up with the network yet, and what that means.
