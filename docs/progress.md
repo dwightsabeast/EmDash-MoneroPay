@@ -2436,3 +2436,37 @@ Next:
 1. Optional, when Wyatt wants spec change 29's "starting" message and 31 seen live: update the dev box's installed bridge to this release (Wyatt, sudo).
 2. Wyatt closes phase 05.
 3. Wyatt posts the upstream notes when he chooses: EmDash's page refresh (27), plus the earlier ones in the handoff above.
+
+## 2026-10-16 · Phase 05 · Done: closed by Wyatt
+
+Phase 05's done criteria are met:
+- **Two timed fresh installs on a separate machine, both under 15 minutes with no help:**
+  - run A (own node), attempt 3: 13 min
+  - run B (remote https node), attempt 2: 11 min
+- **Every overrun, error and confusion from both runs is triaged.** The table is in the 2026-10-16 "Run B attempt 2 passed" entry, and every row is fixed or decided:
+  - Spec changes 23, 24, 26, 27, 28 (items 1 and 3), 29, 30 and 31 are built.
+  - 28 item 2 (the TLS forwarder) is decided before phase 09.
+- **CI is green** on `66a13c7` (run 38918827917).
+- **The signed dev release `0.0.202610161433-dev.e360e6c`** has every bridge change from the phase.
+- **Section E is done:** the hostname is down, `coffer-test` is back to `blank`, and the dev data is restored to the pre-test baseline.
+
+State left:
+- On the dev box, `monerod-stagenet` and the bridge are active. The installed bridge is an older dev build, without 29's bridge half or 31.
+- The dev site, the built copy and the release server are stopped, with no tmux sessions.
+- Run A's node container stays for phase 09.
+
+Carried over for Wyatt (left open, his call):
+- **Bridge update:** update the dev box's installed bridge to `e360e6c`.
+- **Upstream notes:**
+  - EmDash's `ctx.site.url` (23)
+  - Feather's restore height and menu paste (24)
+  - EmDash's page refresh (27)
+  - the earlier Block Kit notes
+- **Spec text to fold in:** 14, 20–24 and 26–31.
+- **Matrix notes:** 23's F06 note and 28's node-link note.
+- **Spec changes still open:**
+  - 28 item 2 (before phase 09)
+  - 25 (admin upkeep)
+  - 18 (tips-only tier; option A was slated for phase 06)
+
+Next step: phase 06 (theme kit), from the beginning. Read `docs/phases/06-theme-kit.md`, write the plan, and wait for Wyatt's approval.
