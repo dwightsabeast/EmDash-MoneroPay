@@ -1,6 +1,8 @@
 # Plugin checks on every push to main and every pull request: typecheck, manifest validation, tests, bundle caps.
 # Bridge checks (2026-10-04): gofmt, vet, tests, tests with the race detector, a static build. Go from actions/setup-go (GitHub's own), cache off;
 # GOTOOLCHAIN=local so Go never fetches another toolchain.
+# Theme checks (2026-10-16, phase 06): typecheck and tests, including the QR round trip through ZBar's zbarimg (zbar-tools
+# from the runner's signed Ubuntu archive; never shipped, CI only). COFFER_REQUIRE_ZBAR=1 makes a missing zbarimg fail.
 # Hardening (Wyatt, 2026-10-03): read-only token, no pull_request_target, no persisted git credentials, frozen
 # lockfile, no dependency cache. Actions are GitHub's own, pinned to commit SHAs; pnpm comes from Node's corepack
 # at the exact version in plugin/package.json ("packageManager"), so there is no third-party setup action.
@@ -43,6 +45,34 @@ jobs:
         run: pnpm exec vitest run
       - name: Bundle caps
         run: pnpm exec emdash-plugin bundle --validate-only
+
+  theme:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: theme
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      COFFER_REQUIRE_ZBAR: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install zbar-tools (the QR decoder for the round-trip test)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zbar-tools && zbarimg --version
+      - name: Enable pnpm (corepack, version from package.json)
+        run: corepack enable pnpm && pnpm --version
+      - name: Install (frozen lockfile; pnpm-workspace.yaml's install-script allowlist and release-age rule apply)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Tests
+        run: pnpm exec vitest run
 
   bridge:
     runs-on: ubuntu-24.04
