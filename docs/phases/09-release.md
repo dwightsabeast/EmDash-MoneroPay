@@ -24,7 +24,7 @@ This phase mixes Claude's work with steps only Wyatt can do. Claude never holds 
 1. **Atmosphere account:** any Bluesky account works. Note its DID; it goes in the manifest's `publisher`.
 2. **Release signing key, offline.** Claude prepares a short key ceremony checklist for the scheme chosen in phase 03. You generate the key on a machine that is offline (or a live USB), keep the private key on encrypted media with a backup, and give Claude only the public key. The private key never touches the dev box.
 3. **Install host:** a subdomain such as `get.wyattdilley.com` served by Cloudflare Pages or GitHub Pages, set up with a DNS record only, so the live site at wyattdilley.com is untouched.
-4. **npm account** for the theme package (if publishing it to npm).
+4. **npm org `cofferhq`** (created 2026-10-16) for the theme package `@cofferhq/astro`: set up GitHub Actions trusted publishing (OIDC) for it on npm.
 5. **Live site:** before the mainnet trial, snapshot the live site's container. You decide when.
 
 **Start the session:**
@@ -63,7 +63,7 @@ Phase 09, release. Read docs/phases/09-release.md and docs/progress.md, then pla
 - `bundle` packs a root-level `icon.png` and anything in `screenshots/` into the tarball, where they count toward the 128 KB per-file and 256 KB total caps. Keep declared listing images in another folder, such as `images/`. Check the bundle's headroom before deciding whether to also pack a small `icon.png` (256×256 is the recommended size).
 - References: https://docs.emdashcms.com/plugins/creating-plugins/manifest/ and https://docs.emdashcms.com/plugins/creating-plugins/publishing/
 
-**5. Theme package:** publish to npm after Wyatt logs in, or document installing from GitHub.
+**5. Theme package:** publish `@cofferhq/astro` from GitHub Actions with npm trusted publishing (OIDC, with provenance), never a stored npm token: npm restricts publishing with tokens that bypass 2FA from January 2027. The first publish of a scoped package needs `npm publish --access public`. The EmDash registry listing stays `@<atmosphere-handle>/coffer`; the npm scope covers only the theme kit (`docs/decisions.md`, 2026-10-16).
 
 **6. Registry setup test:** repeat phase 05's timed run from the real registry click with the published install command, on stagenet.
 

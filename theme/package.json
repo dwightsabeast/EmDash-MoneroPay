@@ -1,5 +1,5 @@
 {
-	"name": "coffer-astro",
+	"name": "@cofferhq/astro",
 	"version": "0.1.0",
 	"description": "Astro components for Coffer, Monero payments for EmDash: the /pay page, the isPaid helper and checkout messages.",
 	"license": "MIT",

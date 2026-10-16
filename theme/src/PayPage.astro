@@ -5,8 +5,8 @@
  *
  *   src/pages/pay/[token].astro
  *   ---
- *   import PayPage from "coffer-astro/PayPage.astro";
- *   import { preparePayPage } from "coffer-astro/page";
+ *   import PayPage from "@cofferhq/astro/PayPage.astro";
+ *   import { preparePayPage } from "@cofferhq/astro/page";
  *   const pay = await preparePayPage(Astro, Astro.params.token);
  *   ---
  *   <PayPage pay={pay} />
@@ -126,7 +126,7 @@ const payable = ["waiting", "partial", "checking"];
 				<p class="coffer-status" data-show="notfound" hidden={hiddenUnless("notfound")}>This payment link isn't valid. Check the link, or start again from the shop.</p>
 				<p class="coffer-status" data-show="unavailable" hidden={hiddenUnless("unavailable")}>Payments can't be checked right now. Please reload this page in a minute.</p>
 				<p class="coffer-status" data-show="unconfigured" hidden={hiddenUnless("unconfigured")}>
-					This pay page isn't set up correctly, so it shows no payment details. The site needs to call preparePayPage in the page file (see coffer-astro's README).
+					This pay page isn't set up correctly, so it shows no payment details. The site needs to call preparePayPage in the page file (see @cofferhq/astro's README).
 				</p>
 				{s && !view?.final && (
 					<noscript><p class="coffer-note">This page updates by itself with JavaScript on. Without it, reload the page to see the latest.</p></noscript>

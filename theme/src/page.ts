@@ -5,8 +5,8 @@
  *
  *   src/pages/pay/[token].astro
  *   ---
- *   import PayPage from "coffer-astro/PayPage.astro";
- *   import { preparePayPage } from "coffer-astro/page";
+ *   import PayPage from "@cofferhq/astro/PayPage.astro";
+ *   import { preparePayPage } from "@cofferhq/astro/page";
  *   const pay = await preparePayPage(Astro, Astro.params.token);
  *   ---
  *   <PayPage pay={pay} />

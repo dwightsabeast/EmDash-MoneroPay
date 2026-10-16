@@ -4,7 +4,7 @@
  * an open, expired or review invoice, or a plugin that can't answer.
  *
  *   ---
- *   import { isPaid } from "coffer-astro/isPaid";
+ *   import { isPaid } from "@cofferhq/astro/isPaid";
  *   if (!(await isPaid(Astro, Astro.url.searchParams.get("token")))) return Astro.redirect("/");
  *   ---
  */

@@ -2477,7 +2477,7 @@ Plan approved by Wyatt (phase 06, sessions 6a–6c). His decisions:
 - **Spec change 32:** `status` carries what the pay page shows.
 - **QR encoder:** Nayuki's `qrcodegen`, vendored with its license, pinned commit and SHA-256.
 - **Decoding:** a CI-only test decodes each QR with `zbar-tools` from apt.
-- **Package name:** `coffer-astro`, a placeholder until phase 09.
+- **Package name:** a placeholder at first (`coffer-astro`); later the same day Wyatt chose `@cofferhq/astro` (session 6c entry), and the earlier entries here use the new name.
 - **Peer dependencies:** `emdash >=1.1.0 <2` and `astro >=7 <8`.
 - **Theme devDependencies:** `astro` 7.3.5, `emdash` 1.1.0, `typescript` 5.9.3, `vitest` 4.1.11.
 - **PayPage:** a CSP (`default-src 'none'`, `connect-src 'self'`, scripts by hash, `frame-ancestors 'none'`) and `nosniff`.
@@ -2495,7 +2495,7 @@ Built:
 | --- | --- |
 | `cdeeeec` | Phase 05 closed (progress) |
 | `57439be` | **Spec change 32.** `status` adds `kind`, `address`, `uri`, `fiat` and `minAtomic`. Checkout stores `uriDescription` (the product title). One builder, `paymentUri`/`invoiceUri` in `plugin/src/core/uri.ts`, serves checkout, `status` and the admin test tip (the admin's `tipUri` is gone). An older invoice gets a URI without `tx_description`. No trust-contract change |
-| `341181a` | **`theme/` scaffold** (`coffer-astro`, set up like `plugin/`), the vendored encoder, `src/qr.ts` and CI's `theme` job |
+| `341181a` | **`theme/` scaffold** (`@cofferhq/astro`, set up like `plugin/`), the vendored encoder, `src/qr.ts` and CI's `theme` job |
 
 The vendored encoder:
 - It's `qrcodegen.ts` at upstream commit `3c6d0b3`, MIT. `LICENSE` is upstream's README text.
@@ -2614,7 +2614,7 @@ Setup:
 - **What happened:** in a real Astro site, headers and the status code set inside a component are dropped, because the response has started. The 6b page went out with none of its headers, EmDash's default `Referrer-Policy: strict-origin-when-cross-origin`, and 200 for unknown tokens.
 - **Why the tests missed it:** Astro's container API renders the component as the page.
 - **The fix:**
-  - The page file calls `preparePayPage(Astro, token)` (`coffer-astro/page`), which sets the headers and the 200/404/503 status. EmDash's middleware only fills headers that are missing.
+  - The page file calls `preparePayPage(Astro, token)` (`@cofferhq/astro/page`), which sets the headers and the 200/404/503 status. EmDash's middleware only fills headers that are missing.
   - `PayPage` fails closed without it.
   - Tests render through a fixture page shaped like the snippet.
   - The install snippet is four lines.
