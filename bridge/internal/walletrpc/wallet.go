@@ -46,12 +46,14 @@ func (c *Client) CloseWallet(ctx context.Context) error {
 	return c.call(ctx, "close_wallet", struct{}{}, &r)
 }
 
-// GetAddress returns the open wallet's primary address (account 0, index 0).
+// GetAddress returns the open wallet's primary address (account 0, index 0). It's wallet.Open's check right after
+// open_wallet, while wallet-rpc may still be catching up a wallet far below the chain, so like open_wallet it runs
+// without the client's timeout: ctx alone bounds it (Init's, the supervisor's ReadyTimeout; spec change 31).
 func (c *Client) GetAddress(ctx context.Context) (string, error) {
 	var r struct {
 		Address string `json:"address"`
 	}
-	err := c.call(ctx, "get_address", map[string]any{"account_index": 0}, &r)
+	err := c.untimed().call(ctx, "get_address", map[string]any{"account_index": 0}, &r)
 	return r.Address, err
 }
 

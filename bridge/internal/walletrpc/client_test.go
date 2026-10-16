@@ -215,7 +215,9 @@ func TestRescanBlockchainOutlastsTheClientTimeout(t *testing.T) {
 }
 
 // Over an https remote node, generate_from_keys took longer than the supervisor client's 5 s (spec change 28, run B
-// attempt 1's fix in a live run), and open_wallet can too. Both run without the client's timeout; ctx bounds them.
+// attempt 1's fix in a live run), and open_wallet can too. Both run without the client's timeout; ctx bounds them. So
+// does get_address, wallet.Open's check after open_wallet, which was cut at 5 s while wallet-rpc caught up (spec
+// change 31).
 func TestWalletCallsOutlastTheClientTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(300 * time.Millisecond)
@@ -229,6 +231,9 @@ func TestWalletCallsOutlastTheClientTimeout(t *testing.T) {
 	if err := c.OpenWallet(context.Background(), "shop", secret.New("p")); err != nil {
 		t.Fatalf("open_wallet: %v", err)
 	}
+	if got, err := c.GetAddress(context.Background()); err != nil || got != "addr" {
+		t.Fatalf("get_address: %q, %v", got, err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	if err := c.GenerateFromKeys(ctx, "shop", "addr", secret.New("v"), secret.New("p"), 1); !errors.Is(err, context.DeadlineExceeded) {
@@ -236,6 +241,9 @@ func TestWalletCallsOutlastTheClientTimeout(t *testing.T) {
 	}
 	if err := c.OpenWallet(ctx, "shop", secret.New("p")); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("the context still bounds open_wallet, got %v", err)
+	}
+	if _, err := c.GetAddress(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the context still bounds get_address, got %v", err)
 	}
 }
 
