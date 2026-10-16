@@ -3,6 +3,14 @@
  * Starting values, to tune on stagenet and with real use (spec open question 9). Not settings.
  */
 
+/**
+ * The release-1 switch (spec change 22): products and orders on or off, one constant for dev and release. Off (release
+ * 1, tips only): checkout answers `product` and `order` exactly like an unknown kind, and the admin page leaves out the
+ * product-only parts. Release 2 turns it on. vitest.goods.config.ts builds a copy with it on, so release 2 starts from
+ * tested code; that config finds this exact line, so keep it as it is.
+ */
+export const GOODS_ENABLED = false;
+
 /** 1 XMR = 10^12 atomic units. */
 export const ATOMIC_PER_XMR = 10n ** 12n;
 

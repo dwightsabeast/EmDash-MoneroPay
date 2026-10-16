@@ -4,7 +4,7 @@
  */
 import type { PluginContext } from "emdash/plugin";
 
-import { type Speed, PRESETS, SILENT_MS } from "./core/constants";
+import { GOODS_ENABLED, type Speed, PRESETS, SILENT_MS } from "./core/constants";
 import { type Invoice, newInvoice } from "./core/invoice";
 import { atomicToXmr, priceToMinor } from "./core/money";
 import { invoiceUri } from "./core/uri";
@@ -48,7 +48,8 @@ export interface CheckoutInput {
 
 /** Hand-written validation. Unknown fields (a client-sent price or amount included) are ignored, never trusted. */
 export function validateCheckout(body: unknown): CheckoutInput | null {
-	if (!isObject(body) || body.kind !== "product") return null; // tips and orders come in phases 07 and 08
+	// The release-1 switch (spec change 22): with goods off, a product checkout is refused exactly like an unknown kind.
+	if (!isObject(body) || !GOODS_ENABLED || body.kind !== "product") return null; // orders come in phase 08
 	if (typeof body.product !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(body.product)) return null;
 	const out: CheckoutInput = { product: body.product };
 	if (body.email !== undefined && body.email !== "") {

@@ -9,7 +9,7 @@
 import type { PluginContext } from "emdash/plugin";
 
 import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkout";
-import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, TEST_TIP_REQUIRED, UNPAID_RUN_ALERT } from "./core/constants";
+import { DUST_ATOMIC, GAP_ALERT, GOODS_ENABLED, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, TEST_TIP_REQUIRED, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
 import { invoiceUri } from "./core/uri";
@@ -601,8 +601,8 @@ function reviewItem(inv: Invoice): Block[] {
 	const full = t.received >= t.threshold;
 	const deepest = Math.max(0, ...inv.transfers.filter(counted).map((x) => x.confirmations));
 	const reason = inv.reviewReason ?? "late";
-	// All invoices lists product invoices only (tips come with phase 07).
-	const rowHint = (accept: string) => (inv.kind === "product" ? ` To accept ${accept} instead, find it under All invoices below and choose Mark settled from its Actions menu.` : "");
+	// All invoices lists product invoices only, and only with goods on (the release-1 switch, spec change 22).
+	const rowHint = (accept: string) => (GOODS_ENABLED && inv.kind === "product" ? ` To accept ${accept} instead, find it under All invoices below and choose Mark settled from its Actions menu.` : "");
 	let title = REVIEW_TITLE[reason];
 	let what: string;
 	let advice: string;
@@ -679,7 +679,8 @@ async function reviewBlocks(ctx: PluginContext, total: number, start: number): P
 	if (from > 0) nav.push({ type: "button", action_id: "review_page", label: `Back to the first ${REVIEW_STEP}`, value: { start: 0 } });
 	if (end < reachable) nav.push({ type: "button", action_id: "review_page", label: `Show the next ${REVIEW_STEP} (${total - end} more)`, value: { start: end } });
 	if (nav.length > 0) blocks.push({ type: "actions", block_id: "review_nav", elements: nav });
-	if (end >= reachable && total > end) blocks.push({ type: "context", text: `${total - end} more are in All invoices below, marked Needs decision.` });
+	if (end >= reachable && total > end)
+		blocks.push({ type: "context", text: GOODS_ENABLED ? `${total - end} more are in All invoices below, marked Needs decision.` : `${total - end} more are waiting. Decide the ones above to see them.` });
 	return blocks;
 }
 
@@ -781,7 +782,8 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode, opts.origin);
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...setup.recentTip];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
-	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await invoiceBlocks(ctx, now, opts)));
+	// All invoices (products) only with goods on: the release-1 switch, spec change 22.
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(GOODS_ENABLED ? await invoiceBlocks(ctx, now, opts) : []));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);

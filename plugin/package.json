@@ -21,7 +21,7 @@
 		"build": "emdash-plugin build",
 		"dev": "emdash-plugin dev",
 		"typecheck": "tsc --noEmit",
-		"test": "emdash-plugin validate && vitest run",
+		"test": "emdash-plugin validate && vitest run && vitest run --config vitest.goods.config.ts",
 		"bundle": "emdash-plugin bundle",
 		"login": "emdash-plugin login",
 		"publish": "emdash-plugin publish",

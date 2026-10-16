@@ -43,6 +43,8 @@ jobs:
         run: pnpm exec emdash-plugin validate
       - name: Tests
         run: pnpm exec vitest run
+      - name: Tests with the release-1 switch on (a copy built with GOODS_ENABLED = true; spec change 22)
+        run: pnpm exec vitest run --config vitest.goods.config.ts
       - name: Bundle caps
         run: pnpm exec emdash-plugin bundle --validate-only
 

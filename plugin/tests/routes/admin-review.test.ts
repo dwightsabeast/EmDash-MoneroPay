@@ -98,7 +98,8 @@ describe("Needs a decision", () => {
 		expect(banner(b, "inv_0001")).toMatchObject({ variant: "alert", title: "Late payment · 70% received" });
 		const t = toggle(b, "inv_0001") as B;
 		expect(text(t)).toContain("0.001250000001 of 0.001785714286 XMR arrived (70%), part of it after the invoice's deadline.");
-		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept it instead, find it under All invoices below and choose Mark settled from its Actions menu.");
+		// The pointer to All invoices only with goods on (the release-1 switch, spec change 22).
+		expect(text(t)).toContain(`Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${__COFFER_GOODS__ ? " To accept it instead, find it under All invoices below and choose Mark settled from its Actions menu." : '"'}`);
 		expect(actions(t)[0]).toEqual({ type: "button", action_id: "invoice_action", label: "Expire", style: "primary", value: "expire:inv_0001" });
 	});
 
@@ -106,7 +107,7 @@ describe("Needs a decision", () => {
 		await setup([invoice(2, { reviewReason: "underpaid", buyer: { refundAddress: ADDR(77) }, transfers: [transfer({ amountAtomic: "1339285715", confirmations: 7 })] })]);
 		const t = toggle(await load(), "inv_0002") as B;
 		expect(text(t)).toContain("0.001339285715 of 0.001785714286 XMR arrived (75%) by the deadline, 7 confirmations.");
-		expect(text(t)).toContain("Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app. To accept the smaller amount instead, find it under All invoices below and choose Mark settled from its Actions menu.");
+		expect(text(t)).toContain(`Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${__COFFER_GOODS__ ? " To accept the smaller amount instead, find it under All invoices below and choose Mark settled from its Actions menu." : '"'}`);
 		// In its own box, not cut off in the fields grid (round 2, change 2).
 		expect(fieldsOf(t).some((f) => f.label === "Refund address")).toBe(false);
 		const r = t.blocks.findIndex((b: B) => b.type === "context" && b.text === "Buyer's refund address");
@@ -189,7 +190,7 @@ describe("Needs a decision", () => {
 		expect(ids(b)).toHaveLength(12);
 		expect(ids(b)[11]).toBe("review_inv_0060");
 		expect(nav(b).map((e) => e.label)).toEqual(["Back to the first 12"]);
-		expect(text(b)).toContain("10 more are in All invoices below, marked Needs decision.");
+		expect(text(b)).toContain(__COFFER_GOODS__ ? "10 more are in All invoices below, marked Needs decision." : "10 more are waiting. Decide the ones above to see them.");
 		// Values off the steps or out of range are clamped; anything else shows the first page.
 		expect(ids((await h.admin.act("/payments", "review_page", { value: { start: 5000 } })).blocks as B[])[0]).toBe("review_inv_0049");
 		expect(ids((await h.admin.act("/payments", "review_page", { value: { start: 13 } })).blocks as B[])[0]).toBe("review_inv_0013");
@@ -222,7 +223,7 @@ describe("limits", () => {
 		const page = await h.admin.act("/payments", "connect_wallet_host");
 		const blocks = page.blocks as B[];
 		expect(reviewBanners(blocks)).toHaveLength(12);
-		expect(blocks.filter((x) => x.type === "accordion" && String(x.block_id).startsWith("invoice_"))).toHaveLength(10);
+		expect(blocks.filter((x) => x.type === "accordion" && String(x.block_id).startsWith("invoice_"))).toHaveLength(__COFFER_GOODS__ ? 10 : 0);
 		expect(blocks.some((x) => x.type === "code" && String(x.code).includes("/install.sh"))).toBe(true);
 		expect(nodes(page)).toBeLessThan(2000);
 		expect(JSON.stringify(page).length).toBeLessThan(256 * 1024);
