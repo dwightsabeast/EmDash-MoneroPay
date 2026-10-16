@@ -2190,3 +2190,78 @@ Triage list after run B attempt 1 (Wyatt asked that both be triaged):
 - **Still open from earlier:**
   - spec changes 26 (test tip at 1 confirmation) and 27 (page refresh)
   - the slow first `Init` after creating a wallet far below the tip (above)
+
+## 2026-10-16 · Phase 05 · Run B attempt 2 passed (11 min); section E; triage for both runs
+
+Before the run:
+- Pushed `550620c`; CI run 38838086597 passed (race detector included).
+- Rebuilt the release (`0.0.202610160203-dev.550620c`). Wyatt signed it, and `check-dev-signature.sh` verifies it.
+- Section D: Wyatt rolled back, I reset (extra backup `…20261016T020559974Z`) and started `built`. kernal.eu PASS at 2,230,158.
+
+**Run B attempt 2: PASS at 11 minutes** (Wyatt; `05-setup/B2-run-status.txt`, `B2-run-install-log.txt`):
+- **Node:** `https://stagenet.xmr.kernal.eu:38089`, entered first time. The new prompt's example showed `:38089`.
+- **Status:** cross-check `ok (checked with node.monerodevs.org:38089)`, a different host from the primary, so `dd7aefc`'s same-host rule worked; wallet in step with its node; 50 of 50 addresses; updates on.
+- **Timeline from the dev database and the node (UTC):**
+  - install started 02:10:37
+  - paired 02:12:24
+  - test address 02:14:04
+  - in the pool 02:15:51
+  - mined in 2,230,165 at 02:15:56
+  - the next block 02:21:16
+  - settled 02:21:49
+- **As in run A, the second confirmation was most of the wait:** 5 min 20 s for one block.
+- **`run-b-attempt-2.md` came back as the blank template** (no times, no confusion log). The total is Wyatt's, and the steps above are from the database.
+- **One finding, the payment link in Feather:**
+  - Pasted into Pay to, it gave "Unable to resolve OpenAlias: Address empty".
+  - Cause, from Feather 2.8.1's source: only a keyboard paste of text starting with `monero:` is read as a link. Pasted any other way it stays raw text, and a dot with no spaces looks like an OpenAlias. The link itself is valid (Monero's `parse_uri`).
+  - Fixed in the label (`7234299`): paste with Ctrl+V, else copy the address. Also a spec change 24 addendum, a second Feather upstream note draft, and `docs/setup-test.md` step 6.
+  - Tests: plugin 220 pass, typecheck, bundle 52.9 KB.
+
+**Phase 05's "done when" is met:** both timed runs passed under 15 minutes with no help (A attempt 3: 13 min; B attempt 2: 11 min).
+
+Triage, both runs: every overrun, error and confusion, and where it stands.
+
+| Run | Finding | Where it stands |
+| --- | --- | --- |
+| A1 | Install command had `localhost` as the site | Fixed: spec change 23 (`37c9cab`, `5ab0dec`) |
+| A1 | Command pasted on the node container; asked for keys before refusing | Fixed: refusals come before any prompt (`5ab0dec`) |
+| A1 | One 330-character line widened the page | Fixed: four short lines (spec change 23 work) |
+| A2 | Tip settled but missing in Feather (restore height in the future) | Fixed: spec change 24 items 1–3b, 5, 7. Item 4 in phase 09's docs; item 6 is Wyatt's upstream note |
+| A2 | Feather showed a stale chain until restarted | "Before the clock" step (restart) |
+| A2 | Tester had to look up the node address | Organizer hands it over; phase 09 docs say where to find it |
+| A2 | `monero:` box unlabelled | Fixed (3b), then reworded after B2 |
+| A2 | Settled tip showed nowhere | Fixed (item 1: Test tip received) |
+| A3 | Page doesn't update by itself | **Spec change 27, proposed.** EmDash 1.1.0 can't auto-refresh; a "Checked at" line and Check again button |
+| A3, B2 | 2 confirmations were 9 of 13 min (A) and about 6 of 11 (B) | **Spec change 26, proposed.** Test tip at 1 confirmation; Strict today means 10 |
+| B1 | https node: "wallet-rpc error 0" after pairing | Fixed: spec change 28 items 1 and 3 (`6e31869`), including the 5 s timeout on wallet creation and the shared digest state. TLS forwarder (item 2) decided before phase 09; 07b row added |
+| B1 | "Wallet synced" while nothing ran | **Spec change 29, accepted, to build now** (after run B), with Wyatt's condition: no false alarm on a slow, healthy first start |
+| B1 | `kernal.eu` typed three times; vague message; portless address could pass | Fixed: spec change 30 (`550620c`), proven in B2 (entered first time) |
+| B1 | Slow first `Init` after a wallet created far below the tip (live test, not the run) | Open: candidate fix (`wallet.Open` bounded by `Init`'s context). Not seen in either run |
+| B2 | Feather ignores a link pasted from the menu | Fixed in the label (`7234299`); upstream note draft |
+
+Still open after triage:
+- Decisions on spec changes 26 and 27.
+- Build spec change 29.
+- Push `7234299`.
+- Whether to propose the slow first `Init` fix.
+- Repeat runs aren't required: both runs passed.
+
+Section E (Claude's part, done):
+- **Stopped:** `built` and `release`.
+- **Restored** the first backup (`…20261014T004124362Z`). The run B state it replaced is kept as `…before-restore-20261016T024213948Z`.
+- **Plugin:** `pnpm run build` restored the placeholder install URL (no LAN address in `dist`; the new label is in).
+- **Dev site:** started. The dev box's bridge synced at 02:46:26 UTC (height 2,230,176, about 3 min after the site came up).
+- **Dev site:** stopped again. Ports 4321, 4322 and 8099 are free; no tmux sessions.
+- **Memory:** about 5.9 GB available.
+
+For Wyatt (section E):
+- Take the `dev.wyattdilley.com` hostname down.
+- Roll `coffer-test` back to `blank`. It still has run B's install, which backs off harmlessly while the site is gone.
+- Run A's node container can stay, for phase 09.
+- The tester account: the restore removed it (the backup predates it). Phase 09 makes a new invite.
+
+Next:
+1. Wyatt decides spec changes 26 and 27.
+2. Build spec change 29 (accepted), with Wyatt's condition.
+3. Push `7234299` and the docs.
+4. Decide whether the slow first `Init` gets a proposal.
