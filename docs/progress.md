@@ -2181,3 +2181,12 @@ Next:
 2. Rebuild the dev release; Wyatt signs it.
 3. Section D: Wyatt rolls back `coffer-test`; I reset and restart `built`.
 4. Rerun B with `https://stagenet.xmr.kernal.eu:38089`.
+
+Triage list after run B attempt 1 (Wyatt asked that both be triaged):
+- **Spec change 29 (proposed):** a pairing request no longer counts as a sync. "Wallet synced", "Last sync" and checkout wait for the running service. This is the "Wallet synced while nothing runs" finding.
+- **Spec change 30 (proposed):** the node prompt.
+  - The tester typed `kernal.eu` three times. The message didn't name what was missing, and its example was a loopback mainnet address.
+  - Also found: the prompt doesn't require a port, but `supervise.New` does, so a portless https address could pass before pairing and fail after it.
+- **Still open from earlier:**
+  - spec changes 26 (test tip at 1 confirmation) and 27 (page refresh)
+  - the slow first `Init` after creating a wallet far below the tip (above)

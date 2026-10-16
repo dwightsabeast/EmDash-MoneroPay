@@ -713,3 +713,49 @@ Decision (Wyatt, 2026-10-16): items 1 and 3 now, then run B is repeated over htt
   - Test: `TestWalletCallsOutlastTheClientTimeout`.
 
 Matrix note (for `docs/security-matrix.md`; Wyatt copies it into the Claude Doc): "An https remote node: wallet-rpc checks that the node's certificate chains to the system's trusted CAs, but not that it was issued for the node's name (Monero 0.18.5.1, `--daemon-ssl-allow-chained`). An on-path attacker with any publicly trusted certificate can stand in for the node. That gives no more power than a dishonest node, which the remote-node cross-check (spec change 13) is for. 07b (section E) attacks it with a valid certificate for another name. Spec change 28 item 2 (the bridge checks the name) is decided before phase 09."
+
+## 29. "Wallet synced" while nothing runs on the wallet host  (status: proposed, 2026-10-16)
+Found in: phase 05, run B attempt 1 (spec change 28's evidence). The installer paired, then failed to create the wallet, so no service was installed. The site's checklist still showed "Wallet host paired" and "Wallet synced" (3 of 5).
+Spec says:
+- Install flow step 4: "The admin page's setup checklist turns green item by item: wallet host paired, wallet synced, …"
+- API contracts, Pairing: a `pair` body is checked, then the key stored. Whether it also counts as a sync isn't said.
+
+Evidence:
+- `plugin/src/sync/handle.ts` applies a pairing request like any other sync. It stores the bridge state with `lastSyncAt: now` and the installer's node height.
+- The checklist's "Wallet synced" is true when there's bridge state, the host isn't silent and no `checks` say behind or syncing. A pairing request carries no `checks`, so the item turns Done at once.
+- Health's "Last sync" also counts it. The silent-host line only turns red 5 minutes later (`SILENT_MS`).
+- `checkoutHeight` takes the same state, so for those 5 minutes a checkout would be accepted with no wallet host running. The pool is empty after a pairing-only request, so nothing could actually be claimed.
+
+Proposal: a pairing request stores the key and marks the host paired, but **doesn't count as a sync.**
+- Its height still sets the chain-height floor (spec change 16), but `lastSyncAt` isn't set.
+- "Wallet synced", Health's "Last sync" and checkout wait for the first sync from the running service.
+- Until then, the checklist keeps its existing line: "the wallet host syncs within a minute of pairing".
+- If no sync arrives within 5 minutes of pairing, the page says so and names the fix: "Paired, but the wallet host hasn't synced. On the wallet host, run: sudo xmr-bridge status --config /etc/xmr-bridge/config".
+
+It's a plugin change, and the wire protocol is unchanged. Tests: a pairing-only request leaves "Wallet synced" to do and checkout refused; the first normal sync turns it Done.
+Effect on the admin budget: better. A failed install no longer looks half done.
+Effect on the trust contract: none.
+
+## 30. The installer's node prompt: a bare host name  (status: proposed, 2026-10-16)
+Found in: phase 05, run B attempt 1. The tester typed `kernal.eu` (Wyatt, 2026-10-16), not the full address `https://stagenet.xmr.kernal.eu:38089`, three times. The installer gave up, and the tester ran the whole command again, typing the address and view key a second time. No pairing code was used, because nothing had changed yet.
+Spec says: Install flow: the installer asks for a node only when none answers locally ("a remote node only if your own monerod doesn't answer").
+Evidence (`bridge/internal/config/config.go`, `validateNode`; `bridge/internal/installer/install.go`, `chooseNode`, `retry`):
+- **The same reply every time:** `config: node must be an http or https URL such as http://127.0.0.1:18081`.
+  - The `config:` prefix is internal.
+  - The example is a loopback address with the mainnet port, at a prompt that only appears when no local node answers.
+  - Nothing says what was wrong with what the tester typed.
+- **After three tries:** "giving up after 3 tries". The message doesn't say that nothing changed or that the pairing code still works.
+- **A latent hole: the prompt doesn't require a port, but `supervise.New` does.**
+  - `https://stagenet.xmr.kernal.eu` with no port passes the prompt's check. Go's client tries port 443, so it passes only if a node answers there.
+  - It would then fail at wallet creation, after pairing has used the code.
+  - Same class as spec change 28: a check before pairing that's looser than what runs after it.
+
+Proposal:
+1. **The message names what's missing in the admin's own input,** without "config:". For example: "kernal.eu isn't a full node address. It needs http:// or https:// at the start and a port at the end, like https://node.example:38089." For a typed `host:port`, it also says "Did you mean https://host:port?" It never guesses and goes on by itself.
+2. **The prompt requires a port,** the same rule `supervise.New` applies, so the check before pairing matches what wallet-rpc needs. Test: an address with no port is refused at the prompt.
+3. **After the third wrong try:** "Nothing was changed on this machine, and the pairing code still works. Paste the install command again." The installer still stops after three tries.
+4. **The example in the prompt stays a public-node shape** (`https://node.example:38089`), the same in the prompt and in the message.
+
+It's a bridge change: installer text and one check. It needs a release rebuild.
+Effect on the admin budget: better. A typo costs one retry, not a rerun.
+Effect on the trust contract: none.
