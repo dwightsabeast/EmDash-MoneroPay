@@ -2731,3 +2731,49 @@ Carried over:
   - updating the dev box's bridge
 
 Next step: phase 07 (tip mode), from the beginning. Read `docs/phases/07-tip-mode.md`, write the plan, and wait for Wyatt's approval.
+
+## 2026-10-16 · Phase 07 · Session 7a: tip checkout, the switch, tip lifecycle (stopped at the watch-list scan)
+
+Plan approved by Wyatt with conditions:
+- notes in plain text only
+- report the bot exposure
+- `RATE_UNAVAILABLE` falls back to an open tip
+- the 18 A address is checked
+- the 18 A fallback also shows on `TOO_MANY_OPEN`
+- report on the per-client cap on Node
+
+Decisions are in spec changes 33 and 34, and 18 is updated (`0d3d7f7`, `a299574`).
+
+Built (all local; nothing pushed since `a87da24`):
+
+| Commit | What |
+| --- | --- |
+| `6100485` | Phase 06 closed |
+| `a211262` | **The release-1 switch** (`GOODS_ENABLED = false`). Product and order checkouts get the unknown kind's reply; the admin page has no All invoices. `vitest.goods.config.ts` builds a copy with the switch on and runs the switch-dependent files, and the `__COFFER_GOODS__` define tells shared files which build they're testing. CI runs both. Bundle 51.2 KB (the bundler drops the code behind the constant) |
+| `7833fa7` | **Tip checkout:** fiat or XMR amount, entry (`ENTRY_NOT_FOUND`, a new code), note (cleaned, 140 characters). Taken while the host is silent or syncing. No price means an open tip. A visitor's open tip has no amount in its link. Visitor tips are marked `via: "checkout"` and kept apart from test tips |
+| `e4b9920` | **Tips never late** (pure core). Watched 7 days; an untouched tip leaves once the host has reported it empty for 24 hours past its window (`seq`) |
+
+Tests: default 221 and switch-on 69 pass (one skip each). Typecheck clean, bundle 53.2 KB.
+
+**Per-client cap on Node** (Wyatt's question): EmDash's `extractRequestMeta` trusts `CF-Connecting-IP` only on Workers (with a `cf` object). Elsewhere it trusts only the headers in `trustedProxyHeaders` (or `EMDASH_TRUSTED_PROXY_HEADERS`).
+- **Behind a Cloudflare Tunnel on Node:** the cap works with `trustedProxyHeaders: ["cf-connecting-ip"]`, but only if the origin is reachable only through the tunnel.
+- **`Astro.clientAddress`** isn't passed to plugins (and behind a tunnel it's loopback).
+- **Logged:**
+  - phase 09 setup docs: the config line and its condition
+  - 07b: a spoofing test with the origin exposed
+  - 7c: the tip endpoint must forward `cf` and the headers
+
+**Stopped at the plan's stop point: the watch-candidate scan** (not widened for tips yet). Measured with a temporary test, not committed, on the dev box's workerd test host:
+- **Setup:** 15,000 expired tips spread over 8 days.
+- **Result:** one sync took 183–230 ms. Node enforces no CPU limit.
+- **The watch list had exactly 1,000 entries,** where about 3,750 fall in the 2-day lookback:
+  - `collect()` in `plugin/src/store.ts` reads at most 10 pages of 100 per query (`MAX_PAGES`), unordered.
+  - **That's a silent truncation, already true today for products:** under a flood of over 1,000 invoices in two days, some recent final invoices drop off the watch list unseen, so a late payment or a reorg on them could go unnoticed.
+- **Cloudflare's runner allows 50 ms CPU and 10 subrequests per plugin call** (EmDash docs, "Configure the plugin sandbox"). The docs don't say whether storage calls through the plugin bridge count as subrequests. If they do, checkout and sync are already over 10 today.
+  - **Coffer has never run on the Cloudflare runner:** the spike and every test since used Node.
+
+Waiting on Wyatt:
+1. The watch-list design (proposal in the report).
+2. A Cloudflare Workers test, which needs his Workers Paid account (Worker Loader).
+
+Not started: 7a step 5 (dev scripts to tips).
