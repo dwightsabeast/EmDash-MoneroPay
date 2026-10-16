@@ -2292,3 +2292,103 @@ Next:
 2. CI.
 3. Rebuild the dev release when the bridge half should be tried on the dev box or `coffer-test`.
 4. Wyatt decides spec changes 26 and 27.
+
+## 2026-10-16 · Phase 05 · End-of-day handoff
+
+### Phase 05 status
+
+**Its "done when" is met.** Both timed runs passed under 15 minutes with no help:
+- Run A, own node: attempt 3, 13 min.
+- Run B, remote https node: attempt 2, 11 min.
+
+Every overrun, error and confusion from both runs is in the triage table in the 2026-10-16 entry above. Each one is fixed, proposed, or recorded for a later phase.
+
+Left before Wyatt closes the phase:
+- Decide spec changes 26 and 27. They're the two run confusions without a fix yet.
+- Push `8581f38`, which is done tonight with this entry.
+
+No repeat run is required.
+
+Spec changes from this phase:
+
+| # | Status |
+| --- | --- |
+| 23, 24, 28 (items 1 and 3), 30 | Accepted and built |
+| 29 | Built, both halves |
+| 26, 27, 31 | Proposed |
+| 28 item 2 | Decided before phase 09 |
+| 25 | Proposed, answers in |
+
+### Open decisions for Wyatt, with Claude's recommendation
+
+1. **Spec change 26: the test tip at 1 confirmation,** whatever the speed setting.
+   - Recommend: **accept.**
+   - Both runs spent most of their wait on the second block: 9 of 13 min, and about 6 of 11.
+   - Today, Strict means 10 confirmations, which breaks the budget every time.
+   - It's never zero confirmations. Small plugin change, no release rebuild.
+2. **Spec change 27: a "Checked at" line and a Check again button during setup.** EmDash 1.1.0 can't refresh a page by itself.
+   - Recommend: **accept,** with the button kept off the install-command view.
+   - Also post the upstream note asking for a timed refresh. Small plugin change.
+3. **Spec change 31: `wallet.Open` bounded by `Init`'s 60 s, not the client's 5 s.**
+   - Recommend: **accept.**
+   - It removes a silent restart after a reinstall from an older height.
+   - Small bridge change; needs the next release rebuild.
+4. **Spec change 28 item 2: the bridge's TLS forwarder,** so the node's name is checked. Due before phase 09.
+   - Recommend: decide once 07b's new man-in-the-middle row has run.
+   - Lean **yes** if the cross-check doesn't catch a name-mismatched node that lies. It's standard library only and closes a gap that https users would assume is closed.
+5. **Spec change 25: admin upkeep.**
+   - Recommend:
+     - Parts 1 and 1b (tip record and export, as Block Kit code blocks per year; answer A) and part 4 (recovery sheet) in phase 07, release 1.
+     - Part 3 (versions) with phase 09's self-update work, since it needs a bridge change (answer D).
+     - Part 5 (activity log) in release 2. It's feasible without a manifest change (answer B).
+     - Part 2 (quiet-host email) in release 2 with receipts (answer C).
+6. **When to rebuild the dev release** for spec change 29's bridge half, plus 31 if accepted.
+   - Recommend: with the next bridge change, not on its own. The plugin half already works with the released bridge.
+7. **Carried over, still waiting on Wyatt:**
+   - **Spec text to fold in:** 14 (the rename), 20–24, 28, 29 and 30.
+   - **Matrix notes:** spec change 23's F06 note and spec change 28's node-link note.
+   - **Upstream notes:**
+     - EmDash's `ctx.site.url` (23)
+     - Feather's restore height and its menu paste (24)
+     - EmDash's page refresh (27, if accepted)
+     - the earlier Block Kit notes
+   - **Spec change 18** (tips-only tier) is still proposed.
+
+### What's left running
+
+- **On the dev box:**
+  - `monerod-stagenet` and the dev box's own `xmr-bridge` are active.
+  - The dev site, the built copy and the release server are stopped. Ports 4321, 4322 and 8099 are free, and there are no tmux sessions.
+  - The dev box's bridge backs off quietly until the dev site starts again.
+- **On `coffer-test`:** run B attempt 2's install is still there, waiting on Wyatt's rollback. Its bridge can't reach the site, which is down, so it backs off.
+- **`dev.wyattdilley.com`** gives Cloudflare's 502 until Wyatt takes the hostname down.
+- **Dev data:**
+  - Restored to the pre-test state. Spec change 29's live test used a backup and restored it.
+  - The backups are in `~/xmr-pay-dev-data/baseline/`. The original baseline is `…before-setup-test-20261014T004124362Z`.
+- **The signed dev release `0.0.202610160203-dev.550620c`** is in `~/xmr-pay-dev-data/dev-release/`. It has spec changes 28 and 30, but not 29's bridge half.
+- **`plugin/dist`** is a plain build with the placeholder install URL, and spec change 29 is included.
+- **Memory:** about 5.9 GB available.
+
+### Wyatt's section E items (unchanged)
+
+- Take the `dev.wyattdilley.com` hostname down.
+- Roll `coffer-test` back to `blank`.
+- Run A's node container stays, for phase 09.
+- The restore removed the tester account; phase 09 makes a new invite.
+
+### Next steps
+
+1. Wyatt decides 26, 27 and 31 (above).
+2. Build the accepted ones, tests first: 26 and 27 in the plugin, 31 in the bridge.
+3. Push and wait for CI. Rebuild the dev release if 31 is in; Wyatt signs it.
+4. Wyatt closes phase 05.
+5. Start the next phase Wyatt names (per `docs/phases/README.md`, phase 06 or 07 under the tips-first plan). Read the "before 07, 07b and 09" list in the 2026-10-13 entry first.
+
+Found for later phases (already in this log):
+- **Phase 09:**
+  - `xmr-bridge update` doesn't exist, but the "update available" banner names it.
+  - The TLS forwarder decision.
+  - Spec change 24 item 4 (the wallet-app section of the install docs).
+- **Phase 08:** the `returnUrl` same-origin check must not rely on `ctx.site.url` alone.
+
+To resume: `Continue phase 05. Read docs/progress.md (the 2026-10-16 end-of-day handoff), then plan the next step.`

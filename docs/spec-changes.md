@@ -797,3 +797,17 @@ It's a bridge change: installer text and one check. It needs a release rebuild.
 Effect on the admin budget: better. A typo costs one retry, not a rerun.
 Decision (Wyatt, 2026-10-16): accepted. Build it now, tests first, and include it in the release rebuild before Wyatt signs, so run B tests the new prompt.
 Effect on the trust contract: none.
+
+## 31. The first start after a reinstall can fail Init while wallet-rpc catches up  (status: proposed, 2026-10-16)
+Found in: spec change 28's live run (`TestLiveShopWallet` against kernal.eu over https; `~/xmr-pay-dev-data/05-setup/B1-fix-live2-wallet-rpc.log` and its `.bridge` log, local). Not seen in run A or run B.
+Spec says: Bridge service, duty 1: run wallet-rpc and keep it running. Spec change 17: a reinstall restores from an older height so it sees the site's open invoices.
+Evidence:
+- **The test's wallet was created about 10,000 blocks below the chain.** The service's first start took 38 s, then failed `Init` and restarted: `init: walletrpc: get_address: … Client.Timeout exceeded`.
+- **`open_wallet` (untimed since spec change 28) took about 33 s** while wallet-rpc caught up. Then the next call, `get_address`, was cut at the client's 5 s.
+- **The restart was ready in 2.4 s.** wallet-rpc saves its progress when stopped, so restarts converge rather than loop.
+- **The installer creates a new wallet at today's height,** which is why neither run saw this.
+- **A reinstall from an older restore height (spec change 17) can restart a few times before it settles.** Each restart counts against the update guard's restart limit if it happens just after an update.
+
+Proposal: `wallet.Open`'s calls (`open_wallet`, then `get_address`) are bounded only by `Init`'s context (the supervisor's 60 s), not by the client's 5 s. It's a small bridge change with a test like `TestWalletCallsOutlastTheClientTimeout`.
+Effect on the admin budget: none (it removes a silent restart).
+Effect on the trust contract: none.
