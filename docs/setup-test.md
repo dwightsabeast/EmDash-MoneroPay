@@ -89,14 +89,14 @@ The installer then works on its own: it downloads Monero's wallet program and ch
 
 ### 5. Watch the checklist turn green (your site's admin)
 
-Back on the Monero payments page, reload the page. The **Setup** section ticks off, one by one:
+Back on the Monero payments page, reload the page (the page doesn't update by itself). The **Setup** section ticks off, one by one:
 
 - Wallet host paired
 - Wallet synced
 - Payment addresses ready
 - Price feed answering
 
-**Check:** all four say **Done**. It can take a minute or two after the installer finishes; reload again if not.
+**Check:** all four say **Done**. It can take a minute or two after the installer finishes; if not, press **Check again** at the bottom of the Setup section (it shows when the page last checked), or reload.
 
 Under the checklist, a line asks you to open your shop wallet app, let it finish syncing, and check a new wallet's restore height against a block number. If you did "Before the clock", that's already done.
 
@@ -106,11 +106,11 @@ When the four items are done, press **Get a test address** under Setup. The page
 
 From the **second wallet** (not your shop wallet), send at least **0.0001 XMR** to that address. The organizer tells you how to send from it.
 
-**Check:** after a minute or so, reloading the page shows **Payment seen**, and then the number of confirmations.
+**Check:** after a minute or so, **Check again** (or a reload) shows **Payment seen**, and then the number of confirmations.
 
 ### 7. Setup complete (your site's admin)
 
-Keep reloading every minute or two. Once the tip has one confirmation (a few minutes on stagenet; a test tip needs one whatever the confirmation speed), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings. At the top of the page, a **Test tip received** section shows the amount, the block it arrived in, the time it settled and its Transaction ID.
+Press **Check again** (or reload) every minute or two. Once the tip has one confirmation (a few minutes on stagenet; a test tip needs one whatever the confirmation speed), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings. At the top of the page, a **Test tip received** section shows the amount, the block it arrived in, the time it settled and its Transaction ID.
 
 **Check:** **Setup (complete)**, and the **Test tip received** section. Tell the observer the "settled at" time it shows.
 

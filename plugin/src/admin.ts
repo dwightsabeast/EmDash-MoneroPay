@@ -46,6 +46,7 @@ function ago(ms: number): string {
 	return `${h} h ${min % 60} min ago`;
 }
 const utc = (ms: number) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
+const utcSeconds = (ms: number) => `${new Date(ms).toISOString().slice(11, 19)} UTC`;
 
 interface Health {
 	paired: boolean;
@@ -245,9 +246,11 @@ function testTipBlocks(tip: Invoice, h: Health): Block[] {
 /**
  * The setup checklist (spec, Install flow step 4), as a toggle: open near the top until a test tip settles, then closed
  * in Settings for good (Wyatt, 2026-10-09). The settled tip's details go inside it, and for a day also at the top
- * (`recentTip`; Wyatt, 2026-10-15).
+ * (`recentTip`; Wyatt, 2026-10-15). Until it's done, it ends with when the page was checked and a Check again button:
+ * EmDash 1.1.0's admin pages load once and never poll (spec change 27). Not while the install command is on screen
+ * (`showingCommand`): it's shown once, so a re-render would lose it.
  */
-async function setupSection(ctx: PluginContext, h: Health, now: number): Promise<{ done: boolean; toggle: Block; recentTip: Block[] }> {
+async function setupSection(ctx: PluginContext, h: Health, now: number, showingCommand: boolean): Promise<{ done: boolean; toggle: Block; recentTip: Block[] }> {
 	const tips = await testTips(ctx);
 	let done = (await ctx.kv.get<boolean>(KV.setupDone)) === true;
 	if (!done && tips.some((t) => t.status === "settled")) {
@@ -298,6 +301,12 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 		}
 		inner.push({ type: "actions", elements: [{ type: "button", action_id: "get_test_address", label: "Get a test address" }] });
 	}
+	if (!done && showingCommand) inner.push({ type: "context", text: "Reload this page after the installer says Done." });
+	else if (!done)
+		inner.push(
+			{ type: "context", text: `Checked at ${utcSeconds(now)}. This page doesn't update by itself.` },
+			{ type: "actions", elements: [{ type: "button", action_id: "check_again", label: "Check again" }] },
+		);
 	const count = rows.filter(([, ok]) => ok).length;
 	const recent = settled?.settledAt !== undefined && now - settled.settledAt < TEST_TIP_TOP_MS && tipBlocks.length > 0;
 	return {
@@ -767,7 +776,7 @@ async function connectBlocks(ctx: PluginContext, h: Health, now: number, afterSe
  */
 async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Promise<Block[]> {
 	const h = await health(ctx, now, { checkRate: true });
-	const setup = await setupSection(ctx, h, now);
+	const setup = await setupSection(ctx, h, now, opts.shownCode !== undefined);
 	const connect = await connectBlocks(ctx, h, now, setup.done, opts.shownCode, opts.origin);
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...setup.recentTip];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
@@ -846,6 +855,7 @@ export async function handleAdmin(ctx: PluginContext, input: unknown, now: numbe
 		return { blocks: await view(cursor ? { cursor } : {}) };
 	}
 	if (i.type === "block_action" && i.action_id === "invoices_newest") return { blocks: await view() };
+	if (i.type === "block_action" && i.action_id === "check_again") return { blocks: await view() };
 	if (i.type === "block_action" && i.action_id === "review_page") {
 		const v = isObject(i.value) ? i.value : {};
 		const n = typeof v.start === "number" && Number.isFinite(v.start) ? Math.floor(v.start / REVIEW_STEP) * REVIEW_STEP : 0;

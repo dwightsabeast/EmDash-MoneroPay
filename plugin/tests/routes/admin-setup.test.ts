@@ -236,6 +236,62 @@ describe("setup checklist", () => {
 	});
 });
 
+describe("setup: the page doesn't update by itself (spec change 27)", () => {
+	const CHECKED = /^Checked at \d\d:\d\d:\d\d UTC\. This page doesn't update by itself\.$/;
+	const CHECK_AGAIN = { type: "actions", elements: [{ type: "button", action_id: "check_again", label: "Check again" }] };
+	const RELOAD = { type: "context", text: "Reload this page after the installer says Done." };
+	const tail = (b: B[]) => (checklist(b)?.blocks as B[]).slice(-2);
+
+	it("during setup, the Setup section ends with when the page was checked and a Check again button", async () => {
+		await setup({ paired: false, lastSyncAgo: null, free: 0, price: false });
+		let [line, button] = tail(await load());
+		expect(line.type).toBe("context");
+		expect(line.text).toMatch(CHECKED);
+		expect(button).toEqual(CHECK_AGAIN);
+		await host?.dispose();
+		// Also with Get a test address showing: still last, after that button.
+		await setup();
+		const b = await load();
+		[line, button] = tail(b);
+		expect(line.text).toMatch(CHECKED);
+		expect(button).toEqual(CHECK_AGAIN);
+		expect(text(b)).toContain("get_test_address");
+	});
+
+	it("Check again re-renders the page and changes nothing stored", async () => {
+		const h = await setup();
+		await load();
+		const stored = async () => ({ kv: await h.inspect.kv.list(), pool: await h.inspect.storage.list("pool"), invoices: await h.inspect.storage.list("invoices") });
+		const before = await stored();
+		const r = await h.admin.act("/payments", "check_again");
+		expect(r.toast).toBeUndefined();
+		expect(tail(r.blocks as B[])[0].text).toMatch(CHECKED);
+		expect(await stored()).toEqual(before);
+	});
+
+	it("not while the install command is on screen: the command is shown once, so the line says to reload after the installer", async () => {
+		const h = await setup({ paired: false, lastSyncAgo: null, free: 0 });
+		const r = await h.admin.act("/payments", "connect_wallet_host");
+		const b = r.blocks as B[];
+		expect(text(b)).toContain("/install.sh");
+		expect(text(b)).not.toContain("check_again");
+		expect(text(b)).not.toContain("This page doesn't update by itself");
+		expect((checklist(b)?.blocks as B[]).at(-1)).toEqual(RELOAD);
+		// A later load (the command is gone by then) has Check again back.
+		expect(tail(await load())[1]).toEqual(CHECK_AGAIN);
+	});
+
+	it("after setup, neither: Health's Last sync says how fresh the data is", async () => {
+		const h = await setup();
+		await h.fixtures.plugin.kv("state:setupDone", true);
+		const b = await load();
+		expect(checklist(b)).toMatchObject({ label: "Setup (complete)" });
+		expect(text(b)).not.toContain("check_again");
+		expect(text(b)).not.toContain("This page doesn't update by itself");
+		expect(text(b)).not.toContain(RELOAD.text);
+	});
+});
+
 describe("pairing notes", () => {
 	it("the code's minutes left, at issue and on a reload; an expired code no longer counts as active", async () => {
 		const h = await setup({ paired: false, lastSyncAgo: null });
