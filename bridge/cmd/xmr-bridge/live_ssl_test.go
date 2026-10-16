@@ -76,7 +76,8 @@ func probeSSL(t *testing.T, ctx context.Context, binDir, base, daemon string, fl
 	pass := hex.EncodeToString(b)
 	const port = "38998"
 	args := append([]string{"--stagenet", "--non-interactive", "--rpc-bind-ip", "127.0.0.1", "--rpc-bind-port", port,
-		"--rpc-login", "probe:" + pass, "--wallet-dir", dir, "--log-file", filepath.Join(dir, "wallet-rpc.log"),
+		"--rpc-login", "probe:" + pass, "--wallet-dir", dir, "--shared-ringdb-dir", filepath.Join(dir, "ringdb"),
+		"--log-file", filepath.Join(dir, "wallet-rpc.log"),
 		"--daemon-address", daemon}, flags...)
 	cmd := exec.Command(filepath.Join(binDir, "monero-wallet-rpc"), args...)
 	cmd.Env = []string{} // nothing inherited
