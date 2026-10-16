@@ -96,6 +96,8 @@ const payable = ["waiting", "partial", "checking"];
 						</>
 					)}
 					<a class="coffer-wallet" href={s.uri} rel="noreferrer">Open in wallet</a>
+					{/* Not every wallet registers for monero: links (Feather on Windows didn't; session 6c), so the button can do nothing. */}
+					<p class="coffer-note">Nothing opened? Copy the {s.amountAtomic !== null ? "address and amount" : "address"} above into your wallet.</p>
 				</section>
 			)}
 			<section class="coffer-card" aria-live="polite">

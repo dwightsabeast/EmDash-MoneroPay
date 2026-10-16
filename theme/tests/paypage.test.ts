@@ -47,6 +47,8 @@ describe("PayPage", () => {
 		expect(html).toContain(`<p class="coffer-value" data-field="address">${ADDRESS}</p>`);
 		expect(html).toContain('<p class="coffer-value" data-field="amount">0.08</p>');
 		expect(html).toContain(`href="${URI.replaceAll("&", "&amp;")}"`);
+		// Run 6c: on Windows, Feather isn't registered for monero: links, so the button can do nothing (Wyatt).
+		expect(html).toMatch(/Open in wallet<\/a>\s*<p class="coffer-note">Nothing opened\? Copy the address and amount above into your wallet\.<\/p>/);
 		expect(visibleStates(html)).toEqual(["waiting"]);
 		expect(html).toMatch(/Pay within <strong data-field="countdown">2[45]:\d\d<\/strong> \(by \d\d:\d\d UTC\)/);
 		expect(html).toContain('data-final="false"');
@@ -111,6 +113,7 @@ describe("PayPage", () => {
 		expect(html).toContain('<p class="coffer-amount">Any amount from 0.0001 XMR</p>');
 		expect(markup(html)).not.toContain("coffer-fiat");
 		expect(markup(html)).not.toContain('data-field="amount"');
+		expect(html).toContain('<p class="coffer-note">Nothing opened? Copy the address above into your wallet.</p>');
 		expect(html).toContain(qrSvg(`monero:${ADDRESS}?tx_amount=0.000100000000&tx_description=Coffer%20test%20tip`));
 	});
 
