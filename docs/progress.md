@@ -2419,8 +2419,14 @@ Not covered:
 - 31 not run against a real slow wallet-rpc (a wallet far below the tip). The candidate live check is `TestLiveShopWallet` against a remote node with an older restore height, about 2 minutes.
 - Spec change 29's "starting" message reaching a site, which needs the rebuilt release installed.
 
+Then:
+- Wyatt OK'd the push and skipped both optional live checks. Pushed `e360e6c`; CI run 38916093756 passed (plugin, bridge, race detector).
+- **Rebuilt the dev release `0.0.202610161433-dev.e360e6c`** on the default loopback base (`http://127.0.0.1:8099`). It has spec changes 28, 29 (both halves), 30 and 31. The build is clean, not `.dirty`, and all four files match `SHA256SUMS`.
+  - It replaces `0.0.202610160203-dev.550620c` in `~/xmr-pay-dev-data/dev-release/`.
+  - `release.json` is unsigned until Wyatt signs it.
+
 Next:
-1. Wyatt OKs the push, then CI.
-2. Rebuild the dev release (`scripts/build-dev-release.sh`), with spec changes 29 (bridge half) and 31. Wyatt signs it, and `check-dev-signature.sh` verifies it.
+1. Wyatt signs: `sh scripts/sign-dev-release.sh 2>&1 | tee ~/xmr-pay-dev-data/sign-e360e6c-output.txt`. Then I run `scripts/check-dev-signature.sh`.
+2. Optional, when Wyatt wants spec change 29's "starting" message and 31 seen live: update the dev box's installed bridge to this release (Wyatt, sudo).
 3. Wyatt closes phase 05.
 4. Wyatt posts the upstream notes when he chooses: EmDash's page refresh (27), plus the earlier ones in the handoff above.
