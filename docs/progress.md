@@ -2647,3 +2647,53 @@ Live checks:
   - first seen 17:55:43, already 1 confirmation
   - settled 17:56:45 UTC
 - **`isPaid`,** through a temporary page on `astro dev` (deleted afterwards): true for `p6` and the paid tip; false for the expired tip, an unknown token, a malformed one and none.
+
+### 2026-10-16 (later) · Phase 06 · 6c finished: package name, install text, site stylesheet
+
+Wyatt's decisions:
+- **npm name `@cofferhq/astro`** (`~/xmr-pay-dev-data/npm-scope-cofferhq.md`; npm org `cofferhq`, since `coffer` was taken). Renamed everywhere, and logged in `docs/decisions.md` (`3ea176d`).
+  - For phase 09: the first publish needs `--access public`, through GitHub Actions trusted publishing (OIDC, with provenance), never a stored token. Added to `docs/phases/09-release.md`.
+  - The EmDash listing stays `@<atmosphere-handle>/coffer`.
+- **The registry's Installation section** (`208ed44`), as Wyatt approved it.
+  - `plugin/docs/installation.md` holds the text, through `sections.installation`.
+  - It covers the Setup checklist, the four-line pay page, the headers and restyling, and the access-rule note.
+  - **Gated content (`isPaid`) is left out of release 1** (Wyatt: it's selling); it comes back in release 2.
+  - Sections are profile text, inlined at publish, with a 2,000-grapheme cap; this one is 1,261 characters.
+- **Site stylesheet through the CSP:**
+  - On the built copy, the page linked a real same-origin `/your.css` through the README's `<link slot="head">`.
+  - The CSP sent `style-src 'self' 'sha256-…'`, and the site served the file as `text/css`.
+  - **Wyatt saw it applied** (yellow background, purple heading), with no console errors.
+  - The test stylesheet is removed and the page is back to the plain snippet.
+
+**Phase 06's done criteria are met:**
+- A stagenet product payment went end to end through the package's `/pay` page, reaching Paid without a reload (`p6`). An open tip also did, unplanned.
+- The page meets every privacy rule: headers, CSP, no third-party assets, the token only in the polling URL, `noindex`, no Referer.
+- The QR encodes the exact URI: zbarimg in CI and on the dev box, and Wyatt's camera scans of both the product and the test tip.
+- The installation snippet is written.
+
+Not covered:
+- **No wallet has read the link through Open in wallet,** because Feather isn't registered for `monero:` on Windows. The hint now covers that case.
+- **No wallet app has scanned the QR;** Wyatt has no phone wallet.
+- `tsc` doesn't check `.astro` frontmatter.
+
+For phase 07:
+- **On a tip, the Paid card should show the amount received** (Wyatt). Today it says only "Paid. Thank you!".
+- Spec change 18 A (the static tip button) is moved there.
+- The tip button uses `checkoutErrorMessage` (`@cofferhq/astro/messages`).
+
+State left:
+- **Dev site:**
+  - stopped
+  - `@cofferhq/astro` installed from `../../xmr-pay/theme`
+  - `src/pages/pay/[token].astro` is the four-line snippet
+  - `dist/` rebuilt from that page
+  - no `public/` folder (as before)
+- **Ports and memory:** 4321, 4322 and 8099 are free, with no tmux sessions. Memory is about 5.4 GB available.
+- **Dev data:** kept, with this session's invoices:
+  - `p6` settled
+  - the first test tip expired
+  - the second test tip settled with 0.001 sXMR
+  - The backup from before 6c is `baseline/data.db.before-06c-20261016T170701Z`.
+- **Scratch files:** `~/xmr-pay-dev-data/06-pay/` (the expected URIs and status replies, mode 600).
+
+Next: Wyatt closes phase 06, then phase 07 (tips). Read the "before 07, 07b and 09" list in the 2026-10-13 entry first, plus the phase 07 notes above.
