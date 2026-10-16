@@ -2777,3 +2777,24 @@ Waiting on Wyatt:
 2. A Cloudflare Workers test, which needs his Workers Paid account (Worker Loader).
 
 Not started: 7a step 5 (dev scripts to tips).
+
+### 2026-10-16 (later) · 7a continued while the spike waits
+
+- **Wyatt's decision:** a Cloudflare spike first, before redesigning the watch scan. He'll set up the Workers Paid account.
+  - Plan in `spikes/cf-runner/PLAN.md` (`e2ed6f6`): the questions, the method, every account step as his, and what needs approval first (the working area `~/sites/xmr-cf-spike`; `wrangler`, `@astrojs/cloudflare` and `@emdash-cms/cloudflare` for the throwaway site only; how deploys are authorized).
+- **Step 5, the dev scripts to tips** (`89bf859`):
+  - `dev-e2e.mjs`: the product is refused, then a $1.00 tip goes from below the floor to settled.
+  - `dev-invoices.mjs new`: a tip by default (`--xmr` or `--fiat`, `--entry`, `--note`), and `--product` only with the switch on.
+  - **Live:**
+    - `dev-e2e` 31 of 31 on `astro dev`, after a reset (backup `…20261016T200224592Z`), restored after
+    - against the restored site and the real bridge: an open tip (#271) and a 0.002 XMR tip (#272); both stay unpaid and will expire
+    - Script tests: 17 pass.
+- **State:**
+  - dev site stopped, ports free
+  - dev data restored, plus those two tips (the state the restore replaced: `…before-restore-20261016T200252737Z`)
+
+Left in 7a, after the spike:
+- the watch-list scan: widen it for tips, or redesign it (the spike decides)
+- the timing check on the Cloudflare runner itself
+
+Then 7b (the admin tips view) and 7c (theme and live) as planned.
