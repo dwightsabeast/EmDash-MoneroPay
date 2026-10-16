@@ -2425,8 +2425,9 @@ Then:
   - It replaces `0.0.202610160203-dev.550620c` in `~/xmr-pay-dev-data/dev-release/`.
   - `release.json` is unsigned until Wyatt signs it.
 
+- Wyatt signed it, and `check-dev-signature.sh` verifies the signature. The four files still match `SHA256SUMS`.
+
 Next:
-1. Wyatt signs: `sh scripts/sign-dev-release.sh 2>&1 | tee ~/xmr-pay-dev-data/sign-e360e6c-output.txt`. Then I run `scripts/check-dev-signature.sh`.
-2. Optional, when Wyatt wants spec change 29's "starting" message and 31 seen live: update the dev box's installed bridge to this release (Wyatt, sudo).
-3. Wyatt closes phase 05.
-4. Wyatt posts the upstream notes when he chooses: EmDash's page refresh (27), plus the earlier ones in the handoff above.
+1. Optional, when Wyatt wants spec change 29's "starting" message and 31 seen live: update the dev box's installed bridge to this release (Wyatt, sudo).
+2. Wyatt closes phase 05.
+3. Wyatt posts the upstream notes when he chooses: EmDash's page refresh (27), plus the earlier ones in the handoff above.
