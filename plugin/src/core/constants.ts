@@ -25,6 +25,9 @@ export const EXPIRY_GRACE_BLOCKS = 3;
 /** Expired and review invoices stay watched this long after expiresAt; settled ones this long after settledAt at most. */
 export const LATE_WINDOW_MS = 24 * 3_600_000;
 
+/** How long a tip's address stays watched after its window (spec change 33): a tip is never late, so a payment made during a long wallet host outage still counts. An untouched tip leaves sooner (core/watch.ts). */
+export const TIP_WATCH_MS = 7 * 24 * 3_600_000;
+
 /** Settled invoices stay watched until their payment is this deep (Monero's 10-block spend lock). */
 export const FINAL_DEPTH = 10;
 

@@ -187,9 +187,12 @@ export function totals(inv: Invoice, include: (t: Transfer) => boolean = () => t
 	return { received, threshold, depth, notCounted: inv.transfers.length - inv.transfers.filter(counted).length };
 }
 
-/** Before expiry everything counted counts; from expiresAt on, only payments made in time. */
+/**
+ * Before expiry everything counted counts; from expiresAt on, only payments made in time. Except tips: a tip is never
+ * late, so every counted payment counts whenever it came (spec change 33).
+ */
 export const basis = (inv: Invoice, now: number): Totals =>
-	now >= inv.expiresAt ? totals(inv, (t) => onTime(inv, t)) : totals(inv);
+	now >= inv.expiresAt && inv.kind !== "tip" ? totals(inv, (t) => onTime(inv, t)) : totals(inv);
 
 export function classify(t: Totals, required: number): "new" | "seen" | "confirming" | "settled" {
 	if (t.received === 0n) return "new";
@@ -266,20 +269,23 @@ export function evaluate(input: Invoice, at: { now: number; chainHeight: number 
 			events.push({ type: "reconfirmed" });
 		}
 	} else if (before === "expired") {
-		const s = classify(totals(inv, (x) => onTime(inv, x)), inv.required);
+		// A tip counts every payment, whenever it came (spec change 33); anything else only payments made in time.
+		const s = classify(inv.kind === "tip" ? totals(inv) : totals(inv, (x) => onTime(inv, x)), inv.required);
 		if (s === "confirming" || s === "settled") {
-			// Paid in time, reported after expiry: reopen and continue normally.
+			// Paid in time (or a tip paid at all), reported after expiry: reopen and continue normally.
 			inv.status = s;
 			inv.reopened = true;
 			events.push({ type: "reopened" });
 			if (s === "settled") inv.settledAt = now;
 			else delete inv.finalAt;
+		} else if (inv.kind === "tip") {
+			// Below the floor: stays expired, quietly. Never late, never underpaid (spec change 33).
 		} else if (hasUndecided(inv, chainHeight)) {
 			// Could still prove on time once mined: leave it expired for now and decide on a later sync.
 		} else if (hasLate(inv, chainHeight)) {
 			inv.status = "review";
 			inv.reviewReason = "late";
-		} else if (s === "seen" && inv.kind !== "tip") {
+		} else if (s === "seen") {
 			// An on-time partial payment that turned up after expiry: underpaid, not silently expired (2b decision).
 			inv.status = "review";
 			inv.reviewReason = "underpaid";
@@ -292,7 +298,7 @@ export function evaluate(input: Invoice, at: { now: number; chainHeight: number 
 			if (inv.seq < inv.expiresAt || hasUndecided(inv, chainHeight)) {
 				// No sync from after the deadline yet, or a payment that may still be mined in time: wait.
 				inv.pendingExpiry = true;
-			} else if (hasLate(inv, chainHeight)) {
+			} else if (inv.kind !== "tip" && hasLate(inv, chainHeight)) {
 				s = "review";
 				inv.reviewReason = "late";
 			} else if (s === "seen" && inv.kind !== "tip") {

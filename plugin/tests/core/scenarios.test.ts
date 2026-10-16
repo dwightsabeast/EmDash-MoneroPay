@@ -291,12 +291,13 @@ describe("expire on evidence and on-time evidence (spec changes 2 and 5)", () =>
 		expect(sim.inv).toMatchObject({ status: "review", reviewReason: "underpaid" });
 	});
 
-	it("a tip below the dust floor at expiry just expires (phase 07 decides)", () => {
+	it("a tip below the dust floor at expiry just expires, quietly (spec change 33)", () => {
 		const sim = new Sim({ kind: "tip", fiatMinor: null });
 		sim.pay(50n);
 		sim.mine(20);
 		sim.sync();
 		expect(sim.inv.status).toBe("expired");
+		expect(sim.inv.reviewReason).toBeUndefined();
 	});
 
 	it("an admin decision is final", () => {
@@ -306,6 +307,116 @@ describe("expire on evidence and on-time evidence (spec changes 2 and 5)", () =>
 		sim.sync();
 		expect(sim.inv.status).toBe("settled");
 		expect(sim.events).toEqual([]);
+	});
+});
+
+describe("tips (spec change 33)", () => {
+	const DAY = 24 * 3_600_000;
+
+	it("the floor exactly settles; one atomic unit less stays seen, then expires", () => {
+		const exact = new Sim({ kind: "tip", fiatMinor: null });
+		exact.pay(100_000_000n);
+		exact.mine(2);
+		exact.sync();
+		expect(exact.inv.status).toBe("settled");
+		const short = new Sim({ kind: "tip", fiatMinor: null });
+		short.pay(99_999_999n);
+		short.mine(2);
+		short.sync();
+		expect(short.inv.status).toBe("seen");
+		short.mine(20);
+		short.sync();
+		expect(short.inv.status).toBe("expired");
+	});
+
+	it("a set amount (here $12.00) paid short but above the floor settles at the floor, never underpaid", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: 1200n });
+		expect(sim.inv.expectedAtomic).toBe("80000000000");
+		sim.pay(1_000_000_000n); // 0.001 XMR of the 0.08 asked
+		sim.mine(2);
+		sim.sync();
+		expect(sim.inv.status).toBe("settled");
+		expect(sim.inv.overpaidAtomic).toBeUndefined();
+	});
+
+	it("a tip paid after its window settles, never going to review as late", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.mine(20);
+		sim.sync();
+		expect(sim.inv.status).toBe("expired");
+		sim.wait(3 * DAY);
+		sim.pay(500_000_000n);
+		sim.sync();
+		expect(sim.inv.status).toBe("confirming");
+		expect(sim.inv.reopened).toBe(true);
+		sim.mine(2);
+		sim.sync();
+		expect(sim.inv).toMatchObject({ status: "settled" });
+		expect(statuses(sim)).not.toContain("review");
+	});
+
+	it("paid after its window while still open (no sync since): settles, no late review", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.mine(20); // past expiresHeight, no sync yet
+		sim.wait(DAY);
+		sim.pay(500_000_000n);
+		sim.mine(2);
+		sim.sync();
+		expect(sim.inv.status).toBe("settled");
+	});
+
+	it("a product paid late still goes to review (the tips rule is for tips only)", () => {
+		const sim = new Sim();
+		sim.mine(20);
+		sim.sync();
+		sim.wait(DAY);
+		sim.pay(sim.expected);
+		sim.mine(2);
+		sim.sync();
+		expect(sim.inv).toMatchObject({ status: "review", reviewReason: "late" });
+	});
+
+	it("watched for 7 days after its window once anything was reported", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.pay(50n); // under the floor: touched, and expires
+		sim.mine(20);
+		sim.sync();
+		expect(sim.inv.status).toBe("expired");
+		expect(isWatched(sim.inv, sim.inv.expiresAt + 6 * DAY)).toBe(true);
+		expect(isWatched(sim.inv, sim.inv.expiresAt + 7 * DAY)).toBe(false);
+		expect(isWatched(sim.inv, sim.inv.expiresAt + 8 * DAY)).toBe(false);
+	});
+
+	it("untouched: leaves the list once the wallet host has reported it empty for 24 hours past its window", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.mine(20);
+		sim.sync();
+		expect(sim.inv.status).toBe("expired");
+		sim.wait(sim.inv.expiresAt + DAY - 60_000 - sim.now);
+		sim.sync(); // the bridge's clock: 1 minute short of 24 hours past the window
+		expect(sim.inv.seq).toBeLessThan(sim.inv.expiresAt + DAY);
+		expect(isWatched(sim.inv, sim.now)).toBe(true);
+		sim.wait(60_000);
+		sim.sync();
+		expect(isWatched(sim.inv, sim.now)).toBe(false);
+	});
+
+	it("untouched through a wallet host outage: still watched, because nothing reported it empty", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.mine(20);
+		sim.sync();
+		// No syncs for 5 days: seq stays at the last report, just after the window.
+		expect(isWatched(sim.inv, sim.inv.expiresAt + 5 * DAY)).toBe(true);
+		expect(isWatched(sim.inv, sim.inv.expiresAt + 7 * DAY)).toBe(false); // the 7-day cap still holds
+	});
+
+	it("a settled tip is watched like a product: until 10 deep, at most 24 hours after settling", () => {
+		const sim = new Sim({ kind: "tip", fiatMinor: null });
+		sim.pay(500_000_000n);
+		sim.mine(10);
+		sim.sync();
+		expect(sim.inv.status).toBe("settled");
+		expect(isWatched(sim.inv, sim.now)).toBe(false);
 	});
 });
 
