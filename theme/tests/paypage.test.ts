@@ -1,9 +1,14 @@
-// PayPage through Astro's container API, with a fake EmDash runtime in locals: every state, the privacy headers and
-// CSP (hashes checked against the inline text actually sent), no third-party references, and where the token appears.
+// PayPage through Astro's container API, rendered from a page shaped like the README's (tests/pages/PayRoute.astro:
+// preparePayPage in the page's frontmatter, because headers a component sets arrive too late in a real site), with a
+// fake EmDash runtime in locals: every state, the privacy headers and CSP (hashes checked against the inline text
+// actually sent), no third-party references, where the token appears, and failing closed without the preparation.
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import PayPage from "../src/PayPage.astro";
+import { setPayPageHeaders } from "../src/headers";
+import type { PreparedPayPage } from "../src/page";
+import PayRoute from "./pages/PayRoute.astro";
 import { CLIENT_SCRIPT } from "../src/client";
 import { qrSvg } from "../src/qr";
 import { PAGE_CSS } from "../src/styles";
@@ -15,7 +20,7 @@ beforeAll(async () => {
 });
 
 async function render(token: string | undefined, loc: unknown) {
-	const res = await container.renderToResponse(PayPage, { props: { token }, locals: loc as App.Locals, request: new Request(`https://shop.example/pay/${token}`), partial: false });
+	const res = await container.renderToResponse(PayRoute, { props: { token }, locals: loc as App.Locals, request: new Request(`https://shop.example/pay/${token}`), partial: false });
 	return { res, html: await res.text() };
 }
 
@@ -135,7 +140,7 @@ describe("PayPage", () => {
 	});
 
 	it("a site title, and same-origin site CSS through the head slot", async () => {
-		const res = await container.renderToString(PayPage, {
+		const res = await container.renderToString(PayRoute, {
 			props: { token: TOKEN, title: "Pay Wyatt's shop" },
 			slots: { head: '<link rel="stylesheet" href="/site.css">' },
 			locals: locals(ok(status())) as App.Locals,
@@ -144,5 +149,29 @@ describe("PayPage", () => {
 		});
 		expect(res).toContain("<title>Pay Wyatt&#39;s shop</title>");
 		expect(res).toContain('<link rel="stylesheet" href="/site.css">');
+	});
+
+	it("fails closed without preparePayPage or its headers: no payment details, no token, no plugin call", async () => {
+		const calls: Call[] = [];
+		const loc = locals(ok(status()), calls) as App.Locals;
+		const request = new Request(`https://shop.example/pay/${TOKEN}`);
+		const prepared: PreparedPayPage = { token: TOKEN, result: { ok: true, status: status() } };
+		// No prepared result; a prepared result but no headers (as if the page skipped preparePayPage's header step).
+		for (const props of [{}, { pay: prepared }]) {
+			const html = await container.renderToString(PayPage, { props, locals: loc, request, partial: false });
+			expect(visibleStates(html)).toEqual(["unconfigured"]);
+			expect(markup(html)).not.toContain(TOKEN);
+			expect(markup(html)).not.toContain(ADDRESS);
+			expect(markup(html)).not.toContain("<svg");
+			expect(html).toContain('data-final="true"');
+		}
+		expect(calls).toEqual([]);
+	});
+
+	it("the headers set by the page are what PayPage checks for", async () => {
+		const headers = new Headers();
+		await setPayPageHeaders({ response: { headers } });
+		const { res } = await render(TOKEN, locals(ok(status())));
+		for (const [name, value] of headers) expect(res.headers.get(name), name).toBe(value);
 	});
 });

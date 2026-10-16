@@ -3,6 +3,10 @@
  * phase 06 plan). The token is in the URL, so: never cached, never sent on as a Referer, never indexed, never framed,
  * and nothing loads from anywhere but this page and the status route on the same origin. The inline script and style
  * are allowed by their SHA-256, computed from the exact text the page sends.
+ *
+ * Astro sends headers set by the page file itself, not by a component inside it: by the time a component renders, the
+ * response has started (found on the dev site in session 6c; Astro's container API, which renders the component as the
+ * page, doesn't show it). So the page calls `setPayPageHeaders(Astro)`, and PayPage checks they're there.
  */
 import { CLIENT_SCRIPT } from "./client";
 import { PAGE_CSS } from "./styles";
@@ -35,4 +39,14 @@ export function payPageHeaders(): Promise<Record<string, string>> {
 		};
 	})();
 	return cached;
+}
+
+/** For the page's frontmatter: `await setPayPageHeaders(Astro);` before rendering `<PayPage>`. */
+export async function setPayPageHeaders(astro: { response: { headers: Headers } }): Promise<void> {
+	for (const [name, value] of Object.entries(await payPageHeaders())) astro.response.headers.set(name, value);
+}
+
+/** Whether every pay page header is set, with this package's values. PayPage refuses to show a payment otherwise. */
+export async function hasPayPageHeaders(headers: Headers): Promise<boolean> {
+	return Object.entries(await payPageHeaders()).every(([name, value]) => headers.get(name) === value);
 }

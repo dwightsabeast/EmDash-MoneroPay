@@ -1,0 +1,7 @@
+---
+// The site's src/pages/pay/[token].astro, as the README gives it (the token comes as a prop here, not a route param).
+import PayPage from "../../src/PayPage.astro";
+import { preparePayPage } from "../../src/page";
+const pay = await preparePayPage(Astro, Astro.props.token);
+---
+<PayPage pay={pay} title={Astro.props.title}><slot name="head" slot="head" /></PayPage>

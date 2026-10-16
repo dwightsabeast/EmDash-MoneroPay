@@ -1,12 +1,17 @@
 ---
 /**
- * The buyer's pay page (docs/spec.md, Theme integration, piece 2). Use it as the whole page:
+ * The buyer's pay page (docs/spec.md, Theme integration, piece 2). Use it as the whole page, after the page file's own
+ * frontmatter has prepared it (headers and the status code must be set there; see page.ts):
  *
  *   src/pages/pay/[token].astro
  *   ---
  *   import PayPage from "coffer-astro/PayPage.astro";
+ *   import { preparePayPage } from "coffer-astro/page";
+ *   const pay = await preparePayPage(Astro, Astro.params.token);
  *   ---
- *   <PayPage token={Astro.params.token} />
+ *   <PayPage pay={pay} />
+ *
+ * Without the prepared result and its headers it fails closed: it says the page isn't set up, and shows no payment.
  *
  * It's a complete HTML document of its own, so a site layout can't add third-party fonts, scripts or images to a page
  * whose URL holds the token. It reads the invoice's status on the server, shows the amount, a QR code, the address
@@ -14,26 +19,26 @@
  * still shows the right state on every reload.
  */
 import { CLIENT_SCRIPT, type PayStateName, payState } from "./client";
-import { payPageHeaders } from "./headers";
+import { hasPayPageHeaders } from "./headers";
 import { qrSvg } from "./qr";
-import { STATUS_PATH, fetchStatus, fiat, xmr } from "./status";
+import type { PreparedPayPage } from "./page";
+import { STATUS_PATH, fiat, xmr } from "./status";
 import { PAGE_CSS } from "./styles";
 
 interface Props {
-	/** The token from the page's path (`Astro.params.token`). */
-	token: string | undefined;
+	/** From `preparePayPage(Astro, Astro.params.token)` in the page's frontmatter. */
+	pay: PreparedPayPage | undefined;
 	/** The page's heading and title. */
 	title?: string;
 }
 
-const { token, title = "Pay with Monero" } = Astro.props;
-for (const [name, value] of Object.entries(await payPageHeaders())) Astro.response.headers.set(name, value);
-
-const result = await fetchStatus(Astro, token);
-const s = result.ok ? result.status : null;
-const view = s ? payState(s) : result.ok === false && result.code === "INVOICE_NOT_FOUND" ? payState({ error: { code: "INVOICE_NOT_FOUND" } }) : null;
-const state: PayStateName | "unavailable" = view?.state ?? "unavailable";
-Astro.response.status = s ? 200 : state === "notfound" ? 404 : 503;
+const { pay, title = "Pay with Monero" } = Astro.props;
+const configured = pay !== undefined && (await hasPayPageHeaders(Astro.response.headers));
+const result = configured ? pay.result : null;
+const token = configured ? pay.token : null;
+const s = result?.ok && token ? result.status : null;
+const view = s ? payState(s) : result?.ok === false && result.code === "INVOICE_NOT_FOUND" ? payState({ error: { code: "INVOICE_NOT_FOUND" } }) : null;
+const state: PayStateName | "unavailable" | "unconfigured" = !configured ? "unconfigured" : (view?.state ?? "unavailable");
 
 const hiddenUnless = (...states: string[]) => !states.includes(state);
 const utc = (iso: string) => `${new Date(iso).toISOString().slice(11, 16)} UTC`;
@@ -118,6 +123,9 @@ const payable = ["waiting", "partial", "checking"];
 				</p>
 				<p class="coffer-status" data-show="notfound" hidden={hiddenUnless("notfound")}>This payment link isn't valid. Check the link, or start again from the shop.</p>
 				<p class="coffer-status" data-show="unavailable" hidden={hiddenUnless("unavailable")}>Payments can't be checked right now. Please reload this page in a minute.</p>
+				<p class="coffer-status" data-show="unconfigured" hidden={hiddenUnless("unconfigured")}>
+					This pay page isn't set up correctly, so it shows no payment details. The site needs to call preparePayPage in the page file (see coffer-astro's README).
+				</p>
 				{s && !view?.final && (
 					<noscript><p class="coffer-note">This page updates by itself with JavaScript on. Without it, reload the page to see the latest.</p></noscript>
 				)}
