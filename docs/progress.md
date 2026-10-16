@@ -2519,3 +2519,61 @@ Then:
 
 Next:
 1. Session 6b: `PayPage.astro` (its own document, headers, CSP by hash), `isPaid`, `status.ts`, the polling state machine, and container-API tests.
+
+## 2026-10-16 · Phase 06 · Session 6b: PayPage, isPaid, polling, CSP
+
+Built (`4fd8a35`, all in `theme/`):
+- **`PayPage.astro`** is the `/pay/<token>` page as a complete HTML document of its own.
+  - **Status:** read on the server in-process (`status.ts`, through EmDash's `getPublicPluginApiRouteHandler`).
+  - **Shows:**
+    - the amount in XMR and fiat (an open tip shows "Any amount from 0.0001 XMR")
+    - the QR of `status.uri` as inline SVG
+    - the address and amount with Copy buttons
+    - Open in wallet
+    - a countdown
+    - one status line per state (waiting, partial, checking, confirming, settled, reconfirming, expired, review)
+    - not found (404), unavailable (503)
+  - **Headers, set from the component:**
+    - `Cache-Control: private, no-store`
+    - `Referrer-Policy: no-referrer`
+    - `X-Robots-Tag`
+    - `nosniff`
+    - Wyatt's CSP: `default-src 'none'`, `connect-src 'self'`, script and style by SHA-256 (style also `'self'`), and `frame-ancestors`, `base-uri` and `form-action` all `'none'`.
+- **`client.ts`:** `payState` maps a status reply to the view, and the server render and the browser use the same function. The inline script is `clientMain`'s and `payState`'s own source text, so the CSP hash comes from exactly what's sent.
+  - It polls every 5 s until a final state, and not while the tab is hidden.
+  - It keeps the countdown and counters current.
+  - Copy appears only when the browser has a clipboard.
+- **`isPaid(Astro, token)`:** settled only, read on the server.
+- **`messages.ts`:** `checkoutErrorMessage` for phases 07 and 08. The silent and syncing errors read the same (spec change 20, item 5).
+- **Package exports:** `./PayPage.astro`, `./isPaid`, `./messages` and `./qr`.
+
+Tests:
+- **Theme:** 34 pass and 1 skips (the "zbarimg missing" guard). Typecheck clean.
+- **Rendering:** through Astro's container API, with a fake runtime in `locals`:
+  - every state
+  - headers and meta
+  - the CSP hashes checked against the inline script and style as sent
+  - no third-party URL, `src`, `link`, `img`, `@import` or `url()`
+  - the token appears once (the relative status URL)
+  - malformed tokens never reach the plugin
+  - no runtime, or a failing or throwing handler, gives 503
+- **`clientMain`:** against a fake DOM: polling, the stop at a final state, network errors, a hidden tab, the countdown and Copy.
+- **The script text runs on its own,** with only the browser's globals.
+
+Found:
+- **Under Vite dev, Astro adds `data-astro-source-file` attributes** with the server's file paths to every element.
+  - That's dev only, and never in a build. The tests turn it off (no dev toolbar).
+  - The dev site has the toolbar off too, so check the live page there for these attributes.
+  - Astro dev also injects Vite's client script, which this CSP blocks. So check for CSP violations on the built copy (port 4322), not under `astro dev`.
+- **`tsc` doesn't check `.astro` frontmatter.** That needs `@astrojs/check`, which isn't a dependency. The frontmatter is thin; its logic lives in typed `.ts` files.
+
+Not covered yet (session 6c):
+- the page in a real site (headers through the node adapter, the inline script in a real browser, Copy, the QR from a phone)
+- a live stagenet payment
+- the install text
+
+Next: session 6c, the dev site end to end. Steps:
+1. Back up `data.db`, then `npm install file:../../xmr-pay/theme` in the dev site, and add `src/pages/pay/[token].astro`.
+2. Build the plugin, then the built copy.
+3. Make a product checkout, and have Wyatt look at the page, scan the QR (and the test tip's), and pay from Feather.
+4. Write the `sections.installation` text.
