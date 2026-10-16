@@ -814,3 +814,27 @@ Proposal: `wallet.Open`'s calls (`open_wallet`, then `get_address`) are bounded 
 Effect on the admin budget: none (it removes a silent restart).
 Effect on the trust contract: none.
 Decision (Wyatt, 2026-10-16): accepted. Build it, then rebuild the dev release (with spec change 29's bridge half); Wyatt signs it.
+
+## 32. The pay page can't show the address or QR from the token  (status: accepted, 2026-10-16)
+Found in: phase 06 planning, reading `plugin/src/status.ts` against the phase file. Not found by a test.
+Spec says: Theme integration, piece 2: "`/pay/[token]` page: server-fetches `status`, then shows the amount in XMR and fiat, the address with a copy button, a QR code of the `monero:` URI". API contracts, `GET status`: the response has `status`, `confirmations`, `required`, `amountAtomic`, `receivedAtomic`, `expiresAt`, `settledAt`, `pendingExpiry` and `reconfirming`.
+Evidence:
+- **`status` has no address, no URI, no fiat amount and no tip minimum.** Only `checkout`'s response has the address and URI, and the pay page gets only the token, from its path. A reload, a shared link or a page opened from the admin has no checkout response at all.
+- **The invoice doesn't keep the URI's description.** Checkout builds `tx_description` from the product entry's title (`checkout.ts`), and the title isn't stored. So `status` can't rebuild checkout's URI byte for byte without reading the product entry on every 5-second poll.
+- **The admin test tip builds its own URI** (`tipUri` in `admin.ts`), so there are already two copies of the URI format.
+
+Proposal:
+1. **`status` also returns:**
+   - `kind`: `product`, `tip` or `order`
+   - `address`: the invoice's subaddress
+   - `uri`: the same `monero:` URI checkout returned
+   - `fiat`: `{ amountMinor, currency }` (decimal string and code), or `null` for a tip with no fiat amount
+   - `minAtomic`: a tip's floor (decimal string), or `null`
+2. **Checkout stores the URI's description on the invoice** (`uriDescription`; for the test tip "Coffer test tip"). An invoice made before this change gets a URI with no `tx_description`.
+3. **One function builds every URI:** `paymentUri(address, amountAtomic, description)` in `plugin/src/core/`, used by checkout, `status` and the admin page. The amount is the invoice's expected amount, or a tip's floor when it has none, as the test tip's link does today. Phase 07 decides what an open public tip's URI carries.
+4. **The token remains the only key.** Anyone holding it already sees the address and amount on the pay page.
+
+Effect on the admin budget: none.
+Effect on the trust contract: none. Same route, method and visibility. No capability, collection or index change; `uriDescription` is a new optional field in invoice data.
+Spec text to fold in (Wyatt; `docs/spec.md` is not edited here): API contracts, `GET status`: add `kind`, `address`, `uri`, `fiat` and `minAtomic` to the example, with "`uri` is the same as checkout's".
+Decision (Wyatt, 2026-10-16): accepted, during the phase 06 plan.

@@ -12,6 +12,7 @@ import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkou
 import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, TEST_TIP_REQUIRED, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
+import { invoiceUri } from "./core/uri";
 import { ensureCron } from "./housekeeping";
 import { CURRENCIES, type Currency, getRate, isCurrency } from "./rates";
 import { KV, SETTING, invoices, pool } from "./store";
@@ -216,10 +217,10 @@ async function testTips(ctx: PluginContext): Promise<Invoice[]> {
 	return r.items.map((i) => i.data);
 }
 
-const DUST_XMR = atomicToXmr(DUST_ATOMIC);
+/** The test tip's monero: URI description (stored on the invoice; spec change 32). */
+const TEST_TIP_DESCRIPTION = "Coffer test tip";
 /** XMR without trailing zeros, as wallet apps show it: "0.0002", not "0.000200000000". */
 const shortXmr = (atomic: bigint) => atomicToXmr(atomic).replace(/0+$/, "").replace(/\.$/, "");
-const tipUri = (address: string) => `monero:${address}?tx_amount=${DUST_XMR}&tx_description=${encodeURIComponent("Coffer test tip")}`;
 
 /** How long a settled test tip's details stay at the top of the page (spec change 24); after that, only in Setup. */
 const TEST_TIP_TOP_MS = 24 * 60 * 60_000;
@@ -292,7 +293,7 @@ async function setupSection(ctx: PluginContext, h: Health, now: number, showingC
 			inner.push(
 				{ type: "section", text: `Send at least ${shortXmr(DUST_ATOMIC)} XMR to this address from any wallet. It's a tip to your own shop wallet, so the money stays yours.` },
 				{ type: "code", code: open.subaddress },
-				{ type: "code", code: tipUri(open.subaddress) },
+				{ type: "code", code: invoiceUri(open) },
 				// Feather 2.8.1 reads a monero: link only from a keyboard paste; pasted another way it looks like an OpenAlias
 				// (run B attempt 2), so the label says how to paste and what to do instead.
 				{ type: "context", text: "Payment link: wallets that read one fill in the address and amount. Paste it with the keyboard (Ctrl+V, or Cmd+V on a Mac). If your wallet doesn't fill in the address, or says it can't resolve an OpenAlias, copy the address above instead." },
@@ -330,7 +331,7 @@ async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 	const speed: Speed = isSpeed(speedSetting) ? speedSetting : "standard";
 	const currencySetting = await ctx.settings.get<string>(SETTING.currency);
 	const inv = await claimAndStore(ctx, (row) =>
-		({ ...newInvoice({ ...newIds(), kind: "tip", fiatMinor: null, currency: isCurrency(currencySetting) ? currencySetting : "USD", rate: null, speed, subaddress: row.address, addrIndex: row.addrIndex, now, chainHeight }), required: TEST_TIP_REQUIRED }),
+		({ ...newInvoice({ ...newIds(), kind: "tip", fiatMinor: null, currency: isCurrency(currencySetting) ? currencySetting : "USD", rate: null, speed, subaddress: row.address, addrIndex: row.addrIndex, now, chainHeight, uriDescription: TEST_TIP_DESCRIPTION }), required: TEST_TIP_REQUIRED }),
 	);
 	if (!inv) return { type: "error", message: "No payment address is free yet. The wallet host adds them at its next sync; try again in a minute." };
 	return { type: "success", message: "Test address ready. Send the test tip from any wallet." };

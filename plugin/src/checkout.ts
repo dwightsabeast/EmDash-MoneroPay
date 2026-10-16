@@ -7,6 +7,7 @@ import type { PluginContext } from "emdash/plugin";
 import { type Speed, PRESETS, SILENT_MS } from "./core/constants";
 import { type Invoice, newInvoice } from "./core/invoice";
 import { atomicToXmr, priceToMinor } from "./core/money";
+import { invoiceUri } from "./core/uri";
 import { type Currency, getRate, isCurrency } from "./rates";
 import { KV, SETTING, invoices, pool } from "./store";
 import type { BridgeState } from "./sync/handle";
@@ -169,6 +170,7 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 			now,
 			chainHeight,
 			productRef: { collection: "products", id: entry.id },
+			uriDescription: title,
 			...(input.email || input.refundAddress ? { buyer: { ...(input.email ? { email: input.email } : {}), ...(input.refundAddress ? { refundAddress: input.refundAddress } : {}) } } : {}),
 		}),
 	);
@@ -189,7 +191,7 @@ export async function handleCheckout(ctx: PluginContext, body: unknown, ip: stri
 		address: inv.subaddress,
 		amountAtomic: inv.expectedAtomic as string,
 		amountXmr,
-		uri: `monero:${inv.subaddress}?tx_amount=${amountXmr}&tx_description=${encodeURIComponent(title)}`,
+		uri: invoiceUri(inv),
 		expiresAt: new Date(inv.expiresAt).toISOString(),
 		status: "new",
 	};

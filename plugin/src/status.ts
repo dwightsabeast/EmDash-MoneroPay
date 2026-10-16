@@ -5,6 +5,7 @@
 import type { PluginContext } from "emdash/plugin";
 
 import { basis, evaluate, isOpen, totals } from "./core/invoice";
+import { invoiceUri } from "./core/uri";
 import { KV, invoices } from "./store";
 import type { BridgeState } from "./sync/handle";
 
@@ -19,6 +20,12 @@ export type StatusResponse =
 			settledAt: string | null;
 			pendingExpiry: boolean;
 			reconfirming: boolean;
+			/** What the pay page shows from the token alone (spec change 32); `uri` is checkout's, byte for byte. */
+			kind: string;
+			address: string;
+			uri: string;
+			fiat: { amountMinor: string; currency: string } | null;
+			minAtomic: string | null;
 	  }
 	| { error: { code: "INVOICE_NOT_FOUND" } };
 
@@ -44,5 +51,10 @@ export async function handleStatus(ctx: PluginContext, query: Record<string, unk
 		settledAt: inv.settledAt !== undefined ? new Date(inv.settledAt).toISOString() : null,
 		pendingExpiry: Boolean(inv.pendingExpiry),
 		reconfirming: inv.reconfirmingSince !== undefined,
+		kind: inv.kind,
+		address: inv.subaddress,
+		uri: invoiceUri(inv),
+		fiat: inv.fiat ? { amountMinor: inv.fiat.amountMinor, currency: inv.fiat.currency } : null,
+		minAtomic: inv.minAtomic,
 	};
 }

@@ -105,6 +105,15 @@ describe("setup checklist", () => {
 		expect(await h.inspect.storage.get("pool", "2")).toMatchObject({ status: "free" });
 	});
 
+	it("the test tip's status carries the same address and payment link as the admin page (spec change 32)", async () => {
+		const h = await setup();
+		const r = await h.admin.act("/payments", "get_test_address");
+		const [tip] = await tips();
+		const link = (checklist(r.blocks as B[])?.blocks ?? []).find((x: B) => x.type === "code" && String(x.code).startsWith("monero:"))?.code;
+		const res = await h.actions.routes.request("status", { method: "GET", url: `https://site.test/_emdash/api/plugins/coffer/status?token=${tip.token}` });
+		expect(((await res.json()) as B).data).toMatchObject({ kind: "tip", address: ADDR(1), uri: link, fiat: null, minAtomic: "100000000", amountAtomic: null });
+	});
+
 	it("Get a test address is refused while the wallet host is silent or no address is free, claiming nothing", async () => {
 		const h = await setup({ lastSyncAgo: 12 * 60_000 });
 		const r = await h.admin.act("/payments", "get_test_address");

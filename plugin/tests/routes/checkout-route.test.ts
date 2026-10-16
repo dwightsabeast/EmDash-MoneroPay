@@ -239,9 +239,25 @@ describe("status", () => {
 		expect(s.data).toEqual({
 			status: "new", confirmations: 0, required: 2, amountAtomic: "80000000000", receivedAtomic: "0",
 			expiresAt: c.expiresAt, settledAt: null, pendingExpiry: false, reconfirming: false,
+			// Spec change 32: what the pay page shows, from the token alone; the URI is checkout's, byte for byte.
+			kind: "product", address: c.address, uri: c.uri, fiat: { amountMinor: "1200", currency: "USD" }, minAtomic: null,
 		});
 		expect((await status("A".repeat(22))).data).toEqual({ error: { code: "INVOICE_NOT_FOUND" } });
 		expect((await status("short")).data).toEqual({ error: { code: "INVOICE_NOT_FOUND" } });
+	});
+
+	it("the URI's description is stored at checkout, so status rebuilds checkout's URI; an older invoice gets none (spec change 32)", async () => {
+		const h = await setup();
+		await h.fixtures.content("products", { slug: "odd-title", status: "published", data: { title: "Mugs & Tea? 100%", price: 12 } } as never);
+		await h.http.respond(KRAKEN("USD"), new Response(krakenBody("USD", "150")));
+		const c = await checkout({ kind: "product", product: "odd-title" });
+		expect(c.uri).toBe(`monero:${c.address}?tx_amount=0.080000000000&tx_description=Mugs%20%26%20Tea%3F%20100%25`);
+		expect((await status(c.token)).data.uri).toBe(c.uri);
+		expect((await h.inspect.storage.list<Invoice>("invoices"))[0].data.uriDescription).toBe("Mugs & Tea? 100%");
+		// Made before spec change 32: no stored description, so no tx_description.
+		const old = newInvoice({ id: "inv_old", token: "O".repeat(22), kind: "product", fiatMinor: 1200n, currency: "USD", rate: { minor: 15000n, source: "t" }, speed: "standard", subaddress: ADDR(8), addrIndex: 8, now: Date.now(), chainHeight: H0 });
+		await h.fixtures.plugin.storage("invoices", old.id, old);
+		expect((await status(old.token)).data.uri).toBe(`monero:${ADDR(8)}?tx_amount=0.080000000000`);
 	});
 
 	it("shows pendingExpiry after the window without a sync, and doesn't write", async () => {

@@ -44,6 +44,8 @@ export interface Invoice {
 	contentRef?: { collection: string; id: string };
 	orderRef?: string;
 	returnUrl?: string;
+	/** The monero: URI's tx_description, kept so status can rebuild checkout's URI (spec change 32). */
+	uriDescription?: string;
 	/** Fiat amount in minor units (decimal string); null for open-amount tips. */
 	fiat: { amountMinor: string; currency: string } | null;
 	/** The XMR price locked at checkout, in fiat minor units per XMR (decimal string). */
@@ -98,6 +100,7 @@ export interface NewInvoiceInput {
 	contentRef?: Invoice["contentRef"];
 	orderRef?: string;
 	returnUrl?: string;
+	uriDescription?: string;
 	buyer?: Invoice["buyer"];
 }
 
@@ -135,6 +138,7 @@ export function newInvoice(input: NewInvoiceInput): Invoice {
 	if (input.contentRef) inv.contentRef = input.contentRef;
 	if (input.orderRef) inv.orderRef = input.orderRef;
 	if (input.returnUrl) inv.returnUrl = input.returnUrl;
+	if (input.uriDescription) inv.uriDescription = input.uriDescription;
 	if (input.buyer) inv.buyer = input.buyer;
 	return inv;
 }
