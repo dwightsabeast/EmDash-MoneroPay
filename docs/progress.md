@@ -2597,3 +2597,53 @@ Next: session 6c, the dev site end to end. Steps:
    - the HTML for third-party references
    - `isPaid` through a temporary test page, deleted afterwards
 6. Write the `sections.installation` text and show it to Wyatt before committing.
+
+## 2026-10-16 · Phase 06 · Session 6c: the dev site, end to end
+
+Setup:
+- **Backups:** `data.db` with `VACUUM INTO` (`baseline/data.db.before-06c-20261016T170701Z`, integrity ok, 341 Coffer rows), and the site's `package.json` and `package-lock.json` as `baseline/*.before-06c`.
+  - **My mistake:** the first copy overwrote two older files, `baseline/package.json` and `package-lock.json`, without my looking at them first. They were probably the phase 01 pre-spike copies; no doc referred to them, and no other copy exists.
+- **Dev site:**
+  - `npm install file:../../xmr-pay/theme`. The lockfile only gained the link.
+  - Added `src/pages/pay/[token].astro`.
+  - Built the plugin with spec change 32.
+- **Built copy on port 4321,** not 4322 (tmux `built`, `HOST=localhost PORT=4321`): the dev box's bridge syncs to `localhost:4321`, and it's the CSP-clean server.
+- **Test tips:** made through the dev sign-in under `astro dev` (a scratch script that presses Get a test address), since the built copy has no dev sign-in.
+
+**Found and fixed: a component's headers never reach the browser** (`c8abad2`).
+- **What happened:** in a real Astro site, headers and the status code set inside a component are dropped, because the response has started. The 6b page went out with none of its headers, EmDash's default `Referrer-Policy: strict-origin-when-cross-origin`, and 200 for unknown tokens.
+- **Why the tests missed it:** Astro's container API renders the component as the page.
+- **The fix:**
+  - The page file calls `preparePayPage(Astro, token)` (`coffer-astro/page`), which sets the headers and the 200/404/503 status. EmDash's middleware only fills headers that are missing.
+  - `PayPage` fails closed without it.
+  - Tests render through a fixture page shaped like the snippet.
+  - The install snippet is four lines.
+
+Live checks:
+- **On the built copy:**
+  - every header present
+  - the CSP hashes match the inline script and style as sent
+  - no `data-astro-source` attributes, no third-party references, the token once per page
+  - Wyatt: **no console errors** on either page
+- **QR:**
+  - The QR from both built pages (product `p6`, admin test tip) decodes with zbarimg to the exact URI from `status`.
+  - **Wyatt's phone-camera scans of both matched the expected URIs exactly** (`~/xmr-pay-dev-data/06-pay/expected-uris.txt`).
+  - The first test tip expired before he scanned it, so he scanned a second one on `astro dev`, also checked with zbarimg first.
+- **Copy:** works (Wyatt).
+- **Open in wallet: didn't work on Wyatt's PC.** Windows said no app is associated, because Feather isn't registered for `monero:` links, so he copied the fields into Feather instead.
+  - Fixed per his suggestion (`8bc736a`): a "Nothing opened? Copy the address and amount above into your wallet." line under the button.
+  - **So no wallet has read the link from the button yet.**
+- **Product payment, `p6`** (`test-sticker`, 0.001821360921 XMR, 2 confirmations), paid from Feather, reached **Paid without a reload** (Wyatt):
+
+  | Event | UTC |
+  | --- | --- |
+  | Checkout | 17:11:40 |
+  | Payment seen | 17:22:00 |
+  | 1 of 2 | 17:25:40 |
+  | Settled | 17:27:01 |
+
+- **Open-tip end to end (unplanned):** Wyatt paid 0.001 sXMR to the second test tip by mistake (`S3DEq…`, pool #270, open amount, floor 0.0001, 1 confirmation).
+  - created 17:49:38
+  - first seen 17:55:43, already 1 confirmation
+  - settled 17:56:45 UTC
+- **`isPaid`,** through a temporary page on `astro dev` (deleted afterwards): true for `p6` and the paid tip; false for the expired tip, an unknown token, a malformed one and none.
