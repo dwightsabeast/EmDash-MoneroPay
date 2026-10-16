@@ -2106,3 +2106,39 @@ Triage (Wyatt asked for both):
 - **`docs/setup-friction.md`:** a row for the refresh confusion.
 
 Public stagenet nodes for run B, checked from the dev box (heights only): all six built-in ones answer, on stagenet, synchronized at 2,230,104, the dev box's height.
+
+## 2026-10-16 · Phase 05 · Run B attempt 1 failed (https node); cause found; spec change 28 proposed
+
+Section D before run B:
+- Wyatt rolled back `coffer-test`.
+- I stopped `built`, reset the data (extra backup `…20261016T003109650Z`), and restarted `built` once Wyatt's check found the site down. The 502 was mine: I was holding the restart for his go-ahead.
+- kernal.eu passed the node check, at height 2,230,113.
+- Run B's node was `https://stagenet.xmr.kernal.eu:38089` (Wyatt's choice).
+
+**Run B attempt 1: FAIL** (`05-setup/B1-run-status.txt`, `B1-run-install-log.txt`):
+- The tester typed the node URL wrong three times, and the first run gave up. The second run paired, then stopped at "Creating the view-only wallet" with `walletrpc: wallet-rpc error 0: .`
+- No service was installed, and the pairing code was used up.
+- The site showed paired and synced, 3 of 5 done.
+- `coffer-test` was left as it was for this investigation.
+
+**Cause (spec change 28):**
+- For an https node the bridge starts wallet-rpc with `--daemon-ssl enabled` alone. Monero's wallet refuses that without a CA file, a fingerprint or allow-any-cert (`wallet2.cpp:431`), and the error escapes as code 0 with no message.
+- Every https node fails this way.
+- Reproduced with `TestLiveShopWallet` against kernal.eu over https. The local node and plain http on the same host both work.
+- `TestLiveDaemonSSL` showed that the system CA bundle with `--daemon-ssl-allow-chained` works, but wallet-rpc then doesn't check the certificate's name (dialling by IP was accepted too).
+- Also found: the pairing request counts as a sync, so "Wallet synced" reads Done for 5 minutes with no wallet.
+
+Test tooling (test-only, never shipped):
+- `TestLiveShopWallet` takes `XMR_BRIDGE_LIVE_NODE` and `XMR_BRIDGE_LIVE_KEEP_LOG`.
+- New `TestLiveDaemonSSL` (`cmd/xmr-bridge/live_ssl_test.go`).
+- Both are in CLAUDE.md's command table.
+- Bridge gofmt, vet and all packages pass.
+- One run hit Go's 10-minute test timeout, which skips the cleanup, so it left its temporary view-only wallet folder. I deleted it unread. The command table now says to pass `-timeout`.
+- `scripts/with-shop-env.sh` refused `sh`, as designed, so the probe was written in Go instead of a shell script.
+
+Next:
+1. Wyatt decides spec change 28.
+2. Build it tests first, rebuild the release (Wyatt signs), push, CI.
+3. Section D (roll back `coffer-test`, reset, `built`).
+4. Rerun B with the https node.
+5. Ask Wyatt what was typed at the node prompt in attempt 1.

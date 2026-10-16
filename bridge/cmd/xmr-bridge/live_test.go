@@ -26,7 +26,8 @@ import (
 // start-up path on it. Run it under scripts/with-shop-env.sh (SHOP_ADDRESS, SHOP_VIEW_KEY, SHOP_RESTORE_HEIGHT),
 // with XMR_BRIDGE_LIVE_BIN_DIR naming a directory that holds a verified monero-wallet-rpc and its installed.json
 // (from the monerodl live test) and XMR_BRIDGE_LIVE_DATA a parent for the temporary data directory, which is
-// deleted at the end. The view key is never printed. Stagenet only.
+// deleted at the end. XMR_BRIDGE_LIVE_NODE chooses the node (default the dev box's). The view key is never printed.
+// Stagenet only.
 func TestLiveShopWallet(t *testing.T) {
 	addr, binDir, base := os.Getenv("SHOP_ADDRESS"), os.Getenv("XMR_BRIDGE_LIVE_BIN_DIR"), os.Getenv("XMR_BRIDGE_LIVE_DATA")
 	view := secret.New(os.Getenv("SHOP_VIEW_KEY"))
@@ -54,6 +55,12 @@ func TestLiveShopWallet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
+		// XMR_BRIDGE_LIVE_KEEP_LOG names a file to copy wallet-rpc's log to before the directory goes.
+		if keep := os.Getenv("XMR_BRIDGE_LIVE_KEEP_LOG"); keep != "" {
+			if b, err := os.ReadFile(filepath.Join(data, "log", "wallet-rpc.log")); err == nil {
+				os.WriteFile(keep, b, 0o600)
+			}
+		}
 		if err := os.RemoveAll(data); err != nil {
 			t.Errorf("cleanup: %v", err)
 		} else {
@@ -70,7 +77,12 @@ func TestLiveShopWallet(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg := config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: addr, Node: "http://127.0.0.1:38081",
+	// XMR_BRIDGE_LIVE_NODE picks another node, such as a public https one (run B attempt 1); the dev box's own by default.
+	nodeURL := os.Getenv("XMR_BRIDGE_LIVE_NODE")
+	if nodeURL == "" {
+		nodeURL = "http://127.0.0.1:38081"
+	}
+	cfg := config.Config{Site: "http://localhost:4321", Network: config.Stagenet, Address: addr, Node: nodeURL,
 		DataDir: data, RestoreHeight: restore, AllowSameMachine: true}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)

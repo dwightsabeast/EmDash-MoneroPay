@@ -660,3 +660,43 @@ Proposal:
 
 Effect on the admin budget: none in time. It's clearer while the admin waits, and the setup test's "reload" wording stays as a fallback.
 Effect on the trust contract: none (a button on the existing page; no route, page, widget or setting).
+
+## 28. An https remote node breaks wallet creation  (status: proposed, 2026-10-16)
+Found in: phase 05, run B attempt 1 (`~/xmr-pay-dev-data/05-setup/B1-*`, local).
+- The installer paired, then stopped at "Creating the view-only wallet" with `walletrpc: wallet-rpc error 0: .`
+- The node was `https://stagenet.xmr.kernal.eu:38089`.
+- No service was installed, the pairing code was used up, and the site showed the wallet host as paired.
+
+Spec says:
+- Bridge service: a remote node is allowed (spec change 13 adds the cross-check).
+- The installer takes an `http` or `https` node URL.
+
+Evidence (the dev box, monero-wallet-rpc v0.18.5.1, the shop wallet view-only in a temporary folder, deleted after; outputs in `05-setup/B1-repro-*.txt`, `B1-ssl-probe.txt`):
+- **Reproduced.** `TestLiveShopWallet` with `XMR_BRIDGE_LIVE_NODE=https://stagenet.xmr.kernal.eu:38089` fails at `generate_from_keys` in 1.5 s with the same error. With the local node it passes, and with `http://` on the same host the wallet is created.
+- **Cause, from wallet-rpc's log:** `wallet2.cpp:431` throws "Enabling --daemon-ssl requires --daemon-ssl-allow-any-cert or --daemon-ssl-ca-certificates or --daemon-ssl-allowed-fingerprints or use of a .onion/.i2p domain".
+  - For an `https` node, the bridge starts wallet-rpc with `--daemon-ssl enabled` and nothing else (`supervise.New`). That means system-CA checking, which the wallet treats as too weak by design.
+  - The exception comes from `make_new`, outside `on_generate_from_keys`'s own try blocks, so the generic catch in `wallet_rpc_server.h:148` answers with code 0 and an empty message.
+  - Every https node fails this way. kernal.eu is not at fault.
+- **The installer's pre-checks passed.** Its own Go client reached the node over https (`noderpc.GetInfo`), so nothing caught this before the pairing code was used.
+- **What the wallet accepts** (`TestLiveDaemonSSL`, three cases against kernal.eu):
+  1. `--daemon-ssl enabled` alone: the same error 0.
+  2. Adding `--daemon-ssl-ca-certificates /etc/ssl/certs/ca-certificates.crt --daemon-ssl-allow-chained`: the wallet is created and rescans over TLS, at the node's height.
+  3. The same flags, dialling the node by IP address: also accepted. The certificate names only `*.xmr.kernal.eu` and `xmr.kernal.eu` (checked with `openssl s_client`). So in this mode wallet-rpc checks that the certificate chains to a trusted CA, **not that it was issued for the node's name**.
+- **Pinning a fingerprint at install** would break at the next renewal: kernal.eu's certificate expires 2026-11-21. Every renewal would need routine upkeep, so it's out.
+- **The site said "Wallet synced" with no wallet.** The pairing request counts as a sync (`plugin/src/sync/handle.ts` stores `lastSyncAt` and the installer's height), so the checklist shows paired and synced for up to 5 minutes (`SILENT_MS`) when nothing is running.
+
+Proposal (Claude's recommendation first):
+1. **For an https node, give wallet-rpc the system CA bundle with `--daemon-ssl-allow-chained`.**
+   - It's the first bundle that exists of `/etc/ssl/certs/ca-certificates.crt` (Debian, Ubuntu) and `/etc/pki/tls/certs/ca-bundle.crt` (Fedora, RHEL).
+   - If there's none, the installer refuses an https node **before pairing**, with a message that says why.
+   - This is still TLS, but it doesn't check the name: an attacker on the path with any publicly trusted certificate could stand in for the node. That's no worse than a dishonest node, which spec change 13's cross-check already assumes, and better than plain http, which is allowed today.
+   - A security matrix row records the gap, and 07b attacks it.
+   - Bridge change, small, tests first. It needs a release rebuild and Wyatt's signature.
+2. **Later, if Wyatt wants the name checked:** the bridge forwards wallet-rpc's node traffic through a loopback port. wallet-rpc speaks http to the bridge, and the bridge speaks https to the node, with Go's full checks (system roots and the host name). Standard library only (`net/http/httputil`). It's more code, and the installer's wallet creation would need it too.
+3. **Either way, the installer says why wallet-rpc refused.** When wallet-rpc answers with code 0 and no message, the installer quotes the last ERROR line from wallet-rpc's log instead of "error 0".
+4. **For triage, not part of this fix:**
+   - The pairing-only "Wallet synced": count a pairing request as paired, not as synced (a plugin change).
+   - The installer pairs before it creates the wallet (spec change 17), so a failure there always uses up the code. The fix above removes this cause, but any other wallet-rpc failure still costs a new code.
+
+Effect on the admin budget: none for a working setup. Without the fix, every admin who chooses an https node fails setup and needs a new code.
+Effect on the trust contract: none (bridge only; the plugin's contract is unchanged).
