@@ -110,7 +110,7 @@ From the **second wallet** (not your shop wallet), send at least **0.0001 XMR** 
 
 ### 7. Setup complete (your site's admin)
 
-Keep reloading every minute or two. Once the tip has enough confirmations (a few minutes on stagenet), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings. At the top of the page, a **Test tip received** section shows the amount, the block it arrived in, the time it settled and its Transaction ID.
+Keep reloading every minute or two. Once the tip has one confirmation (a few minutes on stagenet; a test tip needs one whatever the confirmation speed), the Setup section reads **Setup (complete)** and moves to the bottom of the page, under Settings. At the top of the page, a **Test tip received** section shows the amount, the block it arrived in, the time it settled and its Transaction ID.
 
 **Check:** **Setup (complete)**, and the **Test tip received** section. Tell the observer the "settled at" time it shows.
 

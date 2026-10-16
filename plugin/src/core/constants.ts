@@ -41,6 +41,12 @@ export const RESTORE_MARGIN_BLOCKS = 720;
 /** Tips settle at or above this many atomic units (0.0001 XMR). */
 export const DUST_ATOMIC = 100_000_000n;
 
+/**
+ * The test tip from Get a test address needs this many confirmations whatever the speed setting (spec change 26): it
+ * fulfils nothing, and Strict's 10 would break the setup budget. Never 0. Public tips and orders keep the presets.
+ */
+export const TEST_TIP_REQUIRED = 1;
+
 /** The highest confirmation requirement an invoice can have (the top preset tier). */
 export const MAX_REQUIRED = 10;
 

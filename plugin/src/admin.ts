@@ -9,7 +9,7 @@
 import type { PluginContext } from "emdash/plugin";
 
 import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkout";
-import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, UNPAID_RUN_ALERT } from "./core/constants";
+import { DUST_ATOMIC, GAP_ALERT, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, TEST_TIP_REQUIRED, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
 import { ensureCron } from "./housekeeping";
@@ -293,7 +293,7 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 				// Feather 2.8.1 reads a monero: link only from a keyboard paste; pasted another way it looks like an OpenAlias
 				// (run B attempt 2), so the label says how to paste and what to do instead.
 				{ type: "context", text: "Payment link: wallets that read one fill in the address and amount. Paste it with the keyboard (Ctrl+V, or Cmd+V on a Mac). If your wallet doesn't fill in the address, or says it can't resolve an OpenAlias, copy the address above instead." },
-				{ type: "context", text: open.status === "new" ? `Waiting for the payment (until ${utc(open.expiresAt)}).` : `Payment seen: ${t.depth} of ${open.required} confirmations.` },
+				{ type: "context", text: open.status === "new" ? `Waiting for the payment (until ${utc(open.expiresAt)}).` : `Payment seen: ${t.depth} of ${plural(open.required, "confirmation", "confirmations")}.${open.required === TEST_TIP_REQUIRED ? " A test tip needs one; your buyers' payments use your confirmation speed." : ""}` },
 			);
 		}
 		inner.push({ type: "actions", elements: [{ type: "button", action_id: "get_test_address", label: "Get a test address" }] });
@@ -307,7 +307,10 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 	};
 }
 
-/** Get a test address: an open tip invoice on a pool address, through this private route (phase 07 adds public tips). */
+/**
+ * Get a test address: an open tip invoice on a pool address, through this private route (phase 07 adds public tips). It
+ * needs TEST_TIP_REQUIRED confirmations, not the speed preset (spec change 26).
+ */
 async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 	if (!(await ctx.settings.get<string>(SETTING.publicKey))) return { type: "error", message: "Connect a wallet host first." };
 	const chainHeight = checkoutHeight(await ctx.kv.get<BridgeState>(KV.bridge), now);
@@ -318,7 +321,7 @@ async function testAddress(ctx: PluginContext, now: number): Promise<Toast> {
 	const speed: Speed = isSpeed(speedSetting) ? speedSetting : "standard";
 	const currencySetting = await ctx.settings.get<string>(SETTING.currency);
 	const inv = await claimAndStore(ctx, (row) =>
-		newInvoice({ ...newIds(), kind: "tip", fiatMinor: null, currency: isCurrency(currencySetting) ? currencySetting : "USD", rate: null, speed, subaddress: row.address, addrIndex: row.addrIndex, now, chainHeight }),
+		({ ...newInvoice({ ...newIds(), kind: "tip", fiatMinor: null, currency: isCurrency(currencySetting) ? currencySetting : "USD", rate: null, speed, subaddress: row.address, addrIndex: row.addrIndex, now, chainHeight }), required: TEST_TIP_REQUIRED }),
 	);
 	if (!inv) return { type: "error", message: "No payment address is free yet. The wallet host adds them at its next sync; try again in a minute." };
 	return { type: "success", message: "Test address ready. Send the test tip from any wallet." };

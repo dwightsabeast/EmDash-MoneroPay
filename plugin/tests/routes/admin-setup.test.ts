@@ -133,7 +133,8 @@ describe("setup checklist", () => {
 		const [tip] = await tips();
 		const transfer = { txid: "ab".repeat(32), amount: "200000000", amountAtomic: "200000000", confirmations: 1, height: H0 + 1, timestamp: 1_790_000_100, doubleSpendSeen: false, unlockTime: "0", seenAt: 1, poolTs: 1 };
 		await h.fixtures.plugin.storage("invoices", tip.id, { ...tip, status: "confirming", transfers: [transfer] });
-		expect(text(await load())).toContain(`Payment seen: 1 of ${tip.required} confirmations`);
+		expect(tip.required).toBe(1);
+		expect(text(await load())).toContain("Payment seen: 1 of 1 confirmation. A test tip needs one; your buyers' payments use your confirmation speed.");
 		await h.fixtures.plugin.storage("invoices", tip.id, { ...tip, status: "settled", settledAt: Date.now(), transfers: [{ ...transfer, confirmations: tip.required }] });
 		let b = await load();
 		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
@@ -143,6 +144,38 @@ describe("setup checklist", () => {
 		await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - 60 * 60_000, version: 1, outdated: false });
 		b = await load();
 		expect(checklist(b)).toMatchObject({ label: "Setup (complete)", default_open: false });
+	});
+
+	it("the test tip needs 1 confirmation whatever the speed; still never 0, and only counted transfers (spec change 26)", async () => {
+		for (const speed of ["fast", "standard", "strict"]) {
+			const h = await setup();
+			await h.fixtures.plugin.setting("speed", speed);
+			await h.admin.act("/payments", "get_test_address");
+			expect((await tips())[0]).toMatchObject({ status: "new", required: 1 });
+			if (speed !== "strict") await h.dispose();
+		}
+		// Strict, through the real sync path.
+		const h = host as PluginRuntimeTestHost;
+		const [tip] = await tips();
+		const tx = (id: string, confirmations: number, o: Record<string, unknown> = {}) => ({ txid: id.repeat(32), amount: "200000000", confirmations, height: confirmations > 0 ? H0 + 1 : 0, timestamp: 1_790_000_100, doubleSpendSeen: false, unlockTime: "0", ...o });
+		let seq = Date.now();
+		const sync = async (transfers: unknown[]) => {
+			const now = ++seq;
+			const bytes = bytesOf({ v: 1, seq: now, height: H0 + 1, addresses: [], snapshots: [{ index: tip.addrIndex, transfers }] });
+			const res = await h.actions.routes.request("bridge/sync", { method: "POST", rawBody: bytes, headers: await signedHeaders(bytes, now) });
+			expect(((await res.json()) as B).data).toMatchObject({ ok: true });
+			return (await tips())[0];
+		};
+		// Mined, but time-locked or flagged: not counted, so not settled.
+		const locked = tx("ab", 1, { unlockTime: "5" });
+		const flagged = tx("cd", 1, { doubleSpendSeen: true });
+		expect((await sync([locked, flagged])).status).not.toBe("settled");
+		// In the pool: the full amount at 0 of 1.
+		expect(await sync([locked, flagged, tx("ef", 0)])).toMatchObject({ status: "confirming" });
+		expect(text(await load())).toContain("Payment seen: 0 of 1 confirmation. A test tip needs one; your buyers' payments use your confirmation speed.");
+		// One confirmation settles it, though Strict means 10 for buyers.
+		expect(await sync([locked, flagged, tx("ef", 1)])).toMatchObject({ status: "settled", required: 1 });
+		expect(checklist(await load())).toMatchObject({ label: "Setup (complete)" });
 	});
 
 	it("before the test address: a line about the wallet app with the wallet host's height; under the link, its label (spec change 24, items 3 and 3b)", async () => {

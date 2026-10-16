@@ -626,7 +626,7 @@ Answers (Claude Code, 2026-10-15, from the EmDash 1.1.0 source installed in the 
   - The check is already separate from the install: `monerodl.Fetcher.Latest` fetches and verifies only the signed `hashes.txt`. Part 3 needs a small bridge change (check only, when off) and new signed sync body fields, a change to the spec's API contracts.
   - Also found: there is no `xmr-bridge update` command (the CLI has install, uninstall, version, run, pair, status, notify). Part 3's proposed line names it, and so does today's "Wallet host update available" banner (`plugin/src/admin.ts`). Logged in `docs/progress.md` for phase 09's self-update work.
 
-## 26. The test tip's confirmations  (status: proposed, 2026-10-15)
+## 26. The test tip's confirmations  (status: accepted, 2026-10-16)
 Found in: phase 05, run A attempt 3 (`~/xmr-pay-dev-data/05-setup/run-A.md`, local), which passed at 13 minutes. Wyatt asked whether the test tip needs 2 confirmations.
 Spec says: Admin setup and upkeep, Install flow step 6: "Send a test tip … Setup is done when it settles." Confirmation presets: Under 100 (site currency) is Fast 1, Standard 2, Strict 10; tips use that tier (`requiredConfirmations`). "Nothing is fulfilled at zero confirmations."
 Evidence:
@@ -650,8 +650,9 @@ Proposal: the test tip from Get a test address always needs **1 confirmation** (
 Effect on the admin budget: better. The typical wait drops by about one block, and choosing Strict no longer breaks setup.
 Effect on the trust contract: none.
 Spec text to fold in (Wyatt; `docs/spec.md` is not edited here): Install flow step 6: "Setup is done when it settles, at one confirmation whatever the speed setting (a test tip fulfils nothing)."
+Decision (Wyatt, 2026-10-16): accepted as proposed. Only the test tip from Get a test address; public tips (phase 07) and orders keep the preset.
 
-## 27. The payments page doesn't update by itself  (status: proposed, 2026-10-15)
+## 27. The payments page doesn't update by itself  (status: accepted, 2026-10-16)
 Found in: phase 05, run A attempt 3, confusion log at 5:19 MDT (steps 6c and 7). The tester reloaded the page by hand to see Payment seen and then the confirmations. It cost no time, but they expected the page to update on its own.
 Spec says: Admin setup and upkeep, Install flow step 4: "The admin page's setup checklist turns green item by item". It doesn't say how.
 Evidence (EmDash 1.1.0, from the installed `@emdash-cms/admin` and `@emdash-cms/blocks`):
@@ -669,6 +670,7 @@ Proposal:
 
 Effect on the admin budget: none in time. It's clearer while the admin waits, and the setup test's "reload" wording stays as a fallback.
 Effect on the trust contract: none (a button on the existing page; no route, page, widget or setting).
+Decision (Wyatt, 2026-10-16): accepted as proposed, with the button kept off the install-command view, and the upstream note (item 4) drafted for Wyatt to post.
 
 ## 28. An https remote node breaks wallet creation  (status: accepted, 2026-10-16, items 1 and 3)
 Found in: phase 05, run B attempt 1 (`~/xmr-pay-dev-data/05-setup/B1-*`, local).
@@ -798,7 +800,7 @@ Effect on the admin budget: better. A typo costs one retry, not a rerun.
 Decision (Wyatt, 2026-10-16): accepted. Build it now, tests first, and include it in the release rebuild before Wyatt signs, so run B tests the new prompt.
 Effect on the trust contract: none.
 
-## 31. The first start after a reinstall can fail Init while wallet-rpc catches up  (status: proposed, 2026-10-16)
+## 31. The first start after a reinstall can fail Init while wallet-rpc catches up  (status: accepted, 2026-10-16)
 Found in: spec change 28's live run (`TestLiveShopWallet` against kernal.eu over https; `~/xmr-pay-dev-data/05-setup/B1-fix-live2-wallet-rpc.log` and its `.bridge` log, local). Not seen in run A or run B.
 Spec says: Bridge service, duty 1: run wallet-rpc and keep it running. Spec change 17: a reinstall restores from an older height so it sees the site's open invoices.
 Evidence:
@@ -811,3 +813,4 @@ Evidence:
 Proposal: `wallet.Open`'s calls (`open_wallet`, then `get_address`) are bounded only by `Init`'s context (the supervisor's 60 s), not by the client's 5 s. It's a small bridge change with a test like `TestWalletCallsOutlastTheClientTimeout`.
 Effect on the admin budget: none (it removes a silent restart).
 Effect on the trust contract: none.
+Decision (Wyatt, 2026-10-16): accepted. Build it, then rebuild the dev release (with spec change 29's bridge half); Wyatt signs it.
