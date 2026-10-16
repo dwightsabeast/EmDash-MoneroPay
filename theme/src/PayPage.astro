@@ -1,0 +1,128 @@
+---
+/**
+ * The buyer's pay page (docs/spec.md, Theme integration, piece 2). Use it as the whole page:
+ *
+ *   src/pages/pay/[token].astro
+ *   ---
+ *   import PayPage from "coffer-astro/PayPage.astro";
+ *   ---
+ *   <PayPage token={Astro.params.token} />
+ *
+ * It's a complete HTML document of its own, so a site layout can't add third-party fonts, scripts or images to a page
+ * whose URL holds the token. It reads the invoice's status on the server, shows the amount, a QR code, the address
+ * and a countdown, and then polls the status every 5 seconds with a small inline script. Without JavaScript, the page
+ * still shows the right state on every reload.
+ */
+import { CLIENT_SCRIPT, type PayStateName, payState } from "./client";
+import { payPageHeaders } from "./headers";
+import { qrSvg } from "./qr";
+import { STATUS_PATH, fetchStatus, fiat, xmr } from "./status";
+import { PAGE_CSS } from "./styles";
+
+interface Props {
+	/** The token from the page's path (`Astro.params.token`). */
+	token: string | undefined;
+	/** The page's heading and title. */
+	title?: string;
+}
+
+const { token, title = "Pay with Monero" } = Astro.props;
+for (const [name, value] of Object.entries(await payPageHeaders())) Astro.response.headers.set(name, value);
+
+const result = await fetchStatus(Astro, token);
+const s = result.ok ? result.status : null;
+const view = s ? payState(s) : result.ok === false && result.code === "INVOICE_NOT_FOUND" ? payState({ error: { code: "INVOICE_NOT_FOUND" } }) : null;
+const state: PayStateName | "unavailable" = view?.state ?? "unavailable";
+Astro.response.status = s ? 200 : state === "notfound" ? 404 : 503;
+
+const hiddenUnless = (...states: string[]) => !states.includes(state);
+const utc = (iso: string) => `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+const left = s ? Math.max(0, Math.floor((Date.parse(s.expiresAt) - Date.now()) / 1000)) : 0;
+const countdown = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+const payable = ["waiting", "partial", "checking"];
+---
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		<meta name="referrer" content="no-referrer" />
+		<title>{title}</title>
+		<style is:inline set:html={PAGE_CSS}></style>
+		<slot name="head" />
+	</head>
+	<body>
+		<main
+			class="coffer-pay"
+			data-coffer-pay
+			data-state={state}
+			data-final={String(view?.final ?? true)}
+			data-status-url={s ? `${STATUS_PATH}?token=${token}` : undefined}
+			data-expires-at={s?.expiresAt}
+		>
+			<h1>{title}</h1>
+			{s && (
+				<section class="coffer-card">
+					{s.amountAtomic !== null ? (
+						<>
+							<p class="coffer-amount">{xmr(s.amountAtomic)} XMR</p>
+							{s.fiat && <p class="coffer-fiat">{fiat(s.fiat.amountMinor, s.fiat.currency)}</p>}
+						</>
+					) : (
+						<p class="coffer-amount">Any amount{s.minAtomic !== null && ` from ${xmr(s.minAtomic)} XMR`}</p>
+					)}
+				</section>
+			)}
+			{s && (
+				<section class="coffer-card" data-show={payable.join(" ")} hidden={hiddenUnless(...payable)}>
+					<Fragment set:html={qrSvg(s.uri)} />
+					<p class="coffer-label">Address</p>
+					<div class="coffer-copyrow">
+						<p class="coffer-value" data-field="address">{s.address}</p>
+						<button type="button" class="coffer-button" data-copy="address" hidden>Copy</button>
+					</div>
+					{s.amountAtomic !== null && (
+						<>
+							<p class="coffer-label">Amount (XMR)</p>
+							<div class="coffer-copyrow">
+								<p class="coffer-value" data-field="amount">{xmr(s.amountAtomic)}</p>
+								<button type="button" class="coffer-button" data-copy="amount" hidden>Copy</button>
+							</div>
+						</>
+					)}
+					<a class="coffer-wallet" href={s.uri} rel="noreferrer">Open in wallet</a>
+				</section>
+			)}
+			<section class="coffer-card" aria-live="polite">
+				<p class="coffer-status" data-show="waiting" hidden={hiddenUnless("waiting")}>
+					Waiting for your payment. Pay within <strong data-field="countdown">{countdown}</strong>{s && ` (by ${utc(s.expiresAt)})`}.
+				</p>
+				<p class="coffer-status" data-show="partial" hidden={hiddenUnless("partial")}>
+					Received <strong data-field="received">{view?.received}</strong> XMR, less than the amount due. Send the rest to the same address within <strong data-field="countdown">{countdown}</strong>.
+				</p>
+				<p class="coffer-status" data-show="checking" hidden={hiddenUnless("checking")}>
+					Checking for your payment. The time to pay has passed; this page is checking whether a payment arrived in time.
+				</p>
+				<p class="coffer-status" data-show="confirming" hidden={hiddenUnless("confirming")}>
+					Payment received. Confirming: <strong data-field="confirmations">{view?.confirmations}</strong> of <strong data-field="required">{view?.required}</strong>.
+				</p>
+				<p class="coffer-status" data-show="settled" hidden={hiddenUnless("settled")}>Paid. Thank you!</p>
+				<p class="coffer-status" data-show="reconfirming" hidden={hiddenUnless("reconfirming")}>
+					Paid. The network is confirming your payment again after a reorganization; there's nothing you need to do.
+				</p>
+				<p class="coffer-status" data-show="expired" hidden={hiddenUnless("expired")}>
+					This payment request has expired. If you sent a payment to it, contact the shop with your transaction ID.
+				</p>
+				<p class="coffer-status" data-show="review" hidden={hiddenUnless("review")}>
+					The shop will check this payment by hand. If you sent one, keep your transaction ID; the shop will be in touch if needed.
+				</p>
+				<p class="coffer-status" data-show="notfound" hidden={hiddenUnless("notfound")}>This payment link isn't valid. Check the link, or start again from the shop.</p>
+				<p class="coffer-status" data-show="unavailable" hidden={hiddenUnless("unavailable")}>Payments can't be checked right now. Please reload this page in a minute.</p>
+				{s && !view?.final && (
+					<noscript><p class="coffer-note">This page updates by itself with JavaScript on. Without it, reload the page to see the latest.</p></noscript>
+				)}
+			</section>
+		</main>
+		<script is:inline set:html={CLIENT_SCRIPT}></script>
+	</body>
+</html>
