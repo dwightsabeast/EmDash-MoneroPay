@@ -33,7 +33,7 @@ Wyatt's choices (2026-10-16):
 
 ## On the dev box (your terminal, not Claude Code)
 
-4. **Save the token and the account ID:**
+4. **Save the token and the account ID.** Each line starts with its name, then `=`:
 
    ```sh
    install -m 600 /dev/null ~/.config/xmr-pay-dev/cloudflare.env
@@ -52,23 +52,38 @@ Wyatt's choices (2026-10-16):
    - I check it with a read-only call through the wrapper: `wrangler d1 list`. It lists D1 databases, none yet.
    - I never print the token.
 
-## The first deploy (together)
+## Before the first deploy: Cloudflare Access (Wyatt's choice, 2026-10-16)
 
-6. **I build and deploy** (`scripts/with-cf-env.sh …/wrangler deploy`). Wrangler creates the D1 database and the R2 bucket and prints the site's URL.
-7. **Right away, you open `https://xmr-cf-spike.<subdomain>.workers.dev/_emdash/admin`** and finish EmDash's setup wizard, with a passkey on that hostname.
-   - Until you do, whoever arrives first could claim the site's admin.
-   - **Alternative:** turn on Cloudflare Access for the Worker's `workers.dev` route before step 6, and add a bypass for `/_emdash/api/plugins/*`, as on `dev.wyattdilley.com`. Otherwise the measuring script can't reach the routes.
-8. **I check that the plugin loaded on the Cloudflare runner.** Then the measurements in PLAN.md begin.
+Use hostname-based Access applications, which can exist before the Worker does. Protecting the whole Worker from its own **Access** tab can't exempt a path. This follows Cloudflare's "Cloudflare Access" page for Workers, and is the same pattern as `dev.wyattdilley.com`.
+
+6. **The site, protected.**
+   - Go to **Zero Trust**, then **Access**, then **Applications**, then add a **Self-hosted** application.
+   - **Domain:** `xmr-cf-spike.<subdomain>.workers.dev` (no path).
+   - **Policy:** **Allow**, with **Include: Emails** set to your address (or your usual login method).
+7. **The plugin routes, open.**
+   - Add a second **Self-hosted** application.
+   - **Domain:** the same hostname, with the **path** `_emdash/api/plugins/*`.
+   - **Policy:** **Bypass**, **Include: Everyone**.
+   - The more specific application wins for that path. The measuring script, and a fake bridge's signed syncs, need these routes without a login, just as a real wallet host does.
+8. **Tell me both exist.** I'll deploy (`scripts/with-cf-env.sh …/wrangler deploy`), and Wrangler creates the D1 database and R2 bucket.
+9. **Then you open `https://xmr-cf-spike.<subdomain>.workers.dev/_emdash/admin`,** sign in through Access, and finish EmDash's setup wizard with a passkey.
+10. **I check from the dev box:**
+    - the root and `/_emdash/admin` redirect to the Access login
+    - a plugin route answers without one
+    - the plugin loaded on the Cloudflare runner
+
+    Then the measurements in PLAN.md begin.
 
 ## When the spike ends (you)
 
-9. **Delete:**
+11. **Delete:**
    - the Worker `xmr-cf-spike`
    - the D1 database `xmr-cf-spike`
    - the R2 bucket `xmr-cf-spike-media`
    - any KV namespace Wrangler created for it
-10. **Revoke** the `coffer-cf-spike` token under **My Profile**, **API Tokens**.
-11. **On the dev box:** `rm ~/.config/xmr-pay-dev/cloudflare.env`.
+   - the two Access applications from steps 6 and 7
+12. **Revoke** the `coffer-cf-spike` token under **My Profile**, **API Tokens**.
+13. **On the dev box:** `rm ~/.config/xmr-pay-dev/cloudflare.env`.
 
 ## If something's off
 
