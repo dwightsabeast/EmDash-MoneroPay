@@ -2512,6 +2512,10 @@ Tests:
 
 Tooling note: `theme/tests/node.d.ts` declares the few Node APIs the zbar test uses, by hand, instead of adding `@types/node`.
 
+Then:
+- Wyatt installed `zbar-tools` (0.23.93) on the dev box. With `COFFER_REQUIRE_ZBAR=1`, theme tests: 13 pass, and all 5 QR round trips decode to the exact URI. The 1 skip is the "zbarimg missing" guard.
+- Pushed `f5e2bc5`. CI run 38932491988 passed: plugin, theme (the zbar round trip in CI), bridge and the race detector.
+- CLAUDE.md's command table has the theme tests, and its CI row covers the theme job.
+
 Next:
-1. Wyatt OKs the push, which includes CI's new `theme` job; then check CI, especially the zbar round trip.
-2. Session 6b: `PayPage.astro` (its own document, headers, CSP by hash), `isPaid`, `status.ts`, the polling state machine, and container-API tests.
+1. Session 6b: `PayPage.astro` (its own document, headers, CSP by hash), `isPaid`, `status.ts`, the polling state machine, and container-API tests.

@@ -184,6 +184,7 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | --- | --- |
 | Environment check | `scripts/check-env.sh` |
 | Plugin tests | `cd plugin && pnpm test` |
+| Theme tests | `cd theme && pnpm test && pnpm run typecheck` (the QR round trip uses `zbarimg` from `zbar-tools`, installed on the dev box; `COFFER_REQUIRE_ZBAR=1` makes a missing one fail, as CI does) |
 | Plugin checks | `cd plugin && pnpm run typecheck && pnpm exec emdash-plugin validate && pnpm exec emdash-plugin bundle --validate-only` |
 | Bridge tests | `cd bridge && export GOTOOLCHAIN=local && test -z "$(gofmt -l .)" && go vet ./... && go test ./...` |
 | Bridge build (static) | `cd bridge && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=<version>" -o <out> ./cmd/xmr-bridge` |
@@ -211,6 +212,6 @@ The dev box has 8 GB of physical RAM (about 7.8 GB usable) and 512 MB of swap, a
 | Setup test: is run A's node caught up | Run the `sh` block under "Node caught up" in `~/xmr-pay-dev-data/05-setup/organizer.md` as is (read-only `get_info` against run A's node and the dev box's node; prints one PASS or FAIL line). The node's address stays in that local file |
 | Setup test: plugin with a working install command | `scripts/setup-test-plugin.sh --base http://<dev box LAN address>:8099` (patches only the built `dist/plugin.mjs`; a plain `pnpm run build` restores the placeholder). The release itself: `scripts/build-dev-release.sh --base <same address>`, served with `--bind` on that address. The full order is in `~/xmr-pay-dev-data/05-setup/organizer.md`; the tester's steps in `docs/setup-test.md` |
 | CI status for a pushed commit | `python3 -I scripts/ci-status.py $(git rev-parse HEAD)` (public API; there's no `gh` on this box) |
-| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check, and the bridge's gofmt, vet, tests, race-detector tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
+| CI | `.github/workflows/ci.yml`: the plugin's typecheck, validate, tests and bundle check; the theme's typecheck and tests (with `zbar-tools` from apt for the QR round trip); and the bridge's gofmt, vet, tests, race-detector tests and static build, on pushes to `main` and on pull requests (rules in `docs/decisions.md`, "CI hardening" and "CI for the bridge") |
 
 Fill in or correct this table as phases add commands.
