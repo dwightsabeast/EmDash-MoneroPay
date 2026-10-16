@@ -37,7 +37,7 @@ The owner is Wyatt. He makes every design decision and handles every account, ke
 - Add, remove or upgrade any dependency (npm, Go module, system package, GitHub Action).
 - Deviate from the spec, or find that EmDash or Monero behaves differently from what the spec assumes. Write the evidence and a proposal in `docs/spec-changes.md` first.
 - Push to GitHub, create tags or releases, publish to the EmDash registry or npm, or log in to any account.
-- Touch anything outside your working areas: this repo, the dev site (`~/sites/xmr-dev-site`), `~/xmr-pay-dev-data/` (wallet-rpc and regtest data), `~/xmr-pay-devkeys/` (throwaway dev signing keys), `~/work/` (clones of third-party repos) and temp directories. `sudo` and system services are Wyatt's (see step 8 above).
+- Touch anything outside your working areas: this repo, the dev site (`~/sites/xmr-dev-site`), `~/xmr-pay-dev-data/` (wallet-rpc and regtest data), `~/xmr-pay-devkeys/` (throwaway dev signing keys), `~/work/` (clones of third-party repos), `~/sites/xmr-cf-spike` (the throwaway Cloudflare spike site, until that spike ends) and temp directories. `sudo` and system services are Wyatt's (see step 8 above).
 - Spend more than about 30 minutes stuck on one problem. Summarize what you tried.
 
 ## Non-negotiables
@@ -47,6 +47,7 @@ The owner is Wyatt. He makes every design decision and handles every account, ke
 - Never request, read, print, log, store or commit the seed, mnemonic or spend key of any real wallet (Wyatt's stagenet wallets included, and anything mainnet). Not in code, tests, fixtures, logs, commit messages or chat.
 - The one exception is throwaway **regtest** wallets that a test creates under `~/xmr-pay-dev-data/` and deletes afterwards. Never print their seeds or keys either.
 - `~/stagenet-wallets/` is Wyatt's. Never open it. The shop wallet's stagenet address and view key live in `~/.config/xmr-pay-dev/stagenet.env`. Run programs that need them through `scripts/with-shop-env.sh <command>`; never source or read the file yourself, and never run `env`, `printenv`, `set -x` or anything that echoes those variables. Pass the view key to wallet-rpc on stdin (`curl --data @-`), not on a command line.
+- The Cloudflare spike's API token lives in `~/.config/xmr-pay-dev/cloudflare.env` (Wyatt's, mode 600). Never read or print it; run `wrangler` only through `scripts/with-cf-env.sh`, which runs nothing else. Wyatt revokes it when the spike ends (`spikes/cf-runner/SETUP.md`).
 - Release signing has two keys. The **real** private key is generated offline by Wyatt and never comes near this box; only its public key is ever pinned, when he provides it. A **dev** key for testing the update and install path may be generated in `~/xmr-pay-devkeys/` (outside the repo); dev builds pin it, release builds must not.
 - Signature test vectors use the published RFC 8032 test keys. Never commit any other private key, test or not.
 

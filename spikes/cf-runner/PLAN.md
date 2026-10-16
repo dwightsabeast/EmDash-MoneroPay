@@ -54,7 +54,7 @@ In phase 07 session 7a:
    - or put Cloudflare Access in front of the `workers.dev` hostname, except `/_emdash/api/plugins/*`, as with `dev.wyattdilley.com`.
 4. **At the end:** delete the Worker, the D1 database and the R2 bucket, and revoke the token.
 
-## What needs your approval first (CLAUDE.md, "Stop and ask")
+## Approvals (Wyatt, 2026-10-16: the working area and dependencies approved; deploys by option A; walkthrough in SETUP.md)
 
 - **A new working area:** `~/sites/xmr-cf-spike` (outside the listed working areas).
 - **Dependencies for that throwaway site only** (never shipped), exact pins and the 7-day age rule:
