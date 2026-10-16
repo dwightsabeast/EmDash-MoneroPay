@@ -2798,3 +2798,30 @@ Left in 7a, after the spike:
 - the timing check on the Cloudflare runner itself
 
 Then 7b (the admin tips view) and 7c (theme and live) as planned.
+
+### 2026-10-16 (night) · Phase 07 · The Cloudflare spike: Coffer can't pair there
+
+- **Setup:**
+  - Wyatt set up the Workers Paid account, the scoped token (option A), R2, and Cloudflare Access (site Allow; `/_emdash/api/plugins/*` Bypass). He finished the throwaway site's setup wizard.
+  - The site is deployed from `~/sites/xmr-cf-spike` through `scripts/with-cf-env.sh`.
+  - Checked: the root, the admin, the manifest and both `../` forms redirect to Access; plugin routes answer.
+  - Snags (in `SETUP.md`):
+    - the env file's lines (fixed by Wyatt)
+    - the token's start date set to its end date
+    - R2 needing enabling
+    - the session KV namespace from the first failed deploy, now pinned in `wrangler.jsonc`
+- **Measured** (`docs/spike-findings.md`, "Phase 07 spike"; `bcda64c`):
+  - Every bridge call counts as a subrequest, and the 11th per invocation throws.
+  - `getMany` handles up to 98 ids in one call; `putMany` costs about 47 ms a row.
+  - CPU allowed about 0.5 s and refused about 1 s.
+  - **Coffer's pairing sync fails even with 0 addresses.** Coffer works only on Node-hosted EmDash sites.
+  - **A mistake of mine:** the limits plugin's parser accepted at most 7 digits, so the first CPU run fell back to 1M iterations above 5M. Fixed and rerun; the results above are the rerun.
+- **Spec change 35 proposed:**
+  - A: redesign to 10 calls per route before release 1, as phase 07c
+  - B: release 1 for Node sites only
+  - C: an upstream note
+  - Recommended: A, with C now.
+- **State:**
+  - The spike site stays deployed for A's checks. Its token expires 2026-10-30.
+  - Teardown in `SETUP.md` steps 11–13.
+  - Phase 07 is paused after 7a, waiting on Wyatt's choice.
