@@ -2426,6 +2426,11 @@ Then:
   - `release.json` is unsigned until Wyatt signs it.
 
 - Wyatt signed it, and `check-dev-signature.sh` verifies the signature. The four files still match `SHA256SUMS`.
+- **Section E, Wyatt's part, done:** the `dev.wyattdilley.com` hostname is down, and `coffer-test` is rolled back to `blank`. Run A's node container stays for phase 09, and the tester account goes with it (phase 09 makes a new invite).
+- **Left open by Wyatt for now:**
+  - updating the dev box's installed bridge to this release
+  - the upstream notes
+  - spec changes 28 item 2 (before phase 09), 25 and 18
 
 Next:
 1. Optional, when Wyatt wants spec change 29's "starting" message and 31 seen live: update the dev box's installed bridge to this release (Wyatt, sudo).
