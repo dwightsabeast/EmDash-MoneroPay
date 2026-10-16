@@ -2470,3 +2470,48 @@ Carried over for Wyatt (left open, his call):
   - 18 (tips-only tier; option A was slated for phase 06)
 
 Next step: phase 06 (theme kit), from the beginning. Read `docs/phases/06-theme-kit.md`, write the plan, and wait for Wyatt's approval.
+
+## 2026-10-16 · Phase 06 · Session 6a: spec change 32, theme scaffold, vendored QR encoder
+
+Plan approved by Wyatt (phase 06, sessions 6a–6c). His decisions:
+- **Spec change 32:** `status` carries what the pay page shows.
+- **QR encoder:** Nayuki's `qrcodegen`, vendored with its license, pinned commit and SHA-256.
+- **Decoding:** a CI-only test decodes each QR with `zbar-tools` from apt.
+- **Package name:** `coffer-astro`, a placeholder until phase 09.
+- **Peer dependencies:** `emdash >=1.1.0 <2` and `astro >=7 <8`.
+- **Theme devDependencies:** `astro` 7.3.5, `emdash` 1.1.0, `typescript` 5.9.3, `vitest` 4.1.11.
+- **PayPage:** a CSP (`default-src 'none'`, `connect-src 'self'`, scripts by hash, `frame-ancestors 'none'`) and `nosniff`.
+- **Spec change 18 A** moves to phase 07, with the tip button.
+- **Live check:** Wyatt also scans the admin test tip's `/pay` QR, and pays from Feather (the CLI buyer wallet is empty).
+
+Found while planning:
+- **`status` had no address, URI, fiat amount, kind or tip floor,** so a page with only the token couldn't show the address or QR. This became spec change 32.
+- **EmDash 1.1.0 gives SSR pages `getPublicPluginApiRouteHandler(Astro.locals)`** (`emdash/plugin-utils`), which calls public plugin routes in-process, with no network self-fetch.
+- **`coffer` is already taken on npm.** It matters only if the plugin is ever published there (phase 09).
+
+Built:
+
+| Commit | What |
+| --- | --- |
+| `cdeeeec` | Phase 05 closed (progress) |
+| `57439be` | **Spec change 32.** `status` adds `kind`, `address`, `uri`, `fiat` and `minAtomic`. Checkout stores `uriDescription` (the product title). One builder, `paymentUri`/`invoiceUri` in `plugin/src/core/uri.ts`, serves checkout, `status` and the admin test tip (the admin's `tipUri` is gone). An older invoice gets a URI without `tx_description`. No trust-contract change |
+| `341181a` | **`theme/` scaffold** (`coffer-astro`, set up like `plugin/`), the vendored encoder, `src/qr.ts` and CI's `theme` job |
+
+The vendored encoder:
+- It's `qrcodegen.ts` at upstream commit `3c6d0b3`, MIT. `LICENSE` is upstream's README text.
+- Three lines are changed (`namespace` to `export namespace`).
+- `SOURCE.md` records both SHA-256s and the diff. `tests/vendor.test.ts` checks both, so any other edit fails.
+
+`qr.ts` encodes in byte mode with ECC M and a 4-module quiet zone. It draws inline SVG with no style attribute, ready for the CSP.
+
+Tests:
+- **Plugin:** 236 pass. Typecheck clean, manifest valid, bundle 54.7 KB.
+- **Theme:** 8 pass, typecheck clean.
+  - The 6 zbar round-trip tests are skipped on the dev box: `zbarimg` isn't installed, and I didn't install it.
+  - **So the QR has not been decoded anywhere yet.** CI is the first real run (`COFFER_REQUIRE_ZBAR=1` makes a missing decoder fail).
+
+Tooling note: `theme/tests/node.d.ts` declares the few Node APIs the zbar test uses, by hand, instead of adding `@types/node`.
+
+Next:
+1. Wyatt OKs the push, which includes CI's new `theme` job; then check CI, especially the zbar round trip.
+2. Session 6b: `PayPage.astro` (its own document, headers, CSP by hash), `isPaid`, `status.ts`, the polling state machine, and container-API tests.
