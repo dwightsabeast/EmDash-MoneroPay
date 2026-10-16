@@ -65,7 +65,9 @@ Use hostname-based Access applications, which can exist before the Worker does. 
    - **Domain:** the same hostname, with the **path** `_emdash/api/plugins/*`.
    - **Policy:** **Bypass**, **Include: Everyone**.
    - The more specific application wins for that path. The measuring script, and a fake bridge's signed syncs, need these routes without a login, just as a real wallet host does.
-8. **Tell me both exist.** I'll deploy (`scripts/with-cf-env.sh …/wrangler deploy`), and Wrangler creates the D1 database and R2 bucket.
+8. **Tell me both exist.** I'll deploy (`scripts/with-cf-env.sh …/wrangler deploy`).
+   - Wrangler creates the D1 database, and a KV namespace (`xmr-cf-spike-session`) that Astro's Cloudflare adapter uses for sessions. Its ID is then pinned in `wrangler.jsonc`, so a second deploy doesn't try to create it again.
+   - **R2 must be enabled on the account first** (dashboard, **R2 Object Storage**; a one-time step, done 2026-10-16). Then I create the bucket with `wrangler r2 bucket create`: Wrangler didn't create it on deploy.
 9. **Then you open `https://xmr-cf-spike.<subdomain>.workers.dev/_emdash/admin`,** sign in through Access, and finish EmDash's setup wizard with a passkey.
 10. **I check from the dev box:**
     - the root and `/_emdash/admin` redirect to the Access login
