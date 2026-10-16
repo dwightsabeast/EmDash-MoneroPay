@@ -154,14 +154,14 @@ describe("ordinary syncs", () => {
 	it("records the bridge's height, time and protocol version", async () => {
 		const store = pairedStore();
 		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });
-		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 500, version: 1, outdated: false });
+		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 500, lastHeardAt: T0 + 500, version: 1, outdated: false });
 	});
 
 	it("records the bridge's checks with its state; a sync without them clears them (an older bridge)", async () => {
 		const store = pairedStore();
 		const checks = { node: { state: "ok" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } };
 		await send(store, syncBody({ checks }), { now: T0 + 500 });
-		expect(store.bridge).toEqual({ height: H0, lastSyncAt: T0 + 500, version: 1, outdated: false, checks });
+		expect(store.bridge).toEqual({ height: H0, lastSyncAt: T0 + 500, lastHeardAt: T0 + 500, version: 1, outdated: false, checks });
 		await send(store, syncBody({ seq: T0 + 1 }), { now: T0 + 1000 });
 		expect(store.bridge).not.toHaveProperty("checks");
 	});
@@ -183,7 +183,7 @@ describe("ordinary syncs", () => {
 		const store = pairedStore();
 		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });
 		await send(store, syncBody({ seq: T0 + 1, height: 579_994 }), { now: T0 + 1000 });
-		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 1000, version: 1, outdated: false });
+		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 1000, lastHeardAt: T0 + 1000, version: 1, outdated: false });
 		await send(store, syncBody({ seq: T0 + 2, height: H0 + 9 }), { now: T0 + 2000 });
 		expect(store.bridge?.height).toBe(H0 + 9);
 	});
@@ -284,5 +284,40 @@ describe("ordinary syncs", () => {
 			await send(store, syncBody({ seq: now, height: H0 + confs, snapshots: [{ index: 3, transfers: [{ txid: TXID(9), amount, confirmations: confs, height, timestamp: 1_790_000_200, doubleSpendSeen: false, unlockTime: "0" }] }] }), { now });
 		}
 		expect(store.invoices.get("inv_c")).toMatchObject({ status: "settled", required: 5 });
+	});
+});
+
+// Spec change 29: only a full sync counts as one. A pairing request, or the bridge's "starting" message while
+// wallet-rpc isn't ready, says the wallet host is alive (lastHeardAt) but not that its wallet has synced (lastSyncAt).
+describe("heard, not synced (spec change 29)", () => {
+	it("a pairing request: heard, not synced, no checks kept; the height still sets the floor", async () => {
+		const store = new MemoryStore();
+		const { code, state } = await newPairingCode(T0);
+		store.pairing = state;
+		await send(store, syncBody({ height: H0 + 3, pair: { code, publicKey: PUBLIC_KEYS.test1 } }), { now: T0 + 100 });
+		expect(store.bridge).toEqual({ height: H0 + 3, lastHeardAt: T0 + 100, version: 1, outdated: false });
+		await send(store, syncBody({ seq: T0 + 1, height: H0 + 4 }), { now: T0 + 200 });
+		expect(store.bridge).toEqual({ height: H0 + 4, lastSyncAt: T0 + 200, lastHeardAt: T0 + 200, version: 1, outdated: false });
+	});
+
+	it("pairing a new wallet host forgets the old one's last sync and checks", async () => {
+		const store = pairedStore();
+		await send(store, syncBody({ checks: { wallet: { state: "ok" } } }), { now: T0 + 100 });
+		const { code, state } = await newPairingCode(T0 + 150);
+		store.pairing = state;
+		await send(store, syncBody({ seq: T0 + 1, pair: { code, publicKey: PUBLIC_KEYS.test2 } }), { now: T0 + 200, key: "test2" });
+		expect(store.bridge).toEqual({ height: H0, lastHeardAt: T0 + 200, version: 1, outdated: false });
+	});
+
+	it("a starting message: heard, the last full sync and the height kept, nothing applied", async () => {
+		const store = pairedStore();
+		const inv = newInvoice({ id: "inv_1", token: "t".repeat(22), kind: "tip", fiatMinor: null, currency: "USD", rate: null, speed: "standard", subaddress: ADDR(5), addrIndex: 5, now: T0, chainHeight: H0 });
+		store.invoices.set(inv.id, inv);
+		await send(store, syncBody({ height: H0 + 7 }), { now: T0 + 500 });
+		const starting = { node: { state: "ok" }, wallet: { state: "starting", detail: "starting Monero's wallet program" } };
+		const out = await send(store, syncBody({ seq: T0 + 1, height: 0, checks: starting }), { now: T0 + 1000 });
+		expect(out.response).toMatchObject({ ok: true });
+		expect(store.bridge).toEqual({ height: H0 + 7, lastSyncAt: T0 + 500, lastHeardAt: T0 + 1000, version: 1, outdated: false, checks: starting });
+		expect(store.invoices.get("inv_1")).toEqual(inv);
 	});
 });

@@ -723,7 +723,7 @@ Decision (Wyatt, 2026-10-16): items 1 and 3 now, then run B is repeated over htt
 
 Matrix note (for `docs/security-matrix.md`; Wyatt copies it into the Claude Doc): "An https remote node: wallet-rpc checks that the node's certificate chains to the system's trusted CAs, but not that it was issued for the node's name (Monero 0.18.5.1, `--daemon-ssl-allow-chained`). An on-path attacker with any publicly trusted certificate can stand in for the node. That gives no more power than a dishonest node, which the remote-node cross-check (spec change 13) is for. 07b (section E) attacks it with a valid certificate for another name. Spec change 28 item 2 (the bridge checks the name) is decided before phase 09."
 
-## 29. "Wallet synced" while nothing runs on the wallet host  (status: accepted, 2026-10-16; built after run B)
+## 29. "Wallet synced" while nothing runs on the wallet host  (status: accepted, 2026-10-16; built 2026-10-16)
 Found in: phase 05, run B attempt 1 (spec change 28's evidence). The installer paired, then failed to create the wallet, so no service was installed. The site's checklist still showed "Wallet host paired" and "Wallet synced" (3 of 5).
 Spec says:
 - Install flow step 4: "The admin page's setup checklist turns green item by item: wallet host paired, wallet synced, …"
@@ -747,6 +747,30 @@ Decision (Wyatt, 2026-10-16):
 - Accepted, built **after run B**, so run B uses the same plugin as run A.
 - Condition: the "hasn't synced" message must not fire during a slow but healthy first start. For example, the first `open_wallet` took about 33 s over a remote https node while wallet-rpc caught up (spec change 28's live run). A reinstall from an older restore height can take longer.
 - To be settled when it's built: what the 5 minutes count from, and whether the bridge reports "starting" before its first full sync. Either way, tests cover a first sync that arrives late but before the limit.
+- Settled (Wyatt, 2026-10-16): **the bridge says "starting".** A plugin-only timer can't meet the condition: the worst healthy start is about 6 minutes after pairing (wallet creation up to 3 min, a failed first `Init` while catching up, then the bridge's sync backoff), past a 5-minute alarm counted from pairing.
+- How it was built:
+  - **Bridge** (`internal/bridgeloop`):
+    - While wallet-rpc isn't ready, each attempt sends a signed message: `checks.wallet` is `{"state": "starting"}`, height 0, `addresses` and `snapshots` as `[]`, and the node check.
+    - Retries stay at `startingEvery` (1 min; with the 30 s wallet wait, one about every 90 s) instead of backing off to 5 minutes. A failed send backs off as before.
+    - These messages aren't counted as syncs, refusals or unreachable, so the update guard (`selfupdate.Decide`) still sees a wallet-rpc that never gets ready as no syncs.
+    - Older plugins drop the unknown state.
+  - **Plugin:**
+    - The bridge state gains `lastHeardAt` (any signed message). `lastSyncAt` now means a full sync and is absent until the first.
+    - A pairing request is heard, not synced, and forgets the previous host's sync and checks. A "starting" message is heard and keeps the last full sync. Neither applies wallet evidence: no snapshots, and height 0 never lowers the stored height.
+    - Silence counts from the last message of any kind.
+    - **"Paired, but the wallet host hasn't synced"** (red, with `sudo xmr-bridge status --config /etc/xmr-bridge/config`) needs no full sync since pairing and nothing heard for 5 minutes. Pairing to the first "starting" message is bounded by the installer's 3-minute wallet-creation cap plus the 30 s wallet wait.
+    - **A synced host that restarts** shows amber "The wallet host is starting" while checkout is paused.
+    - **"No payment addresses ready"** waits for the first full sync, because the pool is empty until then by design.
+    - Checkout needs a full sync, as before.
+- Tests:
+  - bridge: `TestStartingWhileWalletRPCIsNotReady`, `TestStartingNeedsAKey`, `TestRetryWait`
+  - plugin: three in `tests/sync/handle.test.ts` and four in `tests/routes/admin-health.test.ts`, including "a slow but healthy first start … then the first sync turns it Done"
+  - the protocol test accepts "starting"
+- It needs a release rebuild for the bridge half. Until then, the plugin half works with today's bridge: "Wallet synced" waits for the real first sync, and the 5-minute line counts from pairing.
+- Spec text to fold in (Wyatt; `docs/spec.md` is not edited here):
+  - **API contracts, bridge/sync, checks:** "wallet `starting`: wallet-rpc isn't ready yet; the body carries no wallet data (height 0, empty lists). The plugin records it as heard, not synced."
+  - **Pairing:** "A pairing request counts as heard from, not as a sync: Wallet synced waits for the first sync from the running service."
+  - **Health:** "silent" counts from the last message of any kind.
 Effect on the trust contract: none.
 
 ## 30. The installer's node prompt: a bare host name  (status: accepted, 2026-10-16)

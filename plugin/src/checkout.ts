@@ -31,7 +31,7 @@ const CLAIM_ATTEMPTS = 10;
  * node that's still syncing reports a height far below the real chain (spec change 20).
  */
 export function checkoutHeight(bridge: BridgeState | null, now: number): number | "WALLET_HOST_SILENT" | "WALLET_HOST_SYNCING" {
-	if (!bridge || now - bridge.lastSyncAt > SILENT_MS) return "WALLET_HOST_SILENT";
+	if (!bridge || bridge.lastSyncAt === undefined || now - bridge.lastSyncAt > SILENT_MS) return "WALLET_HOST_SILENT";
 	if (bridge.checks?.wallet?.state === "syncing") return "WALLET_HOST_SYNCING";
 	return bridge.height;
 }

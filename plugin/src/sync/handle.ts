@@ -22,7 +22,10 @@ import {
 
 export interface BridgeState {
 	height: number;
-	lastSyncAt: number;
+	/** The last full sync: not a pairing request, not a "starting" message (spec change 29). Absent until the first. */
+	lastSyncAt?: number;
+	/** The last signed message of any kind: pairing, "starting" or a sync (spec change 29). Absent in older states. */
+	lastHeardAt?: number;
 	version: number;
 	outdated: boolean;
 	/** The wallet host's checks from its last sync; absent when it sent none (an older bridge). */
@@ -123,8 +126,22 @@ export async function handleSync(input: { body: Uint8Array; headers: Record<stri
 
 	// 4. Apply: bridge state, pool top-up, snapshots. The chain height never goes down (spec change 16): a fresh
 	// wallet's first sync reports the height it has scanned to, which can be far below the chain's.
-	const height = Math.max((await store.getBridgeState())?.height ?? 0, parsed.height);
-	await store.setBridgeState({ height, lastSyncAt: now, version: parsed.v, outdated: parsed.outdated, ...(parsed.checks ? { checks: parsed.checks } : {}) });
+	// Spec change 29: only a full sync counts as one. A pairing request (the installer, before the wallet exists) and a
+	// "starting" message (wallet-rpc not ready) say the wallet host is alive, not that its wallet has synced. Pairing
+	// forgets the previous host's sync and checks; "starting" keeps the last full sync.
+	const prev = await store.getBridgeState();
+	const height = Math.max(prev?.height ?? 0, parsed.height);
+	const starting = parsed.checks?.wallet?.state === "starting";
+	const lastSyncAt = paired ? undefined : starting ? prev?.lastSyncAt : now;
+	const checks = paired ? undefined : parsed.checks;
+	await store.setBridgeState({
+		height,
+		...(lastSyncAt !== undefined ? { lastSyncAt } : {}),
+		lastHeardAt: now,
+		version: parsed.v,
+		outdated: parsed.outdated,
+		...(checks ? { checks } : {}),
+	});
 	for (const a of parsed.addresses) {
 		if (!(await store.poolHas(a.index))) await store.poolAdd({ addrIndex: a.index, address: a.address });
 	}

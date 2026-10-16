@@ -90,7 +90,7 @@ describe("body validation", () => {
 		expect(checks({ node: { state: "mismatch", detail: "block 5 differs" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } }))
 			.toEqual({ node: { state: "mismatch", detail: "block 5 differs" }, wallet: { state: "behind", detail: "wallet at 1, node at 9" } });
 		for (const state of ["off", "ok", "unavailable", "mismatch"]) expect(checks({ node: { state } })).toEqual({ node: { state } });
-		for (const state of ["ok", "behind", "unavailable", "syncing"]) expect(checks({ wallet: { state } })).toEqual({ wallet: { state } });
+		for (const state of ["ok", "behind", "unavailable", "syncing", "starting"]) expect(checks({ wallet: { state } })).toEqual({ wallet: { state } });
 		expect(checks({ node: { state: "weird" }, wallet: { state: "mismatch" } })).toBeUndefined();
 		expect(checks({ node: { state: "ok", detail: 7 } })).toEqual({ node: { state: "ok" } });
 		expect(checks({ wallet: { state: "ok", detail: "x".repeat(400) } })).toEqual({ wallet: { state: "ok", detail: "x".repeat(300) } });

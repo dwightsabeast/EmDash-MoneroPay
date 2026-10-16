@@ -51,9 +51,15 @@ interface Health {
 	paired: boolean;
 	bridge: BridgeState | null;
 	free: number;
-	/** Set when the wallet host is paired and its last sync is older than SILENT_MS (spec change 2). */
+	/**
+	 * Set when the wallet host is paired and nothing at all has come from it for SILENT_MS (spec change 2): no sync,
+	 * no "starting" message, no pairing (spec change 29).
+	 */
 	silentFor: number | null;
+	/** Since the last full sync; null before the first one. */
 	lastSyncAgo: number | null;
+	/** Paired and heard from, but never fully synced since this pairing (spec change 29). */
+	neverSynced: boolean;
 	review: number;
 	unpaidRun: number;
 	/** Highest claimed pool index minus the highest paid one (spec change 9). */
@@ -83,8 +89,11 @@ async function health(ctx: PluginContext, now: number, opts: { checkRate: boolea
 	const paired = Boolean(await ctx.settings.get<string>(SETTING.publicKey));
 	const bridge = await ctx.kv.get<BridgeState>(KV.bridge);
 	const free = await pool(ctx).count({ status: "free" });
-	// The silent-bridge flag is worked out here, when the admin page or widget loads (spec change 2).
-	const silentFor = paired && bridge && now - bridge.lastSyncAt > SILENT_MS ? now - bridge.lastSyncAt : null;
+	// The silent-bridge flag is worked out here, when the admin page or widget loads (spec change 2). Silence counts
+	// from the last message of any kind, so a slow but healthy first start, which sends "starting" about every 90 s,
+	// never looks silent (spec change 29). Older states have no lastHeardAt: their last sync stands in.
+	const heard = bridge ? (bridge.lastHeardAt ?? bridge.lastSyncAt) : undefined;
+	const silentFor = paired && heard !== undefined && now - heard > SILENT_MS ? now - heard : null;
 	const review = await invoices(ctx).count({ status: "review" });
 	// The newest invoices past their deadline: count the expired, unpaid ones until the first that isn't (open invoices
 	// still waiting for evidence are skipped).
@@ -107,7 +116,9 @@ async function health(ctx: PluginContext, now: number, opts: { checkRate: boolea
 		rate = r ? { minor: r.minor, source: r.source, currency } : null;
 	}
 	const clientIp = await ctx.kv.get<boolean>(KV.clientIp);
-	return { paired, bridge, free, silentFor, lastSyncAgo: bridge ? now - bridge.lastSyncAt : null, review, unpaidRun, gap, rate, clientIp };
+	const lastSyncAgo = bridge?.lastSyncAt !== undefined ? now - bridge.lastSyncAt : null;
+	const neverSynced = paired && bridge !== null && lastSyncAgo === null;
+	return { paired, bridge, free, silentFor, lastSyncAgo, neverSynced, review, unpaidRun, gap, rate, clientIp };
 }
 
 const minorText = (m: bigint) => `${m / 100n}.${(m % 100n).toString().padStart(2, "0")}`;
@@ -117,7 +128,13 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 function problems(h: Health): Array<{ variant: "error" | "alert"; title: string; description: string }> {
 	const out: ReturnType<typeof problems> = [];
 	const checks = h.bridge?.checks;
-	if (h.silentFor !== null) out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
+	if (h.silentFor !== null && h.neverSynced) {
+		out.push({ variant: "error", title: "Paired, but the wallet host hasn't synced", description: `Nothing has come from it for ${Math.floor(h.silentFor / 60_000)} min. On the wallet host, run: sudo xmr-bridge status --config /etc/xmr-bridge/config` });
+	} else if (h.silentFor !== null) {
+		out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
+	} else if (h.lastSyncAgo !== null && h.lastSyncAgo > SILENT_MS && checks?.wallet?.state === "starting") {
+		out.push({ variant: "alert", title: "The wallet host is starting", description: "Monero's wallet program is opening the wallet, which can take a few minutes. Checkout is paused until the next sync." });
+	}
 	if (h.paired && !h.bridge) out.push({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
 	if (checks?.wallet?.state === "syncing") {
 		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. Checkout is paused until then. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
@@ -126,7 +143,8 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 		out.push({ variant: "error", title: "The wallet is behind its node", description: `${checks.wallet.detail ?? "The wallet is behind its node"}. It catches up by itself after a restart or an outage; if this stays, run xmr-bridge status on the wallet host.` });
 	}
 	if (checks?.node?.state === "mismatch") out.push({ variant: "error", title: "The wallet host's node disagrees with a second node", description: checks.node.detail ?? "Payments in the disputed block are held at 0 confirmations. Use your own node, or one you trust" });
-	if (h.paired && h.bridge && h.free === 0) out.push({ variant: "error", title: "No payment addresses ready", description: "Checkout can't take payments until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host." });
+	// Before the first full sync the pool is empty by design; the checklist says so.
+	if (h.paired && h.lastSyncAgo !== null && h.free === 0) out.push({ variant: "error", title: "No payment addresses ready", description: "Checkout can't take payments until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host." });
 	if (h.rate === null) out.push({ variant: "error", title: "Price feed not answering", description: "Both price services failed just now, so checkout refuses new orders until one answers. It retries by itself; if this lasts, check the site's outbound network." });
 	if (h.gap.value >= GAP_ALERT) {
 		out.push({
@@ -143,8 +161,9 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 }
 
 function walletHeightText(h: Health): string {
-	if (!h.bridge) return "Unknown until the wallet host syncs";
-	const w = h.bridge.checks?.wallet;
+	const w = h.bridge?.checks?.wallet;
+	if (w?.state === "starting") return "Starting (opening the wallet)";
+	if (!h.bridge || h.lastSyncAgo === null) return "Unknown until the wallet host syncs";
 	if (w?.state === "ok") return `${h.bridge.height}, in step with its node`;
 	if (w?.state === "behind") return `${h.bridge.height}: ${w.detail ?? "behind its node"}`;
 	if (w?.state === "syncing") return `${h.bridge.height}: ${w.detail ?? "its node is still catching up with the network"}`;
@@ -236,7 +255,8 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 		await ctx.kv.set(KV.setupDone, true);
 	}
 	const wallet = h.bridge?.checks?.wallet;
-	const synced = h.bridge !== null && h.silentFor === null && wallet?.state !== "behind" && wallet?.state !== "syncing";
+	const synced =
+		h.lastSyncAgo !== null && h.lastSyncAgo <= SILENT_MS && h.silentFor === null && wallet?.state !== "behind" && wallet?.state !== "syncing" && wallet?.state !== "starting";
 	const rows: Array<[string, boolean, string]> = [
 		["Wallet host paired", h.paired, "press Connect wallet host below and run the command on your wallet host."],
 		[
@@ -244,11 +264,13 @@ async function setupSection(ctx: PluginContext, h: Health, now: number): Promise
 			synced,
 			h.silentFor !== null
 				? "the wallet host is silent. On the wallet host, run: xmr-bridge status"
-				: wallet?.state === "syncing"
-					? `${wallet.detail ?? "the wallet host's node is still catching up with the network"}. A new node can take hours.`
-					: wallet?.state === "behind"
-						? `the wallet is catching up with its node (${wallet.detail ?? "behind"}).`
-						: "the wallet host syncs within a minute of pairing.",
+				: wallet?.state === "starting"
+					? "the wallet host is starting Monero's wallet program. This can take a few minutes."
+					: wallet?.state === "syncing"
+						? `${wallet.detail ?? "the wallet host's node is still catching up with the network"}. A new node can take hours.`
+						: wallet?.state === "behind"
+							? `the wallet is catching up with its node (${wallet.detail ?? "behind"}).`
+							: "the wallet host syncs within a minute of pairing.",
 		],
 		["Payment addresses ready", h.free > 0, "the wallet host adds them at its first sync."],
 		["Price feed answering", Boolean(h.rate), "both price services failed just now; this page checks again when it loads."],
@@ -780,9 +802,9 @@ async function widget(ctx: PluginContext, now: number): Promise<Block[]> {
 		? "Not set up: connect a wallet host on the Monero payments page."
 		: worst
 			? `${worst.title}.${reviews}`
-			: !h.bridge
+			: h.lastSyncAgo === null
 				? `Wallet host paired but not syncing yet.${reviews}`
-				: `Healthy: last sync ${ago(now - h.bridge.lastSyncAt)}, ${h.free} of ${POOL_TARGET} payment addresses ready.${reviews}`;
+				: `Healthy: last sync ${ago(h.lastSyncAgo)}, ${h.free} of ${POOL_TARGET} payment addresses ready.${reviews}`;
 	return [{ type: "context", text: line }];
 }
 

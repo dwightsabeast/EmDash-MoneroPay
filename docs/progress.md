@@ -2265,3 +2265,30 @@ Next:
 2. Build spec change 29 (accepted), with Wyatt's condition.
 3. Push `7234299` and the docs.
 4. Decide whether the slow first `Init` gets a proposal.
+
+### 2026-10-16 (late) · Spec change 29 built
+
+Before this:
+- Pushed `2c4ae28`; CI run 38843064671 passed.
+
+Design:
+- Wyatt chose "the bridge says starting" over a longer plugin-only window. A 5-minute alarm counted from pairing could fire during a healthy first start of about 6 minutes.
+- The details are in spec change 29.
+
+Tests:
+- **Bridge:** 3 new tests in `internal/bridgeloop`, failing first. gofmt, vet and all packages pass.
+- **Plugin:** 227 pass (7 new, failing first), plus 3 existing exact-state checks updated for `lastHeardAt`. Typecheck clean; bundle 53.8 KB.
+- **Script tests:** 16 pass.
+- **Live:** `TestLiveDevSite` against the dev site with the new plugin build passes (64 s): pairing, the used code refused, the pool to 50, restart, outage, re-pair.
+  - Before it: a `VACUUM INTO` backup (`…before-sc29-live-20261016T031301Z`).
+  - After it: restored from that backup (the state it replaced: `…before-restore-20261016T031440337Z`), then the dev site stopped.
+- **Not covered live:** a real "starting" message reaching the site. It needs a wallet-rpc slower than 30 s with the new bridge installed, which comes with the next release rebuild.
+
+Note:
+- Until the bridge half is released, the plugin half works with today's bridge, but its 5-minute line counts from pairing, with no "starting" messages.
+
+Next:
+1. Push (Wyatt's OK).
+2. CI.
+3. Rebuild the dev release when the bridge half should be tried on the dev box or `coffer-test`.
+4. Wyatt decides spec changes 26 and 27.

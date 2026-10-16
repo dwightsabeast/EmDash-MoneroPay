@@ -35,6 +35,9 @@ const (
 	maxTransfers  = 32
 	addressLabel  = "coffer"
 	walletTimeout = 30 * time.Second
+	// startingEvery spaces the "starting" messages while wallet-rpc isn't ready (spec change 29): with walletTimeout,
+	// one about every 90 s, well inside the site's 5 minutes.
+	startingEvery = time.Minute
 	createBatch   = 100            // subaddresses per create_address call while catching up
 	rescanLimit   = 24 * time.Hour // a rescan from the restore height; ctx (shutdown) ends it sooner
 	// The wallet check (phase 04): behind when its node is more than walletBehind blocks ahead; the node is asked for
@@ -244,8 +247,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		var wait time.Duration
 		notify := l.notify
 		if err != nil {
-			backoff = nextBackoff(backoff, l.o.BackoffMin, l.o.BackoffMax)
-			wait = backoff
+			wait, backoff = retryWait(err, backoff, l.o.BackoffMin, l.o.BackoffMax)
 			notify = nil // while backing off, a notify doesn't hammer an unreachable site
 			l.o.Log.Warn("sync failed", "err", err, "retry in", wait)
 		} else {
@@ -273,6 +275,34 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// sendStarting tells the site the wallet host is up but wallet-rpc isn't ready (spec change 29): no wallet data, height
+// 0 (the site never lowers its height), the node check, and wallet "starting". It returns notReady wrapped with
+// ErrStarting once the site has it, or notReady with the send's own error.
+func (l *Loop) sendStarting(ctx context.Context, key ed25519.PrivateKey, notReady error) error {
+	l.mu.Lock()
+	nc := l.st.NodeCheck
+	l.mu.Unlock()
+	checks := &syncclient.Checks{Node: &syncclient.Check{State: string(nc.State), Detail: nc.Detail},
+		Wallet: &syncclient.Check{State: "starting", Detail: "starting Monero's wallet program"}}
+	body := syncclient.Body{V: syncclient.ProtocolV, Seq: l.nextSeq(), Height: 0, Addresses: []syncclient.Address{}, Snapshots: []syncclient.Snapshot{}, Checks: checks}
+	// Not counted in Synced, SiteRefused or Unreachable: those describe full syncs, and the update guard
+	// (selfupdate.Decide) must keep seeing a wallet-rpc that never gets ready as no syncs at all.
+	if _, err := l.o.Site.Send(ctx, key, body); err != nil {
+		return fmt.Errorf("%w (and telling the site: %w)", notReady, err)
+	}
+	return fmt.Errorf("%w: %w", ErrStarting, notReady)
+}
+
+// retryWait is how long Run waits after a failed sync, and the backoff to carry: a steady startingEvery while
+// wallet-rpc is starting (so the site keeps hearing from the wallet host), the usual backoff for anything else.
+func retryWait(err error, backoff, min, max time.Duration) (wait, next time.Duration) {
+	if errors.Is(err, ErrStarting) {
+		return startingEvery, 0
+	}
+	next = nextBackoff(backoff, min, max)
+	return next, next
 }
 
 func nextBackoff(prev, min, max time.Duration) time.Duration {
@@ -303,6 +333,9 @@ func (l *Loop) SyncOnce(ctx context.Context) error {
 	return err
 }
 
+// ErrStarting: wallet-rpc isn't ready yet, and the site was told the wallet host is starting (spec change 29).
+var ErrStarting = errors.New("wallet-rpc isn't ready yet; told the site the wallet host is starting")
+
 // ErrNotPaired: no bridge key yet.
 var ErrNotPaired = errors.New("this wallet host is not paired yet. Press " + sitetext.Button + " and run the command it shows")
 
@@ -322,7 +355,7 @@ func (l *Loop) syncOnce(ctx context.Context) error {
 	w, err := l.o.Wallet(wctx)
 	cancel()
 	if err != nil {
-		return fmt.Errorf("wallet-rpc isn't ready: %w", err)
+		return l.sendStarting(ctx, key, fmt.Errorf("wallet-rpc isn't ready: %w", err))
 	}
 	height, err := w.GetHeight(ctx)
 	if err != nil {

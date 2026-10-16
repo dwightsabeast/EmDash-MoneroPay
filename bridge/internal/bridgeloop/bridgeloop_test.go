@@ -3,6 +3,7 @@ package bridgeloop
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -771,5 +772,61 @@ func TestWalletCheck(t *testing.T) {
 	check("syncing", "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has")
 	if w.height != 94000 {
 		t.Fatal("wallet height changed")
+	}
+}
+
+// Spec change 29: while wallet-rpc isn't ready, each attempt tells the site the wallet host is starting, so the site
+// can tell a slow but healthy first start from a dead one. The message carries no wallet data: height 0 (the site
+// never lowers its height), empty lists (sent as [], which the plugin requires), the node check, and wallet "starting".
+func TestStartingWhileWalletRPCIsNotReady(t *testing.T) {
+	l, _, s, _ := setup(t)
+	l.o.Wallet = func(context.Context) (Wallet, error) { return nil, errors.New("not ready yet") }
+	err := l.SyncOnce(context.Background())
+	if !errors.Is(err, ErrStarting) {
+		t.Fatalf("SyncOnce: %v", err)
+	}
+	if len(s.bodies) != 1 {
+		t.Fatalf("%d bodies sent", len(s.bodies))
+	}
+	b := s.last()
+	if b.Height != 0 || len(b.Addresses) != 0 || len(b.Snapshots) != 0 || b.Checks == nil || b.Checks.Wallet == nil || b.Checks.Wallet.State != "starting" || b.Checks.Node == nil {
+		t.Fatalf("body %+v", b)
+	}
+	raw, _ := json.Marshal(b)
+	if !strings.Contains(string(raw), `"addresses":[]`) || !strings.Contains(string(raw), `"snapshots":[]`) {
+		t.Fatalf("lists must be [], not null: %s", raw)
+	}
+	st := l.Status()
+	if !st.LastSyncAt.IsZero() || !strings.Contains(st.LastError, "wallet-rpc isn't ready") {
+		t.Fatalf("status %+v", st)
+	}
+	// The site unreachable: the send's own error, so Run backs off as usual.
+	s.fail = errors.New("connection refused")
+	if err := l.SyncOnce(context.Background()); errors.Is(err, ErrStarting) || err == nil {
+		t.Fatalf("site down: %v", err)
+	}
+}
+
+// Not paired: nothing to sign with, so nothing is sent.
+func TestStartingNeedsAKey(t *testing.T) {
+	l, _, s, _ := setup(t)
+	l.o.Wallet = func(context.Context) (Wallet, error) { return nil, errors.New("not ready yet") }
+	l.o.LoadKey = func() (ed25519.PrivateKey, error) { return nil, os.ErrNotExist }
+	if err := l.SyncOnce(context.Background()); !errors.Is(err, ErrNotPaired) || len(s.bodies) != 0 {
+		t.Fatalf("err %v, %d bodies", err, len(s.bodies))
+	}
+}
+
+// While starting, attempts stay at a steady interval well inside the site's 5 minutes, instead of backing off to 5
+// minutes; any other error still backs off.
+func TestRetryWait(t *testing.T) {
+	if wait, next := retryWait(ErrStarting, 4*time.Minute, 15*time.Second, 5*time.Minute); wait != startingEvery || next != 0 {
+		t.Fatalf("starting: wait %v, next backoff %v", wait, next)
+	}
+	if startingEvery+walletTimeout >= 2*time.Minute {
+		t.Fatalf("starting messages %v + %v apart: too close to the site's 5 minutes", startingEvery, walletTimeout)
+	}
+	if wait, next := retryWait(errors.New("x"), 15*time.Second, 15*time.Second, 5*time.Minute); wait != 30*time.Second || next != 30*time.Second {
+		t.Fatalf("other error: wait %v, next %v", wait, next)
 	}
 }

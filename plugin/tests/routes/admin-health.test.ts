@@ -24,6 +24,8 @@ const ADDR = (i: number) => `7${String(i).padStart(94, "C")}`;
 interface Setup {
 	paired?: boolean;
 	lastSyncAgo?: number | null;
+	/** Spec change 29: when the site last heard anything (pairing, "starting" or a sync); unset: same as the last sync. */
+	heardAgo?: number;
 	checks?: unknown;
 	outdated?: boolean;
 	free?: number;
@@ -38,8 +40,16 @@ async function setup(o: Setup = {}) {
 	host = h;
 	if (o.paired !== false) await h.fixtures.plugin.setting("bridgePublicKey", PUBLIC_KEYS.test1);
 	const ago = o.lastSyncAgo === undefined ? 30_000 : o.lastSyncAgo;
-	if (ago !== null) {
-		await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now() - ago, version: 1, outdated: o.outdated ?? false, ...(o.checks ? { checks: o.checks } : {}) });
+	if (ago !== null || o.heardAgo !== undefined) {
+		const now = Date.now();
+		await h.fixtures.plugin.kv("state:bridge", {
+			height: H0,
+			...(ago !== null ? { lastSyncAt: now - ago } : {}),
+			lastHeardAt: now - (o.heardAgo ?? ago ?? 0),
+			version: 1,
+			outdated: o.outdated ?? false,
+			...(o.checks ? { checks: o.checks } : {}),
+		});
 	}
 	for (let i = 1; i <= (o.free ?? 50); i++) await h.fixtures.plugin.storage("pool", String(1000 + i), { addrIndex: 1000 + i, address: ADDR(1000 + i), status: "free" });
 	for (const i of o.claimed ?? []) await h.fixtures.plugin.storage("pool", String(i), { addrIndex: i, address: ADDR(i), status: "claimed", invoiceId: `inv_${i}` });
@@ -106,6 +116,51 @@ describe("health panel", () => {
 	it("paired but never synced: an amber line", async () => {
 		await setup({ lastSyncAgo: null });
 		expect(banners(await load())).toContainEqual({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
+	});
+
+	// Spec change 29, from run B attempt 1: the installer paired, then failed, and the page said "Wallet synced".
+	describe("heard from, not synced (spec change 29)", () => {
+		const checklist = (b: B[]) => b.find((x) => x.type === "accordion" && x.block_id === "setup")?.blocks.find((x: B) => x.type === "fields")?.fields as Array<{ label: string; value: string }>;
+		const synced = (b: B[]) => checklist(b).find((f) => f.label === "Wallet synced")?.value;
+		const STARTING = { node: { state: "off" }, wallet: { state: "starting", detail: "starting Monero's wallet program" } };
+
+		it("just paired: Wallet synced to do, Last sync never, no red or amber line, no test address", async () => {
+			const h = await setup({ lastSyncAgo: null, heardAgo: 60_000, free: 0 });
+			const b = await load();
+			expect(synced(b)).toBe("To do: the wallet host syncs within a minute of pairing.");
+			expect(field(b, "Last sync")).toBe("Never");
+			expect(banners(b).filter((x) => x.variant !== "default")).toEqual([]);
+			expect((await h.admin.act("/payments", "get_test_address")).toast).toMatchObject({ type: "error" });
+		});
+
+		it("paired, then nothing for more than 5 minutes: a red line that names the fix", async () => {
+			await setup({ lastSyncAgo: null, heardAgo: 6 * 60_000 });
+			const b = await load();
+			expect(banners(b)).toContainEqual({ variant: "error", title: "Paired, but the wallet host hasn't synced", description: "Nothing has come from it for 6 min. On the wallet host, run: sudo xmr-bridge status --config /etc/xmr-bridge/config" });
+			expect(titles(b).some((t) => t.startsWith("Wallet host silent"))).toBe(false);
+			expect(await widgetText()).toContain("Paired, but the wallet host hasn't synced");
+		});
+
+		it("a slow but healthy first start: its starting messages keep the page quiet, then the first sync turns it Done", async () => {
+			// Paired long ago (no full sync yet); the bridge's last "starting" message came 90 s ago.
+			const h = await setup({ lastSyncAgo: null, heardAgo: 90_000, checks: STARTING });
+			let b = await load();
+			expect(banners(b).filter((x) => x.variant === "error")).toEqual([]);
+			expect(synced(b)).toBe("To do: the wallet host is starting Monero's wallet program. This can take a few minutes.");
+			expect(field(b, "Wallet height")).toBe("Starting (opening the wallet)");
+			// The first full sync arrives late, but before anything was silent for 5 minutes.
+			await h.fixtures.plugin.kv("state:bridge", { height: H0, lastSyncAt: Date.now(), lastHeardAt: Date.now(), version: 1, outdated: false, checks: { node: { state: "off" }, wallet: { state: "ok" } } });
+			b = await load();
+			expect(synced(b)).toBe("Done");
+		});
+
+		it("a synced wallet host that restarts: amber, checkout paused, not silent", async () => {
+			const h = await setup({ lastSyncAgo: 8 * 60_000, heardAgo: 30_000, checks: STARTING });
+			const b = await load();
+			expect(banners(b)).toContainEqual({ variant: "alert", title: "The wallet host is starting", description: "Monero's wallet program is opening the wallet, which can take a few minutes. Checkout is paused until the next sync." });
+			expect(titles(b).some((t) => t.startsWith("Wallet host silent"))).toBe(false);
+			expect((await h.admin.act("/payments", "get_test_address")).toast).toMatchObject({ type: "error" });
+		});
 	});
 
 	it("the wallet's height against its node: behind is red with the bridge's detail, unavailable amber, absent shows the height alone", async () => {
