@@ -896,7 +896,7 @@ Effect on the admin budget: none (one fewer optional setting).
 Effect on the trust contract: none now.
 Decision (Wyatt, 2026-10-16): deferred, as proposed.
 
-## 35. Coffer can't pair on Cloudflare: 10 bridge calls per plugin invocation  (status: proposed, 2026-10-16)
+## 35. Coffer can't pair on Cloudflare: 10 bridge calls per plugin invocation  (status: B accepted for release 1 with conditions; A planned for release 1.x or 2; 2026-10-16)
 Found in: the phase 07 Cloudflare spike (`docs/spike-findings.md`, "Phase 07 spike"; `spikes/cf-runner/`).
 Spec says:
 - Key design decisions and Architecture: Coffer is a sandboxed plugin for EmDash sites, with no platform named.
@@ -944,3 +944,19 @@ Effect on the admin budget:
 - **B:** excludes Cloudflare sites from release 1.
 
 Effect on the trust contract: none for A or B (no capability, host, route or index change; KV keys aren't part of it).
+Decision (Wyatt, 2026-10-16): **B for release 1 (Node-hosted sites), with three conditions; A is the plan for release 1.x or 2.**
+1. **On a Cloudflare-hosted site, Coffer detects it and says so clearly instead of failing mid-pairing.**
+   - **Detection:** `requestMeta.geo` is set only when the request carries Cloudflare's `cf` object, which exists only in the Workers runtime. Checked on the spike site: `geo` is present, with country, region and city. On Node, EmDash's `extractGeo` returns null, because there's no `cf` object, even behind Cloudflare's proxy or a tunnel.
+   - **Before any bridge call:**
+     - `bridge/sync` answers `{ error: { code: "UNSUPPORTED_PLATFORM" } }`
+     - `checkout` answers the same
+     - the admin page shows one message ("Coffer doesn't support EmDash sites hosted on Cloudflare Workers yet") and nothing else
+   - **The bridge and installer** turn that code into a plain line instead of a generic error (a bridge change, in the next release rebuild).
+   - **The theme's `checkoutErrorMessage`** gets a line for it.
+   - **The `status` route** stays as is (it fits the limit).
+2. **The 1,000-row watch truncation is in Coffer's own scan helper** (`collect()`, 10 pages of 100), **so it affects Node too.**
+   - **Release 1 fix:** the watch-candidate scans page through to the end, under a safety cap sized to the most the spam cap allows (40 open invoices per 30 minutes, kept 8 days for tips: about 15,400 rows; cap 200 pages). The admin page's Health warns if the cap is ever reached.
+   - **Cost on Node:** about 0.2 s a sync at 15,000 invoices (session 7a).
+   - **A** replaces the scan with a KV watch index.
+3. **In 7b and 7c, use `getMany`/`putMany` where it's cheap** (at most 98 ids a call), so A is smaller later.
+

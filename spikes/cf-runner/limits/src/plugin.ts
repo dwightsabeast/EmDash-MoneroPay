@@ -138,7 +138,15 @@ const plugin: SandboxedPlugin = {
 			methods: ["GET"],
 			cacheControl: "private, no-store",
 			request: { body: "none" },
-			handler: async (routeCtx, ctx) => op(ctx, (routeCtx.input ?? {}) as Record<string, unknown>),
+			handler: async (routeCtx, ctx) => {
+				const q = (routeCtx.input ?? {}) as Record<string, unknown>;
+				// What EmDash passes as requestMeta: is geo set on the Cloudflare runner (and null on Node)?
+				if (q.kind === "meta") {
+					const m = routeCtx.requestMeta as { ip?: unknown; geo?: unknown } | undefined;
+					return { geoPresent: m?.geo !== null && m?.geo !== undefined, geoKeys: m?.geo ? Object.keys(m.geo as object) : [], ipPresent: typeof m?.ip === "string" };
+				}
+				return op(ctx, q);
+			},
 		}),
 	},
 };
