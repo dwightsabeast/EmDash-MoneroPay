@@ -4,6 +4,7 @@ import type { InvoiceEvent } from "./core/invoice";
 import { handleAdmin } from "./admin";
 import { handleCheckout } from "./checkout";
 import { ensureCron, purgeBatch } from "./housekeeping";
+import { UNSUPPORTED_PLATFORM, onCloudflareWorkers, unsupportedPage } from "./platform";
 import { handleStatus } from "./status";
 import { CtxSyncStore, KV, deletePluginData } from "./store";
 import { handleSync } from "./sync/handle";
@@ -45,6 +46,8 @@ const plugin: SandboxedPlugin = {
 			methods: ["POST"],
 			request: { body: "bytes", headers: ["x-xmr-ts", "x-xmr-sig"], maxBytes: MAX_BODY_BYTES },
 			handler: async (routeCtx, ctx) => {
+				// Spec change 35: on Cloudflare Workers pairing alone exceeds the runner's 10 bridge calls; say so first.
+				if (onCloudflareWorkers(routeCtx.requestMeta)) return { error: { code: UNSUPPORTED_PLATFORM } };
 				const now = Date.now();
 				const out = await handleSync({ body: routeCtx.input, headers: routeCtx.request.headers, now }, new CtxSyncStore(ctx));
 				if ("ok" in out.response) {
@@ -61,6 +64,7 @@ const plugin: SandboxedPlugin = {
 			methods: ["POST"],
 			request: { body: "json", maxBytes: 4096 },
 			handler: async (routeCtx, ctx) => {
+				if (onCloudflareWorkers(routeCtx.requestMeta)) return { error: { code: UNSUPPORTED_PLATFORM } };
 				const meta = routeCtx.requestMeta as { ip?: string | null } | undefined;
 				return handleCheckout(ctx, routeCtx.input, typeof meta?.ip === "string" ? meta.ip : null, Date.now());
 			},
@@ -79,7 +83,9 @@ const plugin: SandboxedPlugin = {
 			// No `request` block: EmDash passes this route the request's headers (minus cookies and credentials), so the
 			// admin's browser Origin is here for the wallet host's address when EmDash's saved one can't be used
 			// (spec change 23). Public routes never read it (matrix row F06).
-			handler: async (routeCtx, ctx) => handleAdmin(ctx, routeCtx.input, Date.now(), routeCtx.request.headers.origin),
+			handler: async (routeCtx, ctx) =>
+				// Spec change 35: one message on Cloudflare Workers, with no storage read.
+				onCloudflareWorkers(routeCtx.requestMeta) ? { blocks: unsupportedPage() } : handleAdmin(ctx, routeCtx.input, Date.now(), routeCtx.request.headers.origin),
 		},
 	},
 };
