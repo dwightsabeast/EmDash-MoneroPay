@@ -2888,3 +2888,17 @@ Not done:
 - **Wyatt's look at the page.** The dev site has no settled visitor tips yet (only the expired 7a dev tips), so the look fits better in 7c, after real tips from the button.
 
 Next: push; then 7c (TipButton, the tip endpoint, the 18 A fallback, the pay page's tip lines, live tips from Feather, the installation text).
+
+### 2026-10-16 (late night) · Before 7c: Wyatt's four items
+
+- **(1)** With goods off, the Health banners say tips are still taken (silent, starting, node syncing), "Tips can't be taken" (no addresses), and fiat tips become open tips (price feed down). `admin-health` runs under both configs.
+- **(2)** Tips says "Test tips from Setup aren't counted here."
+- **(3) `inv_5ca6c02ecf6cc249` is a session 3h test, though not the dedicated underpay one.**
+  - The dev scripts' state file names its token `two-part`, and 3h's table says "A first two-part attempt whose second part couldn't come in time did the same".
+  - It's a product with 60% received (1,068,585,371 of 1,780,975,619) on 2026-10-05 at 23:34 UTC, in review as underpaid since its window ended.
+  - The dedicated 90% underpay test is the invoice named `underpaid`.
+- **(4)** Confirmations of invoices the bridge no longer watches read "when last checked (date)".
+- **Commits and tests:** `a48d0b2`. Default 240, switch-on 92.
+- **Found:**
+  - **A cold-start flake:** `admin-health`'s first test sometimes hangs when it's the first test after a fresh build, on old and new code alike. The test host's D1 isn't migrated yet ("no such table" at plugin load). It passes in full runs.
+  - **A leftover `astro dev`** (about 1.9 GB) from my Node check was still running after I thought I'd stopped it; the stop had hit an older instance. Stopped now, and two `admin-health` failures under that memory pressure didn't reproduce afterwards.
