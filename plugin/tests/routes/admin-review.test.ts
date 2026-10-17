@@ -89,7 +89,8 @@ describe("Needs a decision", () => {
 		expect(text(t)).toContain("Paid in full (0.001785714286 XMR), but mined after the invoice's deadline. The money is in your wallet.");
 		expect(text(t)).toContain("Recommended: mark it settled and fulfil the order.");
 		expect(actions(t)).toEqual([{ type: "button", action_id: "invoice_action", label: "Mark settled", style: "primary", value: "settle:inv_0001" }, OPEN_PRODUCT(1)]);
-		expect(field(t, "Confirmations")).toBe("94 (needs 2)");
+		// Oct 6 and long past its watch: the count is as last checked (Wyatt, phase 07).
+		expect(field(t, "Confirmations")).toBe("94 when last checked (Oct 6); needed 2");
 	});
 
 	it("late but short of the price: treated like underpaid, Expire recommended (Wyatt, Q2)", async () => {
@@ -106,7 +107,7 @@ describe("Needs a decision", () => {
 	it("underpaid: how much arrived, the refund address as plain text, Expire recommended, wording that points at All invoices", async () => {
 		await setup([invoice(2, { reviewReason: "underpaid", buyer: { refundAddress: ADDR(77) }, transfers: [transfer({ amountAtomic: "1339285715", confirmations: 7 })] })]);
 		const t = toggle(await load(), "inv_0002") as B;
-		expect(text(t)).toContain("0.001339285715 of 0.001785714286 XMR arrived (75%) by the deadline, 7 confirmations.");
+		expect(text(t)).toContain("0.001339285715 of 0.001785714286 XMR arrived (75%) by the deadline, 7 confirmations when last checked (Oct 6).");
 		expect(text(t)).toContain(`Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${__COFFER_GOODS__ ? " To accept the smaller amount instead, find it under All invoices below and choose Mark settled from its Actions menu." : '"'}`);
 		// In its own box, not cut off in the fields grid (round 2, change 2).
 		expect(fieldsOf(t).some((f) => f.label === "Refund address")).toBe(false);
@@ -227,6 +228,16 @@ describe("limits", () => {
 		expect(blocks.some((x) => x.type === "code" && String(x.code).includes("/install.sh"))).toBe(true);
 		expect(nodes(page)).toBeLessThan(2000);
 		expect(JSON.stringify(page).length).toBeLessThan(256 * 1024);
+	});
+
+	it("confirmations: a live number while the bridge still watches the invoice, 'when last checked' once it doesn't", async () => {
+		const recent = Date.now() - 2 * 3_600_000; // a deadline 2 hours ago: inside the 24-hour late window, still watched
+		const live = { ...invoice(31, { reviewReason: "late", transfers: [transfer({ confirmations: 5, seenAt: recent })] }), expiresAt: recent, seq: recent };
+		const old = invoice(32, { reviewReason: "late", transfers: [transfer({ confirmations: 94 })] }); // Oct 6
+		await setup([live, old]);
+		const b = await load();
+		expect(field(toggle(b, "inv_0031") as B, "Confirmations")).toBe("5 (needs 2)");
+		expect(field(toggle(b, "inv_0032") as B, "Confirmations")).toBe("94 when last checked (Oct 6); needed 2");
 	});
 
 	it("red first across the whole queue, not just the first page by deadline", { timeout: 30_000 }, async () => {

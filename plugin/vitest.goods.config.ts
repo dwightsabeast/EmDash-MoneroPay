@@ -27,7 +27,7 @@ export default defineConfig({
 	define: { __COFFER_GOODS__: "true" },
 	test: {
 		// The files whose behavior depends on the switch: product checkout, All invoices, and the parts that mention it.
-		include: ["tests/routes/checkout-route.test.ts", "tests/routes/admin-invoices.test.ts", "tests/routes/admin-review.test.ts", "tests/routes/admin-layout.test.ts", "tests/routes/release1.test.ts"],
+		include: ["tests/routes/checkout-route.test.ts", "tests/routes/admin-invoices.test.ts", "tests/routes/admin-review.test.ts", "tests/routes/admin-layout.test.ts", "tests/routes/admin-health.test.ts", "tests/routes/release1.test.ts"],
 		maxWorkers: 1,
 		testTimeout: 20_000,
 	},

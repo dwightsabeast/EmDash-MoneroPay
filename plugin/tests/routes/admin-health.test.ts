@@ -105,10 +105,10 @@ describe("health panel", () => {
 		expect(await widgetText()).toContain("Not set up: connect a wallet host on the Monero payments page.");
 	});
 
-	it("a silent wallet host: a red line that names the fix and says checkout is paused", async () => {
+	it("a silent wallet host: a red line that names the fix and says what happens to payments meanwhile", async () => {
 		await setup({ lastSyncAgo: 12 * 60_000 });
 		const b = await load();
-		expect(banners(b)).toContainEqual({ variant: "error", title: "Wallet host silent for 12 min", description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
+		expect(banners(b)).toContainEqual({ variant: "error", title: "Wallet host silent for 12 min", description: `${__COFFER_GOODS__ ? "Checkout is paused until it syncs again." : "Tips are still taken and are confirmed once it syncs again."} On the wallet host, run: xmr-bridge status` });
 		expect(field(b, "Last sync")).toBe("12 min ago");
 		expect(await widgetText()).toContain("Wallet host silent for 12 min");
 	});
@@ -154,10 +154,10 @@ describe("health panel", () => {
 			expect(synced(b)).toBe("Done");
 		});
 
-		it("a synced wallet host that restarts: amber, checkout paused, not silent", async () => {
+		it("a synced wallet host that restarts: amber, not silent", async () => {
 			const h = await setup({ lastSyncAgo: 8 * 60_000, heardAgo: 30_000, checks: STARTING });
 			const b = await load();
-			expect(banners(b)).toContainEqual({ variant: "alert", title: "The wallet host is starting", description: "Monero's wallet program is opening the wallet, which can take a few minutes. Checkout is paused until the next sync." });
+			expect(banners(b)).toContainEqual({ variant: "alert", title: "The wallet host is starting", description: `Monero's wallet program is opening the wallet, which can take a few minutes. ${__COFFER_GOODS__ ? "Checkout is paused until the next sync." : "Tips are still taken and are confirmed after the next sync."}` });
 			expect(titles(b).some((t) => t.startsWith("Wallet host silent"))).toBe(false);
 			expect((await h.admin.act("/payments", "get_test_address")).toast).toMatchObject({ type: "error" });
 		});
@@ -186,7 +186,7 @@ describe("health panel", () => {
 		await setup({ checks: { wallet: { state: "syncing", detail: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has" } } });
 		const b = await load();
 		expect(field(b, "Wallet height")).toBe("3000000: the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has");
-		expect(banners(b)).toContainEqual({ variant: "error", title: "The wallet host's node is still syncing", description: "the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. Checkout is paused until then. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress." });
+		expect(banners(b)).toContainEqual({ variant: "error", title: "The wallet host's node is still syncing", description: `the wallet host's node is still catching up with the network (block 94954 of about 2227755); payments show up once it has. ${__COFFER_GOODS__ ? "Checkout is paused until then." : "Tips are still taken and are confirmed once it has caught up."} A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
 		expect(await widgetText()).toContain("The wallet host's node is still syncing");
 	});
 
@@ -210,14 +210,14 @@ describe("health panel", () => {
 
 	it("no payment addresses ready: red", async () => {
 		await setup({ free: 0 });
-		expect(banners(await load())).toContainEqual({ variant: "error", title: "No payment addresses ready", description: "Checkout can't take payments until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host." });
+		expect(banners(await load())).toContainEqual({ variant: "error", title: "No payment addresses ready", description: `${__COFFER_GOODS__ ? "Checkout can't take payments" : "Tips can't be taken"} until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host.` });
 	});
 
 	it("the price feed: red when both price services fail", async () => {
 		await setup({ price: false });
 		const b = await load();
 		expect(field(b, "Price feed")).toBe("Not answering");
-		expect(banners(b)).toContainEqual({ variant: "error", title: "Price feed not answering", description: "Both price services failed just now, so checkout refuses new orders until one answers. It retries by itself; if this lasts, check the site's outbound network." });
+		expect(banners(b)).toContainEqual({ variant: "error", title: "Price feed not answering", description: `Both price services failed just now, so ${__COFFER_GOODS__ ? "checkout refuses new orders" : "tips with a fiat amount are taken as open tips"} until one answers. It retries by itself; if this lasts, check the site's outbound network.` });
 	});
 
 	it("review items: counted, amber, and in the widget", async () => {

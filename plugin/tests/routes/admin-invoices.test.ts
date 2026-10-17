@@ -88,7 +88,9 @@ describe("invoice list", () => {
 		]);
 		const b = await load();
 		const label = (id: string) => item(b, id).label;
-		expect(label("inv_0001")).toBe(`Settled · 12.00 USD · received ${DUE} XMR · 36 confirmations · created 20 hours ago`);
+		// 36 deep: past the bridge's watch, so the count is as last checked (Wyatt, phase 07); the payment was seen at T0.
+		const checked = ` when last checked (${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][new Date(T0).getUTCMonth()]} ${new Date(T0).getUTCDate()})`;
+		expect(label("inv_0001")).toBe(`Settled · 12.00 USD · received ${DUE} XMR · 36 confirmations${checked} · created 20 hours ago`);
 		expect(label("inv_0002")).toBe(`Expired · 12.00 USD · nothing received (${DUE} XMR due) · created 1 day ago`);
 		expect(label("inv_0003")).toBe(`Needs decision: underpaid · 12.00 USD · received 0.040000000000 of ${DUE} XMR · 94 confirmations · created 3 days ago`);
 		expect(label("inv_0004")).toBe(`Needs decision: late · 12.00 USD · received ${DUE} XMR · 1 confirmation · created 2 hours ago`);

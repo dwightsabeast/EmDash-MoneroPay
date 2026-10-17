@@ -63,6 +63,7 @@ describe("Tips view", () => {
 		const testTip = { ...settled(1, "500000000"), via: undefined };
 		await setup([testTip]);
 		const s = tipsSection(await load());
+		expect(s[1]).toEqual({ type: "context", text: "Test tips from Setup aren't counted here." });
 		expect(s).toContainEqual({ type: "context", text: "No tips yet. When visitors tip, the totals and their notes show here." });
 		expect(text(s)).not.toContain("0.0005");
 	});
@@ -80,6 +81,7 @@ describe("Tips view", () => {
 			{ ...settled(8, "8000000000", { entry: HELLO }), via: undefined }, // an admin test tip
 		]);
 		const s = tipsSection(await load());
+		expect(s[1]).toEqual({ type: "context", text: "Test tips from Setup aren't counted here." });
 		expect(s).toContainEqual({ type: "fields", fields: [{ label: "Received", value: "0.0045 XMR" }, { label: "Tips", value: "5 settled" }] });
 		const byEntry = s.find((b) => b.type === "fields" && b.block_id === "tips_by_entry");
 		expect(byEntry?.fields).toEqual([

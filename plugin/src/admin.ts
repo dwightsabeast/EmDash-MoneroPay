@@ -12,6 +12,7 @@ import { MAX_OPEN_TOTAL, checkoutHeight, claimAndStore, newIds } from "./checkou
 import { DUST_ATOMIC, GAP_ALERT, GOODS_ENABLED, LATE_WINDOW_MS, MAX_REQUIRED, PRESETS, RECONFIRM_BLOCKS, SILENT_MS, type Speed, TEST_TIP_REQUIRED, UNPAID_RUN_ALERT } from "./core/constants";
 import { type Invoice, counted, isOpen, newInvoice, totals } from "./core/invoice";
 import { atomicToXmr } from "./core/money";
+import { isWatched } from "./core/watch";
 import { invoiceUri } from "./core/uri";
 import { ensureCron } from "./housekeeping";
 import { CURRENCIES, type Currency, getRate, isCurrency } from "./rates";
@@ -130,6 +131,14 @@ async function health(ctx: PluginContext, now: number, opts: { checkRate: boolea
 const minorText = (m: bigint) => `${m / 100n}.${(m % 100n).toString().padStart(2, "0")}`;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * What happens to payments while the wallet host can't confirm them. With goods on, product checkout refuses; with the
+ * release-1 switch off, tips are still taken (decisions, 2026-10-12; spec change 33) and confirmed later.
+ */
+const PAUSED = GOODS_ENABLED
+	? { silent: "Checkout is paused until it syncs again.", starting: "Checkout is paused until the next sync.", syncing: "Checkout is paused until then." }
+	: { silent: "Tips are still taken and are confirmed once it syncs again.", starting: "Tips are still taken and are confirmed after the next sync.", syncing: "Tips are still taken and are confirmed once it has caught up." };
+
 /** Red (error) and amber (alert) lines, worst first, each naming its fix. */
 function problems(h: Health): Array<{ variant: "error" | "alert"; title: string; description: string }> {
 	const out: ReturnType<typeof problems> = [];
@@ -137,21 +146,21 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 	if (h.silentFor !== null && h.neverSynced) {
 		out.push({ variant: "error", title: "Paired, but the wallet host hasn't synced", description: `Nothing has come from it for ${Math.floor(h.silentFor / 60_000)} min. On the wallet host, run: sudo xmr-bridge status --config /etc/xmr-bridge/config` });
 	} else if (h.silentFor !== null) {
-		out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: "Checkout is paused until it syncs again. On the wallet host, run: xmr-bridge status" });
+		out.push({ variant: "error", title: `Wallet host silent for ${Math.floor(h.silentFor / 60_000)} min`, description: `${PAUSED.silent} On the wallet host, run: xmr-bridge status` });
 	} else if (h.lastSyncAgo !== null && h.lastSyncAgo > SILENT_MS && checks?.wallet?.state === "starting") {
-		out.push({ variant: "alert", title: "The wallet host is starting", description: "Monero's wallet program is opening the wallet, which can take a few minutes. Checkout is paused until the next sync." });
+		out.push({ variant: "alert", title: "The wallet host is starting", description: `Monero's wallet program is opening the wallet, which can take a few minutes. ${PAUSED.starting}` });
 	}
 	if (h.paired && !h.bridge) out.push({ variant: "alert", title: "Wallet host paired but not syncing yet", description: "On the wallet host, run: xmr-bridge status" });
 	if (checks?.wallet?.state === "syncing") {
-		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. Checkout is paused until then. A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
+		out.push({ variant: "error", title: "The wallet host's node is still syncing", description: `${checks.wallet.detail ?? "The wallet host's node is still catching up with the network; payments show up once it has"}. ${PAUSED.syncing} A new node can take hours; it needs nothing from you. On the wallet host, xmr-bridge status shows the progress.` });
 	}
 	if (checks?.wallet?.state === "behind") {
 		out.push({ variant: "error", title: "The wallet is behind its node", description: `${checks.wallet.detail ?? "The wallet is behind its node"}. It catches up by itself after a restart or an outage; if this stays, run xmr-bridge status on the wallet host.` });
 	}
 	if (checks?.node?.state === "mismatch") out.push({ variant: "error", title: "The wallet host's node disagrees with a second node", description: checks.node.detail ?? "Payments in the disputed block are held at 0 confirmations. Use your own node, or one you trust" });
 	// Before the first full sync the pool is empty by design; the checklist says so.
-	if (h.paired && h.lastSyncAgo !== null && h.free === 0) out.push({ variant: "error", title: "No payment addresses ready", description: "Checkout can't take payments until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host." });
-	if (h.rate === null) out.push({ variant: "error", title: "Price feed not answering", description: "Both price services failed just now, so checkout refuses new orders until one answers. It retries by itself; if this lasts, check the site's outbound network." });
+	if (h.paired && h.lastSyncAgo !== null && h.free === 0) out.push({ variant: "error", title: "No payment addresses ready", description: `${GOODS_ENABLED ? "Checkout can't take payments" : "Tips can't be taken"} until the wallet host adds more, which it does at its next sync. If this stays, run xmr-bridge status on the wallet host.` });
+	if (h.rate === null) out.push({ variant: "error", title: "Price feed not answering", description: `Both price services failed just now, so ${GOODS_ENABLED ? "checkout refuses new orders" : "tips with a fiat amount are taken as open tips"} until one answers. It retries by itself; if this lasts, check the site's outbound network.` });
 	if (h.gap.value >= GAP_ALERT) {
 		out.push({
 			variant: "error",
@@ -457,11 +466,24 @@ function since(ms: number): string {
  * The deepest counted transfer, so an underpaid or review invoice doesn't read "0 confirmations" (phase 03 3h note). A
  * payment that's gone says so instead of "None yet" (Wyatt, 2026-10-09).
  */
-function confirmationsText(inv: Invoice): string {
+function confirmationsText(inv: Invoice, now: number): string {
 	if (inv.status === "review" && inv.reviewReason === "reversed") return `No longer reported (needed ${inv.required})`;
 	if (inv.status === "review" && inv.reviewReason === "reorg") return `Not mined again (needed ${inv.required})`;
 	const deepest = Math.max(-1, ...inv.transfers.filter(counted).map((t) => t.confirmations));
-	return `${deepest < 0 ? "None yet" : deepest} (needs ${inv.required})`;
+	if (deepest < 0) return `None yet (needs ${inv.required})`;
+	const checked = lastChecked(inv, now);
+	return checked ? `${deepest}${checked}; needed ${inv.required}` : `${deepest} (needs ${inv.required})`;
+}
+
+/**
+ * Once the bridge no longer watches an invoice, its confirmation counts stop moving: say when they were last checked
+ * instead of showing a number that looks live (Wyatt, phase 07). The date is the bridge's last report on it (`seq`), or
+ * the newest payment's first sighting if there's none. Empty while it's still watched.
+ */
+function lastChecked(inv: Invoice, now: number): string {
+	if (isWatched(inv, now)) return "";
+	const at = inv.seq > 0 ? inv.seq : Math.max(0, ...inv.transfers.map((t) => t.seenAt));
+	return at > 0 ? ` when last checked (${shortDate(at)})` : "";
 }
 
 /** Why a transfer doesn't count; empty when it does. unlock_time below 500000000 is a block height, otherwise a Unix time. */
@@ -507,9 +529,9 @@ function allowed(inv: Invoice): Verb[] {
 }
 
 /** A transfer with why it doesn't count, or "counted". */
-function transferNote(t: Invoice["transfers"][number]): string {
+function transferNote(t: Invoice["transfers"][number], checked: string): string {
 	const why = notCountedReasons(t);
-	const base = `${atomicToXmr(BigInt(t.amountAtomic))} XMR, ${t.confirmations} confirmations`;
+	const base = `${atomicToXmr(BigInt(t.amountAtomic))} XMR, ${t.confirmations} confirmations${checked}`;
 	return why.length === 0 ? `${base}, counted` : `${base}, not counted: ${why.join("; ")}`;
 }
 
@@ -526,7 +548,7 @@ function invoiceLabel(inv: Invoice, now: number): string {
 		else if (due !== null && received < due) parts.push(`received ${xmr(received)} of ${xmr(due)} XMR`);
 		else parts.push(`received ${xmr(received)} XMR`);
 		const depths = inv.transfers.filter(counted).map((t) => t.confirmations);
-		if (depths.length > 0) parts.push(plural(Math.max(...depths), "confirmation", "confirmations"));
+		if (depths.length > 0) parts.push(`${plural(Math.max(...depths), "confirmation", "confirmations")}${lastChecked(inv, now)}`);
 	}
 	parts.push(`created ${since(now - inv.createdAt)}`);
 	return parts.join(" · ");
@@ -536,9 +558,10 @@ function invoiceLabel(inv: Invoice, now: number): string {
  * Every payment in one box, each with its Transaction ID under it (round 2, change 4). One code block costs the same
  * few nodes whatever the count, which is what fits 10 invoices' details on one page.
  */
-function transfersCode(inv: Invoice): string {
+function transfersCode(inv: Invoice, now: number): string {
 	const n = inv.transfers.length;
-	const listed = inv.transfers.slice(0, TRANSFERS_LISTED).map((t, i) => `Payment ${i + 1} of ${n}: ${transferNote(t)}\nTransaction ID: ${t.txid}`);
+	const checked = lastChecked(inv, now);
+	const listed = inv.transfers.slice(0, TRANSFERS_LISTED).map((t, i) => `Payment ${i + 1} of ${n}: ${transferNote(t, checked)}\nTransaction ID: ${t.txid}`);
 	if (n > TRANSFERS_LISTED) listed.push(`…and ${n - TRANSFERS_LISTED} more payments.`);
 	return listed.join("\n\n");
 }
@@ -554,7 +577,7 @@ function invoiceItem(inv: Invoice, now: number, opts: { acted: boolean; cursor?:
 		...(inv.fiat ? [{ label: "Amount", value: fiatText(inv) }] : []),
 		...(inv.expectedAtomic ? [{ label: "Due", value: `${xmr(BigInt(inv.expectedAtomic))} XMR` }] : []),
 		{ label: "Received", value: receivedText(inv) },
-		{ label: "Confirmations", value: confirmationsText(inv) },
+		{ label: "Confirmations", value: confirmationsText(inv, now) },
 		{ label: "Created", value: dateTime(inv.createdAt) },
 		{ label: "Expires", value: isFinal(inv) ? "—" : dateTime(inv.expiresAt) },
 		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
@@ -571,9 +594,12 @@ function invoiceItem(inv: Invoice, now: number, opts: { acted: boolean; cursor?:
 	if (inv.buyer?.refundAddress) inner.push({ type: "context", text: "Buyer's refund address" }, { type: "code", code: inv.buyer.refundAddress });
 	if (inv.buyer?.note) inner.push({ type: "context", text: `Buyer's note: ${inv.buyer.note}` });
 	if (inv.transfers.length === 0) inner.push({ type: "context", text: "No payment reported yet." });
-	else inner.push({ type: "context", text: "Find each payment in your wallet app's transaction history by its Transaction ID." }, { type: "code", code: transfersCode(inv) });
+	else inner.push({ type: "context", text: "Find each payment in your wallet app's transaction history by its Transaction ID." }, { type: "code", code: transfersCode(inv, now) });
 	return { type: "accordion", block_id: opts.acted ? `invoice_${inv.id}_acted` : `invoice_${inv.id}`, label: invoiceLabel(inv, now), default_open: opts.acted, blocks: inner };
 }
+
+/** Said under the Tips header (Wyatt, phase 07): the admin's own test tips from Setup never count here. */
+const TEST_TIPS_NOT_COUNTED = "Test tips from Setup aren't counted here.";
 
 /** Visitor tips read for the Tips view: the newest TIPS_SCANNED, in pages of 100 on the kind+createdAt index. */
 const TIPS_SCANNED = 1_000;
@@ -620,7 +646,7 @@ async function tipsBlocks(ctx: PluginContext): Promise<Block[]> {
 		cursor = r.cursor;
 		if (tips.length >= TIPS_SCANNED) more = true;
 	}
-	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Tips" }];
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Tips" }, { type: "context", text: TEST_TIPS_NOT_COUNTED }];
 	if (tips.length === 0) {
 		blocks.push({ type: "context", text: "No tips yet. When visitors tip, the totals and their notes show here." });
 		return blocks;
@@ -688,7 +714,7 @@ const button = (label: string, value: string, style: "primary" | "secondary", co
  * One review item: a banner with the reason and its invoice, then a closed "Details and actions" toggle with what
  * happened and the one recommended action (decisions.md, 2026-10-08 and 2026-10-09).
  */
-function reviewItem(inv: Invoice): Block[] {
+function reviewItem(inv: Invoice, now: number): Block[] {
 	const t = totals(inv);
 	const expected = BigInt(inv.expectedAtomic ?? inv.minAtomic ?? "0");
 	const pct = expected > 0n ? (t.received * 100n) / expected : 0n;
@@ -714,7 +740,7 @@ function reviewItem(inv: Invoice): Block[] {
 		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
 	} else if (reason === "underpaid") {
 		title += ` · ${pct}% received`;
-		what = `${xmr(t.received)} of ${xmr(expected)} XMR arrived (${pct}%) by the deadline, ${deepest} confirmations.`;
+		what = `${xmr(t.received)} of ${xmr(expected)} XMR arrived (${pct}%) by the deadline, ${deepest} confirmations${lastChecked(inv, now)}.`;
 		advice = `Recommended: expire it, don't fulfil the order, and refund the buyer from your wallet app.${rowHint("the smaller amount")}`;
 		actions.push(button("Expire", `expire:${inv.id}`, "primary"));
 	} else if (reason === "reorg") {
@@ -732,7 +758,7 @@ function reviewItem(inv: Invoice): Block[] {
 	actions.push(...productLink(inv));
 	const fields = [
 		{ label: "Received", value: receivedText(inv) },
-		{ label: "Confirmations", value: confirmationsText(inv) },
+		{ label: "Confirmations", value: confirmationsText(inv, now) },
 		...(inv.buyer?.email ? [{ label: "Buyer email", value: inv.buyer.email }] : []),
 	];
 	// The refund address in its own box, never cut off in the fields grid (round 2, change 2).
@@ -751,7 +777,7 @@ function reviewItem(inv: Invoice): Block[] {
 }
 
 /** Needs a decision: red first, then the oldest deadline, 12 at a time from `start`, up to item 60. */
-async function reviewBlocks(ctx: PluginContext, total: number, start: number): Promise<Block[]> {
+async function reviewBlocks(ctx: PluginContext, total: number, start: number, now: number): Promise<Block[]> {
 	if (total === 0) return [];
 	const all: Invoice[] = [];
 	let cursor: string | undefined;
@@ -767,7 +793,7 @@ async function reviewBlocks(ctx: PluginContext, total: number, start: number): P
 	const page = ordered.slice(from, Math.min(from + REVIEW_STEP, reachable));
 	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: `Needs a decision (${total})` }];
 	if (total > REVIEW_STEP) blocks.push({ type: "context", text: `Showing ${from + 1}–${from + page.length} of ${total}.` });
-	blocks.push(...page.flatMap(reviewItem));
+	blocks.push(...page.flatMap((inv) => reviewItem(inv, now)));
 	const end = from + page.length;
 	const nav: Block[] = [];
 	if (from > 0) nav.push({ type: "button", action_id: "review_page", label: `Back to the first ${REVIEW_STEP}`, value: { start: 0 } });
@@ -877,7 +903,7 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...setup.recentTip];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
 	// All invoices (products) only with goods on: the release-1 switch, spec change 22.
-	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await tipsBlocks(ctx)), ...(GOODS_ENABLED ? await invoiceBlocks(ctx, now, opts) : []));
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0, now)), ...(await tipsBlocks(ctx)), ...(GOODS_ENABLED ? await invoiceBlocks(ctx, now, opts) : []));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
