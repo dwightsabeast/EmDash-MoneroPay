@@ -60,24 +60,24 @@ const withGoods = (outline: string[]) => (__COFFER_GOODS__ ? outline : outline.f
 describe("page order", () => {
 	it("before setup, nothing to flag: checklist, Connect, Health, All invoices, Settings", async () => {
 		await setup();
-		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "a:setup", "h:Connect wallet host", "h:Health", "h:All invoices", "h:Settings"]));
+		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "a:setup", "h:Connect wallet host", "h:Health", "h:Tips", "h:All invoices", "h:Settings"]));
 	});
 
 	it("before setup, with a red line and a review item: banners first, Needs a decision above All invoices", async () => {
 		await setup({ review: true, silent: true });
-		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "banner", "banner", "a:setup", "h:Connect wallet host", "h:Health", "h:Needs a decision (1)", "review", "h:All invoices", "h:Settings"]));
+		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "banner", "banner", "a:setup", "h:Connect wallet host", "h:Health", "h:Needs a decision (1)", "review", "h:Tips", "h:All invoices", "h:Settings"]));
 	});
 
 	it("after setup, nothing to flag: Health first, the checklist as a closed toggle last", async () => {
 		await setup({ done: true });
 		const b = await load();
-		expect(outline(b)).toEqual(withGoods(["h:Monero payments", "h:Health", "h:All invoices", "h:Settings", "a:setup"]));
+		expect(outline(b)).toEqual(withGoods(["h:Monero payments", "h:Health", "h:Tips", "h:All invoices", "h:Settings", "a:setup"]));
 		expect(b.at(-1)).toMatchObject({ type: "accordion", block_id: "setup", label: "Setup (complete)", default_open: false });
 	});
 
 	it("after setup, with banners and a review item", async () => {
 		await setup({ done: true, review: true, silent: true });
-		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "banner", "banner", "h:Health", "h:Needs a decision (1)", "review", "h:All invoices", "h:Settings", "a:setup"]));
+		expect(outline(await load())).toEqual(withGoods(["h:Monero payments", "banner", "banner", "h:Health", "h:Needs a decision (1)", "review", "h:Tips", "h:All invoices", "h:Settings", "a:setup"]));
 	});
 });
 

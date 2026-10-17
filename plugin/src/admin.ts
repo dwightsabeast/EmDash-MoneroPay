@@ -575,6 +575,91 @@ function invoiceItem(inv: Invoice, now: number, opts: { acted: boolean; cursor?:
 	return { type: "accordion", block_id: opts.acted ? `invoice_${inv.id}_acted` : `invoice_${inv.id}`, label: invoiceLabel(inv, now), default_open: opts.acted, blocks: inner };
 }
 
+/** Visitor tips read for the Tips view: the newest TIPS_SCANNED, in pages of 100 on the kind+createdAt index. */
+const TIPS_SCANNED = 1_000;
+const TIPS_LISTED = 10;
+const TIP_ENTRIES_LISTED = 10;
+const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+/** A tip's entry name, from the title stored at tip time ("Tip: <title>"), so no content lookups are needed. */
+const tipEntryName = (inv: Invoice) => (inv.contentRef && inv.uriDescription?.startsWith("Tip: ") ? inv.uriDescription.slice(5) : inv.contentRef ? "an entry" : "the whole site");
+
+function tipLine(inv: Invoice): string {
+	const received = totals(inv).received;
+	const asked = inv.expectedAtomic !== null ? `${shortXmr(BigInt(inv.expectedAtomic))} XMR` : "any amount";
+	const when = `${shortDate(inv.createdAt)}, ${utc(inv.createdAt)}`;
+	const to = tipEntryName(inv);
+	switch (inv.status) {
+		case "settled":
+			return `${when}: ${shortXmr(received)} XMR to ${to}. Settled.`;
+		case "confirming":
+			return `${when}: ${shortXmr(received)} XMR to ${to}. Confirming.`;
+		case "new":
+		case "seen":
+			return `${when}: ${asked} to ${to}. Waiting for payment.`;
+		case "expired":
+			return received > 0n ? `${when}: ${shortXmr(received)} XMR to ${to}, under the minimum. Expired.` : `${when}: ${asked} to ${to}. Expired, nothing received.`;
+		default:
+			return `${when}: ${shortXmr(received)} XMR to ${to}. Needs a decision.`;
+	}
+}
+
+/**
+ * Tips (phase 07, session 7b): what visitors tipped, per entry, and their newest tips with notes. Totals count settled
+ * visitor tips and their counted payments only; admin test tips (no `via`) never count. Notes are shown as given: EmDash
+ * 1.1.0's Block Kit renders every text as plain text (React children, no HTML or markdown; docs/emdash-upgrade-checklist.md).
+ */
+async function tipsBlocks(ctx: PluginContext): Promise<Block[]> {
+	const tips: Invoice[] = [];
+	let cursor: string | undefined;
+	let more = false;
+	while (tips.length < TIPS_SCANNED) {
+		const r = await invoices(ctx).query({ where: { kind: "tip" }, orderBy: { createdAt: "desc" }, limit: 100, ...(cursor ? { cursor } : {}) });
+		for (const { data } of r.items) if (data.via === "checkout" && tips.length < TIPS_SCANNED) tips.push(data);
+		if (!r.hasMore || !r.cursor) break;
+		cursor = r.cursor;
+		if (tips.length >= TIPS_SCANNED) more = true;
+	}
+	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "Tips" }];
+	if (tips.length === 0) {
+		blocks.push({ type: "context", text: "No tips yet. When visitors tip, the totals and their notes show here." });
+		return blocks;
+	}
+	const counted = tips.filter((t) => t.status === "settled");
+	const total = counted.reduce((sum, t) => sum + totals(t).received, 0n);
+	blocks.push({ type: "fields", fields: [{ label: "Received", value: `${shortXmr(total)} XMR` }, { label: "Tips", value: `${thousands(counted.length)} settled` }] });
+	if (more) blocks.push({ type: "context", text: `Totals cover the newest ${thousands(TIPS_SCANNED)} tips.` });
+
+	const byEntry = new Map<string, { name: string; count: number; sum: bigint }>();
+	for (const t of counted) {
+		const key = t.contentRef ? `${t.contentRef.collection}/${t.contentRef.id}` : "";
+		const e = byEntry.get(key) ?? { name: t.contentRef ? tipEntryName(t) : "Whole site", count: 0, sum: 0n };
+		e.count++;
+		e.sum += totals(t).received;
+		byEntry.set(key, e);
+	}
+	const ranked = [...byEntry.values()].sort((a, b) => (b.sum > a.sum ? 1 : b.sum < a.sum ? -1 : b.count - a.count));
+	if (ranked.length > 0) {
+		const fields = ranked.slice(0, TIP_ENTRIES_LISTED).map((e) => ({ label: e.name, value: `${plural(e.count, "tip", "tips")}, ${shortXmr(e.sum)} XMR` }));
+		const rest = ranked.slice(TIP_ENTRIES_LISTED);
+		if (rest.length > 0) {
+			const n = rest.reduce((a, e) => a + e.count, 0);
+			const sum = rest.reduce((a, e) => a + e.sum, 0n);
+			fields.push({ label: "Other entries", value: `${rest.length} more entries, ${plural(n, "tip", "tips")}, ${shortXmr(sum)} XMR` });
+		}
+		blocks.push({ type: "context", text: "By entry" }, { type: "fields", block_id: "tips_by_entry", fields });
+	}
+
+	blocks.push({ type: "context", text: "Newest tips" });
+	for (const t of tips.slice(0, TIPS_LISTED)) {
+		const open = t.contentRef ? { accessory: { type: "link", label: "Open entry", target: { kind: "content", collection: t.contentRef.collection, id: t.contentRef.id } } } : {};
+		blocks.push({ type: "section", text: tipLine(t), ...open });
+		// The visitor's note as they wrote it: plain text, never interpreted.
+		if (t.buyer?.note) blocks.push({ type: "context", text: `Note: ${t.buyer.note}` });
+	}
+	return blocks;
+}
+
 async function invoiceBlocks(ctx: PluginContext, now: number, opts: PageOptions): Promise<Block[]> {
 	const r = await invoices(ctx).query({ where: { kind: "product" }, orderBy: { createdAt: "desc" }, limit: INVOICE_PAGE, ...(opts.cursor ? { cursor: opts.cursor } : {}) });
 	const blocks: Block[] = [{ type: "divider" }, { type: "header", text: "All invoices" }];
@@ -792,7 +877,7 @@ async function page(ctx: PluginContext, now: number, opts: PageOptions = {}): Pr
 	const blocks: Block[] = [{ type: "header", text: "Monero payments" }, ...bannerBlocks(h), ...setup.recentTip];
 	if (!setup.done) blocks.push(setup.toggle, { type: "divider" }, { type: "header", text: "Connect wallet host" }, ...connect);
 	// All invoices (products) only with goods on: the release-1 switch, spec change 22.
-	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(GOODS_ENABLED ? await invoiceBlocks(ctx, now, opts) : []));
+	blocks.push(...healthBlocks(h), ...(await reviewBlocks(ctx, h.review, opts.reviewStart ?? 0)), ...(await tipsBlocks(ctx)), ...(GOODS_ENABLED ? await invoiceBlocks(ctx, now, opts) : []));
 
 	const currency = await ctx.settings.get<string>(SETTING.currency);
 	const speed = await ctx.settings.get<string>(SETTING.speed);
