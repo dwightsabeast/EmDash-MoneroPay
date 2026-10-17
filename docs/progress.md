@@ -2856,3 +2856,35 @@ Next:
 - Push.
 - 7b (the admin tips view, with `getMany`/`putMany` where cheap), then 7c.
 - The next dev release rebuild carries the bridge hint.
+
+## 2026-10-16 · Phase 07 · Session 7b: the admin Tips view
+
+Before it:
+- **The Cloudflare banner** lost its storage-calls clause (Wyatt).
+- **Guard tests** cover an EmDash upgrade filling `geo` on Node: two tests through EmDash's own request handling, one with `CF-*` headers.
+- **`docs/emdash-upgrade-checklist.md`** is new, and CLAUDE.md's Dependencies section points to it (`8208582`).
+- Pushed `38225e7..8208582`; CI run 38986880116 passed.
+
+Built (`6b010ba`), a **Tips** section after Needs a decision (All invoices follows only with the switch on):
+- **Received** and the number of settled tips: settled visitor tips, counted payments only; admin test tips never count.
+- **By entry:** the top 10, then "Other entries", and "Whole site" for tips without an entry. Names come from the title stored at tip time, so no content lookups; each tip links to its entry.
+- **Newest tips:** the 10 newest, each with its date, amount or what was asked, entry, status, and the note as given.
+  - EmDash 1.1.0's Block Kit renders all text as plain React text (no `dangerouslySetInnerHTML` or markdown in `@emdash-cms/blocks`), so notes show literally. This is now in the upgrade checklist.
+- **The scan reads the newest 1,000 visitor tips,** and the page says so beyond that.
+- **`getMany`/`putMany`:** there was nowhere in 7b where they'd save a call; the view is one indexed query.
+
+Tests:
+- **`admin-tips.test.ts`:** 7 tests:
+  - no tips yet
+  - totals that exclude unsettled tips, not-counted transfers and test tips
+  - links, markdown, HTML and Block Kit-like notes kept literally
+  - the 10 newest
+  - the 1,000-tip bound
+  - notes gone after the purge
+  - the worst case under Block Kit's limits
+- **Overall:** default 239 and switch-on 69 pass. Typecheck clean, bundle 56.8 KB.
+
+Not done:
+- **Wyatt's look at the page.** The dev site has no settled visitor tips yet (only the expired 7a dev tips), so the look fits better in 7c, after real tips from the button.
+
+Next: push; then 7c (TipButton, the tip endpoint, the 18 A fallback, the pay page's tip lines, live tips from Feather, the installation text).
