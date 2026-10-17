@@ -85,6 +85,7 @@ Fixed platform decisions: wallet host on Linux only (systemd) at launch; it must
 ## Dependencies
 
 - Ask first, every time. Give the package, its maintainers, size, license and why the standard library or EmDash's own packages won't do.
+- Before upgrading `emdash` or EmDash's plugin tooling, go through `docs/emdash-upgrade-checklist.md` (EmDash behavior Coffer relies on, and the test that guards each).
 - No single-maintainer libraries for crypto, wallet or money logic (monero-ts was rejected for this reason).
 - Go: standard library only, JavaScript: see the tiers below. Pin exact versions and commit lockfiles.
 - The plugin bundle has hard caps: `backend.js` at most 128 KB and the whole tarball at most 256 KB decompressed. Check with `pnpm exec emdash-plugin bundle --validate-only` before every commit that touches `plugin/`.

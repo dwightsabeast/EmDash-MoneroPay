@@ -1,0 +1,13 @@
+# EmDash upgrade checklist
+
+Coffer relies on some EmDash behavior that isn't a documented promise. Before moving `emdash` (or `@emdash-cms/plugin-cli`, `@emdash-cms/plugin-test`) to a new version in `plugin/`, `theme/` or the dev site, go through this list. Run the full suites (`cd plugin && pnpm test`, `cd theme && pnpm test`) and `scripts/dev-e2e.mjs` on the dev site, and check each item. Add an item whenever Coffer comes to rely on another such behavior.
+
+| What Coffer relies on | Why it matters | How it's checked |
+| --- | --- | --- |
+| **`requestMeta.geo` is null off Cloudflare Workers.** EmDash sets it only from Cloudflare's `cf` object, never from `CF-*` headers (spec change 35) | Coffer refuses Cloudflare-hosted sites by `geo !== null`. If an upgrade filled it on Node (for example from `CF-IPCountry` behind Cloudflare's proxy), **every Node site would be refused** | `plugin/tests/routes/platform.test.ts`: the two tests through EmDash's own request handling (one with `CF-*` headers). Also read EmDash's `extractRequestMeta` and `extractGeo` in the new version |
+| **The Cloudflare runner's limits:** 10 bridge calls per plugin invocation, CPU about 0.5 to 1 s (phase 07 spike) | Release 1 is Node-only because of the 10-call limit. If an upgrade raised it, or made bridge calls stop counting, spec change 35's option A could be smaller, or the refusal could go | Rerun `spikes/cf-runner/drive.mjs` on a Cloudflare test site, if one exists then; read EmDash's sandbox docs and changelog |
+| **`getPublicPluginApiRouteHandler`** in `emdash/plugin-utils`, with the signature `(pluginId, method, path, request)` and public routes only | The theme's pay page and `isPaid` read `status` in-process through it | `theme/` tests; the pay page on the dev site |
+| **Block Kit admin pages load once and never poll** (spec change 27) | The "Checked at" line and the Check again button exist because of it. If EmDash added a refresh, they could go | Read the admin page renderer's changelog |
+| **`ctx.site.url`** comes only from the `emdash:site_url` option, which setup writes once (spec change 23) | The install command's site address uses the admin's browser origin when the saved one is loopback | `plugin/tests/routes/admin-site.test.ts` |
+| **Headers set by a component are lost; only the page file's are sent** (Astro, phase 06 session 6c) | `preparePayPage` must run in the page file | `theme/tests/paypage.test.ts` and the dev site's built copy (`curl -I`) |
+| **Plugin storage pages are at most 100 rows; `getMany` fails above about 98 ids on D1** (spike) | The watch scan pages by 100; batched reads must stay at 98 or fewer | `plugin/tests/store.test.ts`; the spike's `getMany` probe |

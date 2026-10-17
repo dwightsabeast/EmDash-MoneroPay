@@ -4,7 +4,9 @@
  * needs more, so Coffer answers before touching storage instead of failing halfway.
  *
  * Detection: EmDash sets requestMeta.geo only from Cloudflare's `cf` object, which exists only in the Workers runtime
- * (checked on the phase 07 spike site); on Node it's null, even behind Cloudflare's proxy or a tunnel.
+ * (checked on the phase 07 spike site); on Node it's null, even behind Cloudflare's proxy or a tunnel. If an EmDash
+ * upgrade ever filled it on Node, every Node site would be refused: tests/routes/platform.test.ts guards that, and
+ * docs/emdash-upgrade-checklist.md lists it.
  */
 type Block = Record<string, unknown>;
 
@@ -22,7 +24,6 @@ export const unsupportedPage = (): Block[] => [
 		type: "banner",
 		variant: "alert",
 		title: "Not supported on Cloudflare Workers yet",
-		description:
-			"This site runs on Cloudflare Workers, where EmDash gives each plugin call too few storage calls for Coffer to pair a wallet host or take payments. Coffer works on EmDash sites hosted on Node.js; Cloudflare support is planned. Nothing has been set up or stored.",
+		description: "This site runs on Cloudflare Workers. Coffer works on EmDash sites hosted on Node.js; Cloudflare support is planned. Nothing has been set up or stored.",
 	},
 ];
