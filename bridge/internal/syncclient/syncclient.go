@@ -121,6 +121,9 @@ func hint(code string) string {
 		return "the pairing code is wrong, used or expired. Press " + sitetext.Button + " again for a new code (valid 15 minutes)"
 	case "STALE_TIMESTAMP":
 		return "this machine's clock is more than 5 minutes off. Fix the clock (timedatectl set-ntp true)"
+	case "UNSUPPORTED_PLATFORM":
+		// Spec change 35: on EmDash's Cloudflare runner a plugin gets too few storage calls to pair or take payments.
+		return "this site runs on Cloudflare Workers, which Coffer doesn't support yet; it works on EmDash sites hosted on Node.js. Nothing was set up, and the pairing code wasn't used"
 	case "UNSUPPORTED_VERSION":
 		return "the site's plugin and this bridge don't share a protocol version. Update the older one"
 	case "INVALID_BODY", "INVALID_ENCODING":

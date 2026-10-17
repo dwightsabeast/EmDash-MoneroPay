@@ -145,6 +145,7 @@ func TestErrors(t *testing.T) {
 		"domain error":           {200, `{"success":true,"data":{"error":{"code":"NOT_PAIRED"}}}`, "NOT_PAIRED", "pair"},
 		"bad signature":          {200, `{"success":true,"data":{"error":{"code":"BAD_SIGNATURE"}}}`, "BAD_SIGNATURE", "pair"},
 		"stale timestamp":        {200, `{"success":true,"data":{"error":{"code":"STALE_TIMESTAMP"}}}`, "STALE_TIMESTAMP", "clock"},
+		"cloudflare workers":     {200, `{"success":true,"data":{"error":{"code":"UNSUPPORTED_PLATFORM"}}}`, "UNSUPPORTED_PLATFORM", "Cloudflare Workers"},
 		"too large":              {413, `{"success":false,"error":{"code":"INVALID_PLUGIN_REQUEST"}}`, "INVALID_PLUGIN_REQUEST", "large"},
 		"401 bearer":             {401, `{"success":false,"error":{"code":"INVALID_TOKEN"}}`, "INVALID_TOKEN", "Authorization"},
 		"403 csrf":               {403, `{"success":false,"error":{"code":"CSRF_REJECTED"}}`, "CSRF_REJECTED", "Origin"},
