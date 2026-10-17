@@ -69,6 +69,8 @@ interface Health {
 	/** The price check: a rate, null when both services failed, undefined when not checked (the widget). */
 	rate?: { minor: bigint; source: string; currency: Currency } | null;
 	clientIp: boolean | null;
+	/** When the watch-candidate scan last hit its safety cap (spec change 35), within the last day; else null. */
+	watchTruncatedAt: number | null;
 }
 
 /** The highest subaddress index with a counted payment; worked out once from the invoices if it was never recorded. */
@@ -118,9 +120,11 @@ async function health(ctx: PluginContext, now: number, opts: { checkRate: boolea
 		rate = r ? { minor: r.minor, source: r.source, currency } : null;
 	}
 	const clientIp = await ctx.kv.get<boolean>(KV.clientIp);
+	const truncatedAt = await ctx.kv.get<number>(KV.watchTruncatedAt);
+	const watchTruncatedAt = truncatedAt !== null && now - truncatedAt < LATE_WINDOW_MS ? truncatedAt : null;
 	const lastSyncAgo = bridge?.lastSyncAt !== undefined ? now - bridge.lastSyncAt : null;
 	const neverSynced = paired && bridge !== null && lastSyncAgo === null;
-	return { paired, bridge, free, silentFor, lastSyncAgo, neverSynced, review, unpaidRun, gap, rate, clientIp };
+	return { paired, bridge, free, silentFor, lastSyncAgo, neverSynced, review, unpaidRun, gap, rate, clientIp, watchTruncatedAt };
 }
 
 const minorText = (m: bigint) => `${m / 100n}.${(m % 100n).toString().padStart(2, "0")}`;
@@ -158,6 +162,9 @@ function problems(h: Health): Array<{ variant: "error" | "alert"; title: string;
 	if (checks?.wallet?.state === "unavailable") out.push({ variant: "alert", title: "The wallet host can't read its node's height", description: checks.wallet.detail ?? "On the wallet host, run: xmr-bridge status" });
 	if (checks?.node?.state === "unavailable") out.push({ variant: "alert", title: "Remote-node cross-check unavailable", description: checks.node.detail ?? "No second node answered; confirmations are reported as the configured node gives them" });
 	if (h.review > 0) out.push({ variant: "alert", title: `${plural(h.review, "invoice needs", "invoices need")} a decision`, description: "They're under Needs a decision, below Health, each with what happened and a recommended action." });
+	if (h.watchTruncatedAt !== null) {
+		out.push({ variant: "alert", title: "The watch list hit its safety cap", description: `At ${utc(h.watchTruncatedAt)}, more recent invoices existed than Coffer reads in one sync (20,000), so some may not be checked for late payments. This usually means a flood of unpaid checkouts.` });
+	}
 	if (h.unpaidRun >= UNPAID_RUN_ALERT) out.push({ variant: "alert", title: `The last ${h.unpaidRun} checkouts expired unpaid`, description: "Buyers may be stuck. Open your pay page and check that it shows the address and the amount, then try a small test payment." });
 	return out;
 }
