@@ -2825,3 +2825,34 @@ Then 7b (the admin tips view) and 7c (theme and live) as planned.
   - The spike site stays deployed for A's checks. Its token expires 2026-10-30.
   - Teardown in `SETUP.md` steps 11–13.
   - Phase 07 is paused after 7a, waiting on Wyatt's choice.
+
+### 2026-10-16 (night, later) · Spec change 35: B with Wyatt's conditions, built
+
+Wyatt chose B for release 1 (Node-hosted sites), with three conditions; A (the 10-call redesign) is planned for release 1.x or 2. Recorded in spec change 35 (`7d50ab6`).
+
+1. **Cloudflare detected; refused cleanly before any storage call:**
+   - **Plugin** (`4585aef`): detection by `requestMeta.geo`, which EmDash sets only from Cloudflare's `cf` object. Checked live: present on the spike site; null on Node.
+     - `bridge/sync` and `checkout` answer `UNSUPPORTED_PLATFORM`.
+     - The admin page and widget show one banner, "Not supported on Cloudflare Workers yet".
+   - **Bridge hint and theme message** (`3139f79`).
+   - **Live:**
+     - Cloudflare (spike site, new build): a signed 10-address pairing gets `UNSUPPORTED_PLATFORM` (HTTP 200, not a route error), and the pairing code stays unused (D1: `used` 0, no pool or invoice rows); checkout is refused the same way; status still works.
+     - Node (dev site, `astro dev`): the bridge synced normally at 2,230,815, and a tip checkout made an invoice.
+   - **Not yet seen:** the admin banner in a browser (Wyatt, on the spike site), and the bridge's hint in a real install (needs the next dev release).
+2. **The watch truncation affects Node too; fixed for release 1** (`84cc02d`):
+   - `collect()` pages to the end under a 200-page safety cap, and says when the cap is hit.
+   - Tips are candidates for 8 days.
+   - Health warns for a day if the cap is reached.
+   - Test: 1,200 recent tips plus a touched 5-day-old one all watched (the old code stopped at 1,000).
+3. **`getMany`/`putMany` where it's cheap:** for 7b and 7c.
+
+Tests:
+- **Plugin:** default 230 and switch-on 69 pass (one skip each). Bundle 54.4 KB.
+- **Bridge:** all pass.
+- **Theme:** 36 pass.
+
+Next:
+- Wyatt looks at the admin banner on the spike site.
+- Push.
+- 7b (the admin tips view, with `getMany`/`putMany` where cheap), then 7c.
+- The next dev release rebuild carries the bridge hint.
